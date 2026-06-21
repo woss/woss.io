@@ -71,7 +71,12 @@
           data-index={i}
           style="transition-delay: {i * 50}ms; transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1)"
         >
-          <a href={resolve(`/posts/${post.slug}`)} class="block" tabindex="-1">
+          <a
+            href={resolve('/posts/[slug]', { slug: post.slug })}
+            data-sveltekit-preload-data="hover"
+            class="flex flex-col no-underline text-inherit focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-4 focus-visible:rounded-lg"
+            aria-label="Read: {post.title}"
+          >
             {#if post.headerImage}
               {#if post.headerImage.url.includes('u.macula.link')}
                 {@const base = post.headerImage.url.split('?')[0]}
@@ -99,33 +104,29 @@
                 class="w-full aspect-2/1 object-cover"
               />
             {/if}
-          </a>
-          <a
-            href={resolve(`/posts/${post.slug}`)}
-            class="flex flex-col p-6 no-underline text-inherit gap-3 focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-4 focus-visible:rounded-lg"
-            aria-label="Read: {post.title}"
-          >
-            {#if post.tags.length > 0}
-              <div class="flex flex-wrap gap-2 mb-1">
-                {#each post.tags as tag (tag)}
-                  <Badge variant="soft" color="secondary" size="sm" class="tracking-[0.02em] uppercase">{tag}</Badge>
-                {/each}
-              </div>
-            {/if}
+            <div class="flex flex-col p-6 gap-3">
+              {#if post.tags.length > 0}
+                <div class="flex flex-wrap gap-2 mb-1">
+                  {#each post.tags as tag (tag)}
+                    <Badge variant="soft" color="secondary" size="sm" class="tracking-[0.02em] uppercase">{tag}</Badge>
+                  {/each}
+                </div>
+              {/if}
 
-            <h2 class="font-heading text-lg/tight md:text-xl font-bold text-on-surface m-0 tracking-[-0.01em]">
-              {post.title}
-            </h2>
+              <h2 class="font-heading text-lg/tight md:text-xl font-bold text-on-surface m-0 tracking-[-0.01em]">
+                {post.title}
+              </h2>
 
-            <p class="text-sm/normal text-on-surface-variant m-0 line-clamp-2">{post.excerpt}</p>
+              <p class="text-sm/normal text-on-surface-variant m-0 line-clamp-2">{post.excerpt}</p>
 
-            {#if post.date}
-              <time
-                datetime={post.date}
-                class="font-mono text-xs text-outline mt-auto pt-2 border-t border-[rgba(255,255,255,0.08)]"
-                >{formatDate(post.date)}</time
-              >
-            {/if}
+              {#if post.date}
+                <time
+                  datetime={post.date}
+                  class="font-mono text-xs text-outline mt-auto pt-2 border-t border-[rgba(255,255,255,0.08)]"
+                  >{formatDate(post.date)}</time
+                >
+              {/if}
+            </div>
           </a>
         </article>
       {/each}
