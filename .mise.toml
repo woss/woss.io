@@ -1,3 +1,6 @@
 [tools]
-node = "25"
+node = "26"
 "npm:pnpm" = "11"
+
+[env]
+NPM_CONFIG_ENGINES_STRICT = "false"

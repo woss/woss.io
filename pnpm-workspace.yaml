@@ -1,7 +1,7 @@
-trustPolicy: off
+trustPolicy: 'off'
 trustLockfile: true
 trustPolicyExclude:
-  - 'chokidar@4.0.3'
+  - chokidar@4.0.3
   - '@types/node@25.9.2'
 allowBuilds:
   better-sqlite3: true
@@ -10,3 +10,9 @@ allowBuilds:
   protobufjs: true
   sharp: true
   usearch: true
+onlyBuiltDependencies:
+  - better-sqlite3
+  - onnxruntime-node
+  - protobufjs
+  - sharp
+  - usearch
