@@ -14,6 +14,11 @@ const config = {
     alias: {
       $content: 'src/content',
     },
+    experimental: {
+      instrumentation: {
+        server: true,
+      },
+    },
   },
 };
 
