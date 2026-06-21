@@ -91,6 +91,7 @@ export const CAT = {
   search: ['woss', 'search'] as [string, string],
   hooks: ['woss', 'hooks'] as [string, string],
   rateLimit: ['woss', 'rate-limit'] as [string, string],
+  startup: ['woss', 'startup'] as [string, string],
 } as const;
 
 type Category = string[] & { readonly 0: string; readonly 1: string };
