@@ -1,3 +1,4 @@
+import { trace } from '@opentelemetry/api';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { v7 as uuidv7, v4 as uuidv4 } from 'uuid';
 
@@ -5,6 +6,23 @@ export interface TraceContext {
   traceId: string;
   spanId: string;
   msgId?: string;
+}
+
+/**
+ * Get the active OTel span context from the current async context.
+ * Returns TraceContext with hex traceId and spanId when an OTel span is active,
+ * or undefined when no OTel span is active (e.g. background jobs, startup).
+ * Used to bridge OTel trace IDs into LogTape for log-trace correlation.
+ */
+export function getActiveOtelContext(): TraceContext | undefined {
+  const activeSpan = trace.getActiveSpan();
+  if (!activeSpan) return undefined;
+  const ctx = activeSpan.spanContext();
+  // OTel traceId is always 32 hex chars, spanId is 16 hex chars
+  return {
+    traceId: ctx.traceId,
+    spanId: ctx.spanId,
+  };
 }
 
 /**

@@ -44,6 +44,7 @@ export const actions = {
 
     const count = getUserChatCount(userId);
     if (count >= config.public.maxChats) {
+      log.warn`Create chat rejected: user ${userId} has ${count} chats (max ${config.public.maxChats})`;
       return fail(400, { error: `Maximum ${config.public.maxChats} chats allowed` });
     }
 

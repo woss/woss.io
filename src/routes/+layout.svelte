@@ -34,7 +34,7 @@
     return page.url.pathname.startsWith(href);
   }
 
-  let isChatPage = $derived(page.url.pathname.startsWith('/chat/'));
+  let isChatPage = $derived(page.url.pathname.startsWith('/chat'));
 
   function closeMobileMenu() {
     mobileMenuOpen = false;

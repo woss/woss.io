@@ -5,6 +5,7 @@ import { resolve } from '$app/paths';
 import { matchSlashCommand } from '$lib/chat/slash-commands';
 import ChatSidebar from '$lib/components/ChatSidebar.svelte';
 import { Button, Icon } from 'sv5ui';
+import { toast } from 'svelte-sonner';
 import { SUGGESTED_QUESTIONS } from '$lib/chat/suggested-questions';
 import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
  import type { Chat } from '$lib/chat/types';
@@ -99,7 +100,10 @@ let showMobile = $state(false);
 			else if (matched.name === 'about') goto(resolve('/about'));
 			return;
 		}
-		if (!canCreateChat) return;
+		if (!canCreateChat) {
+			toast.error(`Maximum ${config.public.maxChats} chats reached`);
+			return;
+		}
 		createChatApi(userId).then(id => { if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(t)}`)); });
 	}}
 	/>

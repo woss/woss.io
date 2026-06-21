@@ -1,6 +1,7 @@
 import { config } from '$lib/server/config';
 import { initLogger, CAT, createLogger } from '$lib/server/logger';
 import { generateTraceId, generateSpanId, withTrace } from '$lib/server/trace-context';
+import { getActiveOtelContext } from '$lib/server/trace-context';
 import type { Handle } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 
@@ -55,7 +56,14 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
 
   // Wrap request with trace context for log correlation
-  const traceId = generateTraceId();
-  const spanId = generateSpanId();
-  return withTrace(traceId, spanId, () => resolve(event));
+  // Prefer OTel active span (from SvelteKit's experimental.tracing.server) when available
+  const otelCtx = getActiveOtelContext();
+  const traceId = otelCtx?.traceId ?? generateTraceId();
+  const spanId = otelCtx?.spanId ?? generateSpanId();
+  const response = await withTrace(traceId, spanId, () => resolve(event));
+  if (response.status === 404) {
+    const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
+    log.warn`[404] ${event.request.method} ${event.url.pathname} UA=${event.request.headers.get('user-agent') ?? 'none'} IP=${ip}`;
+  }
+  return response;
 };

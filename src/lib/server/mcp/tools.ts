@@ -76,7 +76,7 @@ const CACHE_TTL_MS = 60_000; // 60 seconds
 
 let _openAiToolsCache: { data: OpenAiTool[]; ts: number } | null = null;
 let _mcpToolDefsCache: { data: McpToolDef[]; ts: number } | null = null;
-let _mcpResourceContent: { data: string; ts: number } | null = null;
+let _mcpResourceContent: Map<string, { data: string; ts: number }> | null = null;
 let _mcpPromptContent: { data: string; ts: number } | null = null;
 
 /** @group OpenAI Tool Format */
@@ -128,7 +128,7 @@ async function getOpenAiTools(): Promise<OpenAiTool[]> {
  * Fetch all MCP tools and return them in McpToolDef format.
  * Results are cached so subsequent calls return the same list.
  */
-async function getMcpToolDefs(): Promise<McpToolDef[]> {
+export async function getMcpToolDefs(): Promise<McpToolDef[]> {
   if (_mcpToolDefsCache && Date.now() - _mcpToolDefsCache.ts < CACHE_TTL_MS) return _mcpToolDefsCache.data;
 
   const tools = await mcp.listTools();
@@ -148,8 +148,9 @@ async function getMcpToolDefs(): Promise<McpToolDef[]> {
       await new Promise((r) => setTimeout(r, 3000));
       log.info`Macula: reconnect attempt starting...`;
       await mcp.reconnectTools();
-      // Invalidate cache so next request refetches with Macula tools
+      // Invalidate caches so next request refetches with Macula tools
       _mcpToolDefsCache = null;
+      _openAiToolsCache = null;
       log.warn`Macula: reconnect completed — tools may now be available`;
     })();
     _reconnectPromise.finally(() => {
@@ -166,7 +167,7 @@ async function getMcpToolDefs(): Promise<McpToolDef[]> {
  * Execute an MCP tool call from an OpenAI function call request.
  * Parses the JSON-stringified arguments and delegates to the MCP client.
  */
-async function executeMcpToolCall(toolCall: { name: string; arguments?: string }): Promise<McpToolCallResult> {
+export async function executeMcpToolCall(toolCall: { name: string; arguments?: string }): Promise<McpToolCallResult> {
   const args = parseRecord(toolCall.arguments);
   log.debug`Tool call: ${toolCall.name}(${JSON.stringify(args)})`;
   const result = await mcp.callTool(toolCall.name, args);
@@ -185,8 +186,10 @@ async function executeMcpToolCall(toolCall: { name: string; arguments?: string }
  * Fetch MCP resource text content for system prompt injection.
  * Filters by serverId if provided. Results are cached across requests.
  */
-async function getMcpResourceContent(serverId?: string): Promise<string> {
-  if (_mcpResourceContent && Date.now() - _mcpResourceContent.ts < CACHE_TTL_MS) return _mcpResourceContent.data;
+export async function getMcpResourceContent(serverId?: string): Promise<string> {
+  const cacheKey = serverId ?? '_all';
+  const cached = _mcpResourceContent?.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.data;
   const resources = await mcp.listResources();
   const filtered = serverId ? resources.filter((r) => r.serverId === serverId) : resources;
   const parts: string[] = [];
@@ -197,7 +200,8 @@ async function getMcpResourceContent(serverId?: string): Promise<string> {
     }
   }
   const data = parts.length > 0 ? parts.join('\n\n') : '';
-  _mcpResourceContent = { data, ts: Date.now() };
+  if (!_mcpResourceContent) _mcpResourceContent = new Map();
+  _mcpResourceContent.set(cacheKey, { data, ts: Date.now() });
   if (parts.length > 0) {
     log.info`📄 resources: ${filtered.map((r) => r.uri).join(', ')}`;
   }
@@ -208,7 +212,7 @@ async function getMcpResourceContent(serverId?: string): Promise<string> {
  * Fetch all MCP prompt templates for system prompt injection.
  * Results are cached across requests.
  */
-async function getMcpPromptContent(): Promise<string> {
+export async function getMcpPromptContent(): Promise<string> {
   if (_mcpPromptContent && Date.now() - _mcpPromptContent.ts < CACHE_TTL_MS) return _mcpPromptContent.data;
   const prompts = await mcp.listPrompts();
   const parts: string[] = [];
@@ -233,15 +237,3 @@ function resetMcpResourceContent(): void {
 function resetMcpPromptContent(): void {
   _mcpPromptContent = null;
 }
-
-export {
-  executeMcpToolCall,
-  getMcpToolDefs,
-  getMcpResourceContent,
-  getMcpPromptContent,
-  getOpenAiTools,
-  resetMcpToolDefsCache,
-  resetMcpResourceContent,
-  resetMcpPromptContent,
-  resetOpenAiToolsCache,
-};

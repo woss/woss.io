@@ -5,6 +5,7 @@
  * aggregated tool listing with collision resolution, tool execution
  * routing, and clean shutdown.
  */
+import { trace } from '@opentelemetry/api';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { CAT, createLogger } from '$lib/server/logger';
 import type { McpServerConfig } from './config.ts';
@@ -12,6 +13,7 @@ import { toRecord } from './utils.ts';
 import type { jsonSchemaValidator, JsonSchemaType, JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation';
 
 const log = createLogger(CAT.mcp);
+const tracer = trace.getTracer('woss-mcp');
 
 /** @group Types */
 
@@ -128,41 +130,51 @@ export class McpManager {
     await Promise.all(
       this.configs.map(async (cfg) => {
         const connStart = Date.now();
-        try {
-          const client = new Client(
-            { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
-            { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
-          );
+        await tracer.startActiveSpan(
+          'mcp.connect',
+          { attributes: { serverId: cfg.id, url: cfg.url } },
+          async (connectSpan) => {
+            try {
+              const client = new Client(
+                { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
+                { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
+              );
 
-          const headers: Record<string, string> = {
-            Accept: 'application/json, text/event-stream',
-            ...(cfg.headers ?? {}),
-          };
-          if (!headers.Authorization && cfg.token) {
-            headers.Authorization = `Bearer ${cfg.token}`;
-          }
-          if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
-          if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
+              const headers: Record<string, string> = {
+                Accept: 'application/json, text/event-stream',
+                ...(cfg.headers ?? {}),
+              };
+              if (!headers.Authorization && cfg.token) {
+                headers.Authorization = `Bearer ${cfg.token}`;
+              }
+              if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
+              if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
 
-          const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
-            requestInit: { headers },
-            fetch: withRateLimitLogging(),
-          });
+              const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+                requestInit: { headers },
+                fetch: withRateLimitLogging(),
+              });
 
-          await client.connect(transport);
-          this.connections.set(cfg.id, { client, transport });
-          log.info`init: connected ${cfg.id} in ${Date.now() - connStart}ms (${cfg.url})`;
-        } catch (err) {
-          log.warn`init: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
-        }
+              await client.connect(transport);
+              this.connections.set(cfg.id, { client, transport });
+              log.info`init: connected ${cfg.id} in ${Date.now() - connStart}ms (${cfg.url})`;
+              connectSpan.end();
+            } catch (err) {
+              connectSpan.recordException(err instanceof Error ? err : new Error(String(err)));
+              connectSpan.setStatus({ code: 2 /*ERROR*/, message: err instanceof Error ? err.message : String(err) });
+              connectSpan.end();
+              log.warn`init: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+            }
+          },
+        );
       }),
     );
 
     log.info`init: all connections done in ${Date.now() - connectStart}ms (${this.connections.size}/${this.configs.length} connected)`;
 
-    // Pre-fetch tool definitions
-    await this.refreshToolIndex();
+    // Mark initialized before fetching tool index so getServerStatus works even if refreshToolIndex is slow or fails
     this.initialized = true;
+    await this.refreshToolIndex();
   }
 
   /* ── Server Status ────────────────────────────────────────────── */
@@ -190,24 +202,31 @@ export class McpManager {
     await Promise.all(
       entries.map(async ([serverId, { client }]) => {
         const toolStart = Date.now();
-        try {
-          const cfg = this.configs.find((c) => c.id === serverId);
-          const result = await client.listTools({}, cfg?.timeout ? { timeout: cfg.timeout } : {});
+        await tracer.startActiveSpan('mcp.listTools', { attributes: { serverId } }, async (toolSpan) => {
+          try {
+            const cfg = this.configs.find((c) => c.id === serverId);
+            const result = await client.listTools({}, cfg?.timeout ? { timeout: cfg.timeout } : {});
 
-          for (const tool of result.tools) {
-            all.push({
-              name: tool.name,
-              serverId,
-              description: tool.description,
-              inputSchema: toRecord(tool.inputSchema),
-            });
-            nameCounts.set(tool.name, (nameCounts.get(tool.name) ?? 0) + 1);
+            for (const tool of result.tools) {
+              all.push({
+                name: tool.name,
+                serverId,
+                description: tool.description,
+                inputSchema: toRecord(tool.inputSchema),
+              });
+              nameCounts.set(tool.name, (nameCounts.get(tool.name) ?? 0) + 1);
+            }
+            toolSpan.setAttribute('toolCount', result.tools.length);
+            log.info`listTools: ${serverId} — ${result.tools.length} tools in ${Date.now() - toolStart}ms`;
+            toolSpan.end();
+          } catch (err) {
+            toolSpan.recordException(err instanceof Error ? err : new Error(String(err)));
+            toolSpan.setStatus({ code: 2, message: err instanceof Error ? err.message : String(err) });
+            toolSpan.end();
+            log.warn`listTools: ${serverId} failed after ${Date.now() - toolStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+            failedServers.push(serverId);
           }
-          log.info`listTools: ${serverId} — ${result.tools.length} tools in ${Date.now() - toolStart}ms`;
-        } catch (err) {
-          log.warn`listTools: ${serverId} failed after ${Date.now() - toolStart}ms — ${err instanceof Error ? err.message : String(err)}`;
-          failedServers.push(serverId);
-        }
+        });
       }),
     );
 
@@ -255,28 +274,38 @@ export class McpManager {
     await Promise.all(
       toReconnect.map(async (cfg) => {
         const connStart = Date.now();
-        try {
-          const client = new Client(
-            { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
-            { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
-          );
-          const headers: Record<string, string> = {
-            Accept: 'application/json, text/event-stream',
-            ...(cfg.headers ?? {}),
-          };
-          if (!headers.Authorization && cfg.token) headers.Authorization = `Bearer ${cfg.token}`;
-          if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
-          if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
-          const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
-            requestInit: { headers },
-            fetch: withRateLimitLogging(),
-          });
-          await client.connect(transport);
-          this.connections.set(cfg.id, { client, transport });
-          log.info`reconnectTools: ${cfg.id} reconnected in ${Date.now() - connStart}ms`;
-        } catch (err) {
-          log.warn`reconnectTools: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
-        }
+        await tracer.startActiveSpan(
+          'mcp.reconnect',
+          { attributes: { serverId: cfg.id, url: cfg.url } },
+          async (reconSpan) => {
+            try {
+              const client = new Client(
+                { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
+                { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
+              );
+              const headers: Record<string, string> = {
+                Accept: 'application/json, text/event-stream',
+                ...(cfg.headers ?? {}),
+              };
+              if (!headers.Authorization && cfg.token) headers.Authorization = `Bearer ${cfg.token}`;
+              if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
+              if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
+              const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+                requestInit: { headers },
+                fetch: withRateLimitLogging(),
+              });
+              await client.connect(transport);
+              this.connections.set(cfg.id, { client, transport });
+              log.info`reconnectTools: ${cfg.id} reconnected in ${Date.now() - connStart}ms`;
+              reconSpan.end();
+            } catch (err) {
+              reconSpan.recordException(err instanceof Error ? err : new Error(String(err)));
+              reconSpan.setStatus({ code: 2, message: err instanceof Error ? err.message : String(err) });
+              reconSpan.end();
+              log.warn`reconnectTools: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+            }
+          },
+        );
       }),
     );
 
@@ -420,23 +449,45 @@ export class McpManager {
     const originalName = this.stripPrefix(resolvedName, serverId);
 
     const start = Date.now();
+    const execSpan = tracer.startSpan('mcp.callTool', {
+      attributes: { tool: resolvedName, serverId },
+    });
     log.info('Executing MCP tool', { tool: resolvedName, serverId });
     const cfg = this.configs.find((c) => c.id === serverId);
     const toolTimeout = cfg?.timeout ?? 60_000;
 
     let timeoutHandle!: ReturnType<typeof setTimeout>;
-    const result = await Promise.race([
-      conn.client.callTool({ name: originalName, arguments: args }),
-      new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(
-          () => reject(new Error(`MCP callTool timed out after ${toolTimeout}ms for ${resolvedName}`)),
-          toolTimeout,
-        );
-      }),
-    ]);
-    clearTimeout(timeoutHandle);
+    let result: { content: Array<Record<string, unknown>>; isError?: boolean };
+    try {
+      const callToolPromise = conn.client.callTool({ name: originalName, arguments: args });
+      // Swallow orphan rejection if timeout wins (prevents unhandledRejection crash)
+      callToolPromise.catch(() => {});
+      result = await Promise.race([
+        callToolPromise,
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(`MCP callTool timed out after ${toolTimeout}ms for ${resolvedName}`)),
+            toolTimeout,
+          );
+        }),
+      ]);
+      clearTimeout(timeoutHandle);
+    } catch (err) {
+      clearTimeout(timeoutHandle);
+      execSpan.recordException(err instanceof Error ? err : new Error(String(err)));
+      execSpan.setStatus({ code: 2, message: err instanceof Error ? err.message : String(err) });
+      execSpan.end();
+      throw err;
+    }
 
-    const durationMs = Date.now() - start;
+    let durationMs: number;
+    try {
+      durationMs = Date.now() - start;
+      execSpan.setAttribute('durationMs', durationMs);
+      execSpan.setAttribute('isError', result.isError ?? false);
+    } finally {
+      execSpan.end();
+    }
     log.info('MCP tool completed', {
       tool: resolvedName,
       serverId,

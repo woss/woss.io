@@ -177,7 +177,7 @@
 </aside>
 
 <!-- ─── Mobile sidebar drawer ─── -->
-<Drawer bind:open={showMobile} direction="left" overlay={false} handle={false} ui={{ content: '!w-full !max-w-full', body: 'flex flex-col flex-1' }}>
+<Drawer bind:open={showMobile} direction="left" overlay={false} handle={false} ui={{ content: '!w-full !max-w-full', body: 'flex flex-col min-h-0' }}>
   {#snippet header()}
     <div class="flex items-center justify-between">
       <span class="font-heading text-sm">Chats</span>
@@ -194,7 +194,7 @@
       onclick={oncreateChat}
       disabled={!canCreateChat}
     />
-    <div class="flex-1 overflow-y-auto p-3 space-y-1">
+    <div class="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
       {#each chats as chat (chat.id)}
         <div class="relative group flex items-center gap-1">
           <a

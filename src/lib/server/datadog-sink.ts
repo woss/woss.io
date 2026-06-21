@@ -1,5 +1,6 @@
 import type { LogRecord, Sink } from '@logtape/logtape';
 import { env } from 'node:process';
+import { getActiveOtelContext } from './trace-context';
 
 interface DatadogLogPayload {
   ddsource: string;
@@ -47,6 +48,18 @@ const LOGTAPE_TO_DD_LEVEL: Record<string, string> = {
   error: 'error',
   fatal: 'fatal',
 };
+
+/**
+ * Convert an OTel 128-bit hex trace ID to a decimal string for Datadog log-trace correlation.
+ * Datadog expects dd.trace_id as decimal. OTel trace IDs are 32-char hex strings.
+ */
+function otelHexToDecimal(hex: string): string {
+  try {
+    return BigInt('0x' + hex).toString(10);
+  } catch {
+    return hex;
+  }
+}
 
 export function getDatadogSite(): string {
   return env.DD_SITE ?? 'datadoghq.eu';
@@ -123,8 +136,18 @@ export function createDatadogSink(): Sink | null {
     };
 
     if (props) {
-      const ddTraceId = props['dd.trace_id'] ?? props.traceId;
-      const ddSpanId = props['dd.span_id'] ?? props.spanId;
+      let ddTraceId = props['dd.trace_id'] ?? props.traceId;
+      let ddSpanId = props['dd.span_id'] ?? props.spanId;
+
+      // If no dd.trace_id from props, check for active OTel span and use its IDs
+      if (!ddTraceId) {
+        const otelCtx = getActiveOtelContext();
+        if (otelCtx) {
+          ddTraceId = otelHexToDecimal(otelCtx.traceId);
+          ddSpanId = otelCtx.spanId;
+        }
+      }
+
       if (typeof ddTraceId === 'string' || typeof ddTraceId === 'number') {
         payload.dd = { ...payload.dd, trace_id: String(ddTraceId) };
       }
