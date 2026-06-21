@@ -8,6 +8,9 @@ const config = {
   },
   kit: {
     adapter: adapter(),
+    paths: {
+      relative: false,
+    },
     alias: {
       $content: 'src/content',
     },
