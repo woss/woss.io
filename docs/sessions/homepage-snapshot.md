@@ -1,0 +1,261 @@
+- generic [ref=e2]:
+  - navigation "Main navigation" [ref=e3]:
+    - generic [ref=e4]:
+      - link "woss.io" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e6]:
+        - link "Ask" [ref=e7] [cursor=pointer]:
+          - /url: /
+        - link "Experience" [ref=e8] [cursor=pointer]:
+          - /url: /experience
+        - link "Posts" [ref=e9] [cursor=pointer]:
+          - /url: /posts
+        - link "About" [ref=e10] [cursor=pointer]:
+          - /url: /about
+  - region "Notifications alt+T"
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - img "Space whale" [ref=e13]
+      - generic:
+        - link "Space whale by Daniel Maricic" [ref=e14] [cursor=pointer]:
+          - /url: https://macula.link/Z1TIROJeSMmFYnmvlCOPLg-7
+        - generic: "CC0 · Data mining: Allowed"
+      - generic [ref=e16]:
+        - complementary [ref=e17]:
+          - button "New Chat" [ref=e19] [cursor=pointer]:
+            - img [ref=e20]
+            - generic [ref=e21]: New Chat
+          - generic [ref=e22]:
+            - generic [ref=e23]:
+              - link "show me daniels photography portfolio 1" [ref=e24] [cursor=pointer]:
+                - /url: /chat/9171d35b-6723-40df-aaa9-891ffbce478d
+                - img [ref=e25]
+                - generic [ref=e27]: show me daniels photography portfolio
+                - generic [ref=e28]: "1"
+              - button "Delete chat" [ref=e29] [cursor=pointer]: ×
+            - generic [ref=e30]:
+              - link "show me daniels photography portfolio 1" [ref=e31] [cursor=pointer]:
+                - /url: /chat/488a4f8c-2028-4a50-8b8b-0ce9fa02152d
+                - img [ref=e32]
+                - generic [ref=e34]: show me daniels photography portfolio
+                - generic [ref=e35]: "1"
+              - button "Delete chat" [ref=e36] [cursor=pointer]: ×
+            - generic [ref=e37]:
+              - link "show me daniels photography portfolio 1" [ref=e38] [cursor=pointer]:
+                - /url: /chat/9c2aa740-9917-44ac-ad7a-a84a145c8fea
+                - img [ref=e39]
+                - generic [ref=e41]: show me daniels photography portfolio
+                - generic [ref=e42]: "1"
+              - button "Delete chat" [ref=e43] [cursor=pointer]: ×
+            - generic [ref=e44]:
+              - link "show me daniels photography portfolio 1" [ref=e45] [cursor=pointer]:
+                - /url: /chat/8ae02efe-f0a5-4016-bd28-feac3eea9829
+                - img [ref=e46]
+                - generic [ref=e48]: show me daniels photography portfolio
+                - generic [ref=e49]: "1"
+              - button "Delete chat" [ref=e50] [cursor=pointer]: ×
+            - generic [ref=e51]:
+              - link "show me daniels photography portfolio 1" [ref=e52] [cursor=pointer]:
+                - /url: /chat/bcdea4cb-2ace-4242-9c0c-cbe15573654e
+                - img [ref=e53]
+                - generic [ref=e55]: show me daniels photography portfolio
+                - generic [ref=e56]: "1"
+              - button "Delete chat" [ref=e57] [cursor=pointer]: ×
+            - generic [ref=e58]:
+              - link "show me daniels photography portfolio 1" [ref=e59] [cursor=pointer]:
+                - /url: /chat/6a1c543e-5c39-4dab-882e-5395c44b5adf
+                - img [ref=e60]
+                - generic [ref=e62]: show me daniels photography portfolio
+                - generic [ref=e63]: "1"
+              - button "Delete chat" [ref=e64] [cursor=pointer]: ×
+            - generic [ref=e65]:
+              - link "show me daniels photography portfolio 1" [ref=e66] [cursor=pointer]:
+                - /url: /chat/6d62b0ef-c9ab-44df-828b-d6951be8c08f
+                - img [ref=e67]
+                - generic [ref=e69]: show me daniels photography portfolio
+                - generic [ref=e70]: "1"
+              - button "Delete chat" [ref=e71] [cursor=pointer]: ×
+            - generic [ref=e72]:
+              - link "show me daniels photography portfolio 1" [ref=e73] [cursor=pointer]:
+                - /url: /chat/6f698720-7685-4302-9c41-5151c6268f35
+                - img [ref=e74]
+                - generic [ref=e76]: show me daniels photography portfolio
+                - generic [ref=e77]: "1"
+              - button "Delete chat" [ref=e78] [cursor=pointer]: ×
+            - generic [ref=e79]:
+              - link "show me daniels photography portfolio 1" [ref=e80] [cursor=pointer]:
+                - /url: /chat/134ccd9b-059d-45ec-87c0-ac67a01f8f78
+                - img [ref=e81]
+                - generic [ref=e83]: show me daniels photography portfolio
+                - generic [ref=e84]: "1"
+              - button "Delete chat" [ref=e85] [cursor=pointer]: ×
+            - generic [ref=e86]:
+              - link "show me daniels photography portfolio 1" [ref=e87] [cursor=pointer]:
+                - /url: /chat/7cf43147-0e4a-4722-961e-949d94e46320
+                - img [ref=e88]
+                - generic [ref=e90]: show me daniels photography portfolio
+                - generic [ref=e91]: "1"
+              - button "Delete chat" [ref=e92] [cursor=pointer]: ×
+            - generic [ref=e93]:
+              - link "does daniel have any creative hobbies 3" [ref=e94] [cursor=pointer]:
+                - /url: /chat/aa0e0483-07ff-4602-8410-7ed35b5f139d
+                - img [ref=e95]
+                - generic [ref=e97]: does daniel have any creative hobbies
+                - generic [ref=e98]: "3"
+              - button "Delete chat" [ref=e99] [cursor=pointer]: ×
+            - generic [ref=e100]:
+              - link "Show me Daniel's pull requests 3" [ref=e101] [cursor=pointer]:
+                - /url: /chat/b90b075a-9c16-4105-ae5f-9adfaa7aebb5
+                - img [ref=e102]
+                - generic [ref=e104]: Show me Daniel's pull requests
+                - generic [ref=e105]: "3"
+              - button "Delete chat" [ref=e106] [cursor=pointer]: ×
+            - generic [ref=e107]:
+              - link "show me last 10 images from daniel's win 2" [ref=e108] [cursor=pointer]:
+                - /url: /chat/b53eea56-ce61-4008-95b6-541e2c8ca796
+                - img [ref=e109]
+                - generic [ref=e112]: show me last 10 images from daniel's win
+                - generic [ref=e113]: "2"
+              - button "Delete chat" [ref=e114] [cursor=pointer]: ×
+            - generic [ref=e115]:
+              - link "New Chat 1" [ref=e116] [cursor=pointer]:
+                - /url: /chat/f173c96a-c754-4691-a8c3-522c357a1061
+                - img [ref=e117]
+                - generic [ref=e119]: New Chat
+                - generic [ref=e120]: "1"
+              - button "Delete chat" [ref=e121] [cursor=pointer]: ×
+            - generic [ref=e122]:
+              - link "What projects has Daniel founded? 12" [ref=e123] [cursor=pointer]:
+                - /url: /chat/7c2a30d6-3f9f-4c42-9356-d19b4294b948
+                - img [ref=e124]
+                - generic [ref=e126]: What projects has Daniel founded?
+                - generic [ref=e127]: "12"
+              - button "Delete chat" [ref=e128] [cursor=pointer]: ×
+            - generic [ref=e129]:
+              - link "what are daniels hobbies 7" [ref=e130] [cursor=pointer]:
+                - /url: /chat/a9527bdb-a90f-4ba7-98e5-451186f15a51
+                - img [ref=e131]
+                - generic [ref=e133]: what are daniels hobbies
+                - generic [ref=e134]: "7"
+              - button "Delete chat" [ref=e135] [cursor=pointer]: ×
+            - generic [ref=e136]:
+              - link "show me your images from macula 2" [ref=e137] [cursor=pointer]:
+                - /url: /chat/cf4f9863-7bf5-4715-851b-32abf5aa238d
+                - img [ref=e138]
+                - generic [ref=e140]: show me your images from macula
+                - generic [ref=e141]: "2"
+              - button "Delete chat" [ref=e142] [cursor=pointer]: ×
+            - generic [ref=e143]:
+              - link "show me daniels photos 5" [ref=e144] [cursor=pointer]:
+                - /url: /chat/561545a9-24a3-4194-a062-716788eb5f94
+                - img [ref=e145]
+                - generic [ref=e147]: show me daniels photos
+                - generic [ref=e148]: "5"
+              - button "Delete chat" [ref=e149] [cursor=pointer]: ×
+            - generic [ref=e150]:
+              - link "What DevOps and cloud experience does Da 3" [ref=e151] [cursor=pointer]:
+                - /url: /chat/6b5de034-482e-4c44-b01a-92243c7084cf
+                - img [ref=e152]
+                - generic [ref=e155]: What DevOps and cloud experience does Da
+                - generic [ref=e156]: "3"
+              - button "Delete chat" [ref=e157] [cursor=pointer]: ×
+            - generic [ref=e158]:
+              - link "What projects has Daniel founded? 1" [ref=e159] [cursor=pointer]:
+                - /url: /chat/02a74807-57ac-4977-99c4-e608cd74d40d
+                - img [ref=e160]
+                - generic [ref=e162]: What projects has Daniel founded?
+                - generic [ref=e163]: "1"
+              - button "Delete chat" [ref=e164] [cursor=pointer]: ×
+            - generic [ref=e165]:
+              - link "show me daniels portfolio 1" [ref=e166] [cursor=pointer]:
+                - /url: /chat/50979d2a-6067-4bdb-ae0a-2bd3cc19bf74
+                - img [ref=e167]
+                - generic [ref=e169]: show me daniels portfolio
+                - generic [ref=e170]: "1"
+              - button "Delete chat" [ref=e171] [cursor=pointer]: ×
+            - generic [ref=e172]:
+              - link "what are daniels hobbirs 5" [ref=e173] [cursor=pointer]:
+                - /url: /chat/e0f0bb82-12d1-45a6-aaf5-35e3c9e98b85
+                - img [ref=e174]
+                - generic [ref=e176]: what are daniels hobbirs
+                - generic [ref=e177]: "5"
+              - button "Delete chat" [ref=e178] [cursor=pointer]: ×
+          - generic [ref=e262]:
+            - paragraph [ref=e263]: Services
+            - generic [ref=e264]:
+              - generic [ref=e266]: GitHub
+              - link "Macula" [ref=e271] [cursor=pointer]
+          - generic [ref=e179]:
+            - paragraph [ref=e180]: Commands
+            - generic [ref=e181]:
+              - generic [ref=e182]:
+                - generic [ref=e183]: /contact
+                - generic [ref=e184]: Show contact form
+              - generic [ref=e185]:
+                - generic [ref=e186]: /summarize
+                - generic [ref=e187]: Summarize conversation
+          - paragraph [ref=e189]: 22/100 chats
+        - generic [ref=e190]:
+          - generic [ref=e192]:
+            - 'heading "Building woss.io: A Journey Into AI-Powered Personal Portfolios" [level=1] [ref=e193]'
+            - paragraph [ref=e194]: How we rebuilt woss.io from the ground up — an AI-native personal portfolio with streaming LLM chat, local vector embeddings, MCP tool integration, and a modern SvelteKit 5 stack.
+            - link "Read the launch post →" [ref=e195] [cursor=pointer]:
+              - /url: /posts/new-woss-io
+          - main [ref=e196]:
+            - generic [ref=e198]:
+              - generic [ref=e199]:
+                - textbox "Ask anything about my work..." [ref=e200]
+                - button "Send message" [disabled] [ref=e202]:
+                  - img [ref=e203]
+              - generic [ref=e206]:
+                - button "Show me Daniel's pull requests" [ref=e207] [cursor=pointer]
+                - button "Tell me about Daniel's experience with blockchain" [ref=e208] [cursor=pointer]
+                - button "Search GitHub for Daniel's open source contributions" [ref=e209] [cursor=pointer]
+                - button "Tell me about Daniel's experience with copyrights and IP?" [ref=e210] [cursor=pointer]
+                - button "What projects has Daniel founded?" [ref=e211] [cursor=pointer]
+                - button "What DevOps and cloud experience does Daniel have?" [ref=e212] [cursor=pointer]
+                - button "What grants has Daniel received" [ref=e213] [cursor=pointer]
+            - paragraph [ref=e216]: Ask about my work, career, skills, and experience.
+            - generic [ref=e218]:
+              - heading "Featured Posts" [level=2] [ref=e219]
+              - generic [ref=e220]:
+                - 'link "Future in the city Type-Safe SurrealDB: Meet the ORM That Ships Introducing a new ORM for SurrealDB that delivers type-safe query building without abstraction overhead. Your schema becomes your TypeScript, and your queries chain like they should. Built on the official SurrealDB SDK, this ORM gives you compile-time validation, autocomplete, and a fluent API that maps directly to SurrealQL. Say goodbye to runtime errors and hello to a better way to work with SurrealDB. Jun 3, 2026 surrealdb orm" [ref=e221] [cursor=pointer]':
+                  - /url: /posts/dali-orm-announcement
+                  - img "Future in the city" [ref=e223]
+                  - generic [ref=e224]:
+                    - 'heading "Type-Safe SurrealDB: Meet the ORM That Ships" [level=3] [ref=e225]'
+                    - paragraph [ref=e226]: Introducing a new ORM for SurrealDB that delivers type-safe query building without abstraction overhead. Your schema becomes your TypeScript, and your queries chain like they should. Built on the official SurrealDB SDK, this ORM gives you compile-time validation, autocomplete, and a fluent API that maps directly to SurrealQL. Say goodbye to runtime errors and hello to a better way to work with SurrealDB.
+                    - generic [ref=e227]:
+                      - generic [ref=e228]: Jun 3, 2026
+                      - generic [ref=e229]: surrealdb
+                      - generic [ref=e230]: orm
+                - 'link "Space whale Building woss.io: A Journey Into AI-Powered Personal Portfolios How we rebuilt woss.io from the ground up — an AI-native personal portfolio with streaming LLM chat, local vector embeddings, MCP tool integration, and a modern SvelteKit 5 stack. Jun 6, 2026 woss.io SvelteKit" [ref=e231] [cursor=pointer]':
+                  - /url: /posts/new-woss-io
+                  - img "Space whale" [ref=e233]
+                  - generic [ref=e234]:
+                    - 'heading "Building woss.io: A Journey Into AI-Powered Personal Portfolios" [level=3] [ref=e235]'
+                    - paragraph [ref=e236]: How we rebuilt woss.io from the ground up — an AI-native personal portfolio with streaming LLM chat, local vector embeddings, MCP tool integration, and a modern SvelteKit 5 stack.
+                    - generic [ref=e237]:
+                      - generic [ref=e238]: Jun 6, 2026
+                      - generic [ref=e239]: woss.io
+                      - generic [ref=e240]: SvelteKit
+                - 'link "DaliORM logo DaliORM: Technical Deep Dive into Our Type-Safe Migration System for SurrealDB Explore the technical architecture of DaliORM, our type-safe migration system for SurrealDB. Learn about its features, CLI commands, programmatic API, and how it simplifies database schema management with a migration-first approach. Jun 3, 2025 DaliORM SurrealDB" [ref=e241] [cursor=pointer]':
+                  - /url: /posts/technical-dali-orm
+                  - img "DaliORM logo" [ref=e243]
+                  - generic [ref=e244]:
+                    - 'heading "DaliORM: Technical Deep Dive into Our Type-Safe Migration System for SurrealDB" [level=3] [ref=e245]'
+                    - paragraph [ref=e246]: Explore the technical architecture of DaliORM, our type-safe migration system for SurrealDB. Learn about its features, CLI commands, programmatic API, and how it simplifies database schema management with a migration-first approach.
+                    - generic [ref=e247]:
+                      - generic [ref=e248]: Jun 3, 2025
+                      - generic [ref=e249]: DaliORM
+                      - generic [ref=e250]: SurrealDB
+                - 'link "ocv dashboard Building opencode-visualizer: A Terminal Dashboard for Your AI Coding Assistant A terminal dashboard for OpenCode usage data — sessions, tokens, costs, and models, all rendered in pure ANSI. Built with Deno, SQLite, and zero dependencies. Jun 4, 2026 opencode CLI tools" [ref=e251] [cursor=pointer]':
+                  - /url: /posts/opencode-visualizer
+                  - img "ocv dashboard" [ref=e253]
+                  - generic [ref=e254]:
+                    - 'heading "Building opencode-visualizer: A Terminal Dashboard for Your AI Coding Assistant" [level=3] [ref=e255]'
+                    - paragraph [ref=e256]: A terminal dashboard for OpenCode usage data — sessions, tokens, costs, and models, all rendered in pure ANSI. Built with Deno, SQLite, and zero dependencies.
+                    - generic [ref=e257]:
+                      - generic [ref=e258]: Jun 4, 2026
+                      - generic [ref=e259]: opencode
+                      - generic [ref=e260]: CLI tools
