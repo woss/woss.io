@@ -24,6 +24,8 @@ export type McpServerConfig = {
   homepage?: string;
   /** Comma-separated list of tool names to expose (X-MCP-Tools header). If unset, all tools loaded. */
   tools?: string;
+  /** Extra HTTP headers to include in every request to this MCP server. Merged before Authorization. */
+  headers?: Record<string, string>;
 };
 
 /**

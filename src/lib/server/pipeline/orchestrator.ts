@@ -208,9 +208,11 @@ export async function startGeneration(
         if (toolDefs.length > 0) {
           mcpToolDefs = toolDefs;
           log.info`🔧 tools: ${toolDefs.map((t: McpToolDef) => t.name).join(', ')}`;
-          // Inject tool awareness into system prompt (always first message)
+          // Only prompt for tools that actually loaded
+          const maculaToolNames = ['traverse', 'get_users', 'get_file', 'get_file_metadata'];
+          const hasMaculaTools = toolDefs.some((d: McpToolDef) => maculaToolNames.includes(d.name));
           if (messages.length > 0 && messages[0].role === 'system') {
-            const additions = getToolSystemPrompt({ github: githubNeeded, macula: maculaNeeded });
+            const additions = getToolSystemPrompt({ github: githubNeeded, macula: hasMaculaTools });
             messages[0] = {
               ...messages[0],
               content: messages[0].content + '\n\n' + additions,

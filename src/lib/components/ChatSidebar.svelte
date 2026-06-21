@@ -39,14 +39,15 @@
   let mcpServers = $state<Array<{ id: string; label?: string; connected: boolean }>>([]);
 
   $effect(() => {
-    fetch('/api/mcp/status')
-      .then((r) => r.json())
-      .then((data) => {
-        mcpServers = data.servers;
-      })
-      .catch(() => {
-        mcpServers = [];
-      });
+    const poll = () => {
+      fetch('/api/mcp/status')
+        .then((r) => r.json())
+        .then((data) => { mcpServers = data.servers; })
+        .catch(() => { /* ignore — keep previous state */ });
+    };
+    poll();
+    const interval = setInterval(poll, 10_000);
+    return () => clearInterval(interval);
   });
 
   $effect(() => {

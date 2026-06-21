@@ -70,6 +70,27 @@ function parseMcpContent(content: unknown[]): Array<{ type?: string; text?: stri
   });
 }
 
+/**
+ * Wraps native fetch to log MCP rate-limit headers from server responses.
+ * Headers read: x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset,
+ * x-slow-down-limit, x-slow-down-remaining.
+ * Non-destructive — response passes through unchanged.
+ */
+function withRateLimitLogging(): typeof fetch {
+  return async (input, init) => {
+    const response = await fetch(input, init);
+    const limit = response.headers.get('x-ratelimit-limit');
+    const remaining = response.headers.get('x-ratelimit-remaining');
+    const reset = response.headers.get('x-ratelimit-reset');
+    const slowLimit = response.headers.get('x-slow-down-limit');
+    const slowRemaining = response.headers.get('x-slow-down-remaining');
+    if (limit || remaining || reset || slowLimit || slowRemaining) {
+      log.debug`MCP rate-limit headers: limit=${limit} remaining=${remaining} reset=${reset} slow-limit=${slowLimit} slow-remaining=${slowRemaining}`;
+    }
+    return response;
+  };
+}
+
 /** @group Noop JSON Schema Validator */
 
 /**
@@ -103,41 +124,41 @@ export class McpManager {
   /* ── Connection ───────────────────────────────────────────────── */
 
   async init(): Promise<void> {
-    for (const cfg of this.configs) {
-      try {
-        const client = new Client(
-          { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
-          {
-            capabilities: {},
-            /**
-             * MCP tools should provide their own JSON schema validation if needed, so we can use a no-op validator here to avoid unnecessary overhead and complexity in the manager.
-             */
-            jsonSchemaValidator: new NoopValidator(),
-          },
-        );
+    const connectStart = Date.now();
+    await Promise.all(
+      this.configs.map(async (cfg) => {
+        const connStart = Date.now();
+        try {
+          const client = new Client(
+            { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
+            { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
+          );
 
-        const headers: Record<string, string> = {
-          Authorization: `Bearer ${cfg.token}`,
-        };
-        if (cfg.readonly) {
-          headers['X-MCP-Readonly'] = 'true';
+          const headers: Record<string, string> = {
+            Accept: 'application/json, text/event-stream',
+            ...(cfg.headers ?? {}),
+          };
+          if (!headers.Authorization && cfg.token) {
+            headers.Authorization = `Bearer ${cfg.token}`;
+          }
+          if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
+          if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
+
+          const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+            requestInit: { headers },
+            fetch: withRateLimitLogging(),
+          });
+
+          await client.connect(transport);
+          this.connections.set(cfg.id, { client, transport });
+          log.info`init: connected ${cfg.id} in ${Date.now() - connStart}ms (${cfg.url})`;
+        } catch (err) {
+          log.warn`init: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
         }
-        if (cfg.tools) {
-          headers['X-MCP-Tools'] = cfg.tools;
-        }
+      }),
+    );
 
-        const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
-          requestInit: { headers },
-          ...(cfg.timeout ? { timeout: cfg.timeout } : {}),
-        });
-
-        await client.connect(transport);
-        this.connections.set(cfg.id, { client, transport });
-        log.debug`connected: ${cfg.id} (${cfg.url})`;
-      } catch (err) {
-        log.debug`connect failed: ${cfg.id} — ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
+    log.info`init: all connections done in ${Date.now() - connectStart}ms (${this.connections.size}/${this.configs.length} connected)`;
 
     // Pre-fetch tool definitions
     await this.refreshToolIndex();
@@ -161,24 +182,38 @@ export class McpManager {
   private async refreshToolIndex(): Promise<void> {
     const all: McpToolDefinition[] = [];
     const nameCounts = new Map<string, number>();
+    const failedServers: string[] = [];
     this.toolDefs = [];
+    const start = Date.now();
+    const entries = Array.from(this.connections.entries());
 
-    for (const [serverId, { client }] of this.connections) {
-      try {
-        const result = await client.listTools();
-        for (const tool of result.tools) {
-          all.push({
-            name: tool.name,
-            serverId,
-            description: tool.description,
-            inputSchema: toRecord(tool.inputSchema),
-          });
-          nameCounts.set(tool.name, (nameCounts.get(tool.name) ?? 0) + 1);
+    await Promise.all(
+      entries.map(async ([serverId, { client }]) => {
+        const toolStart = Date.now();
+        try {
+          const cfg = this.configs.find((c) => c.id === serverId);
+          const result = await client.listTools({}, cfg?.timeout ? { timeout: cfg.timeout } : {});
+
+          for (const tool of result.tools) {
+            all.push({
+              name: tool.name,
+              serverId,
+              description: tool.description,
+              inputSchema: toRecord(tool.inputSchema),
+            });
+            nameCounts.set(tool.name, (nameCounts.get(tool.name) ?? 0) + 1);
+          }
+          log.info`listTools: ${serverId} — ${result.tools.length} tools in ${Date.now() - toolStart}ms`;
+        } catch (err) {
+          log.warn`listTools: ${serverId} failed after ${Date.now() - toolStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+          failedServers.push(serverId);
         }
-        log.debug`tools loaded for ${serverId}: ${result.tools.length}`;
-      } catch (err) {
-        log.debug`listTools failed for ${serverId}: ${err instanceof Error ? err.message : String(err)}`;
-      }
+      }),
+    );
+
+    // Remove failed servers
+    for (const sid of failedServers) {
+      this.connections.delete(sid);
     }
 
     // Build tool index with collision resolution
@@ -190,13 +225,67 @@ export class McpManager {
       this.toolDefs.push({ ...tool, name: resolvedName });
     }
 
-    log.debug`tool index: ${this.toolDefs.length} tools from ${this.connections.size} servers`;
+    log.info`refreshToolIndex: ${this.toolDefs.length} tools from ${this.connections.size} servers in ${Date.now() - start}ms`;
   }
 
   /* ── Tool Listing ─────────────────────────────────────────────── */
 
   listAllTools(): McpToolDefinition[] {
     return this.toolDefs;
+  }
+
+  /* ── Reconnect ─────────────────────────────────────────────────── */
+
+  /**
+   * Reconnect to any configured servers not currently connected, then refresh tool index.
+   * Useful after transient failures like listTools timeouts that left servers in a dead state.
+   */
+  async reconnectTools(): Promise<void> {
+    const connectedIds = new Set(this.connections.keys());
+    const toReconnect = this.configs.filter((cfg) => !connectedIds.has(cfg.id));
+
+    if (toReconnect.length === 0) {
+      log.debug`reconnectTools: all servers already connected`;
+      return;
+    }
+
+    log.info`reconnectTools: attempting ${toReconnect.length} servers: ${toReconnect.map((c) => c.id).join(', ')}`;
+    const start = Date.now();
+
+    await Promise.all(
+      toReconnect.map(async (cfg) => {
+        const connStart = Date.now();
+        try {
+          const client = new Client(
+            { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
+            { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
+          );
+          const headers: Record<string, string> = {
+            Accept: 'application/json, text/event-stream',
+            ...(cfg.headers ?? {}),
+          };
+          if (!headers.Authorization && cfg.token) headers.Authorization = `Bearer ${cfg.token}`;
+          if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
+          if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
+          const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+            requestInit: { headers },
+            fetch: withRateLimitLogging(),
+          });
+          await client.connect(transport);
+          this.connections.set(cfg.id, { client, transport });
+          log.info`reconnectTools: ${cfg.id} reconnected in ${Date.now() - connStart}ms`;
+        } catch (err) {
+          log.warn`reconnectTools: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }),
+    );
+
+    log.info`reconnectTools: ${this.connections.size} connected (attempted ${toReconnect.length}) in ${Date.now() - start}ms`;
+
+    if (this.connections.size > 0) {
+      await this.refreshToolIndex();
+    }
+    log.info`reconnectTools: complete — ${this.connections.size} servers, ${this.toolDefs.length} tools`;
   }
 
   /* ── Resources ────────────────────────────────────────────────── */
@@ -332,14 +421,16 @@ export class McpManager {
 
     const start = Date.now();
     log.info('Executing MCP tool', { tool: resolvedName, serverId });
+    const cfg = this.configs.find((c) => c.id === serverId);
+    const toolTimeout = cfg?.timeout ?? 60_000;
 
     let timeoutHandle!: ReturnType<typeof setTimeout>;
     const result = await Promise.race([
       conn.client.callTool({ name: originalName, arguments: args }),
       new Promise<never>((_, reject) => {
         timeoutHandle = setTimeout(
-          () => reject(new Error(`MCP callTool timed out after 60s for ${resolvedName}`)),
-          60_000,
+          () => reject(new Error(`MCP callTool timed out after ${toolTimeout}ms for ${resolvedName}`)),
+          toolTimeout,
         );
       }),
     ]);

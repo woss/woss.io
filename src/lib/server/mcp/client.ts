@@ -57,7 +57,6 @@ class McpClient {
   async getServerStatus(): Promise<Array<{ id: string; label?: string; connected: boolean; homepage?: string }>> {
     if (config().mcp.servers.length === 0) return [];
     try {
-      await this.initialize();
       return getManager().getServerStatus();
     } catch (err) {
       log.warn`ERROR: getServerStatus failed: ${err}`;
@@ -73,6 +72,16 @@ class McpClient {
     } catch (err) {
       log.warn`ERROR: listTools failed: ${err}`;
       return [];
+    }
+  }
+
+  async reconnectTools(): Promise<void> {
+    if (config().mcp.servers.length === 0) return;
+    try {
+      await this.initialize();
+      return getManager().reconnectTools();
+    } catch (err) {
+      log.warn`ERROR: reconnectTools failed: ${err}`;
     }
   }
 

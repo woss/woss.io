@@ -122,7 +122,9 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   const zinalogApiKey = env.ZINALOG_API_KEY;
 
   const sinks: Record<string, Sink> = {
-    console: getConsoleSink({ formatter: getPrettyFormatter({ timestamp: 'time', inspectOptions: { colors: true } }) }),
+    console: getConsoleSink({
+      formatter: getPrettyFormatter({ timestamp: 'time', inspectOptions: { colors: true }, wordWrap: 400 }),
+    }),
     file: getRotatingFileSink(logFile, {
       formatter: getJsonLinesFormatter({ properties: 'flatten' }),
       bufferSize: 0,
