@@ -60,7 +60,10 @@ export async function callWebhook(data: WebhookData): Promise<void> {
     }
     log.info('Webhook response', { type: data.type, status: response.status, result });
   } catch (error) {
-    log.error('Webhook failed', { type: data.type, error: error instanceof Error ? error.message : String(error) });
+    log.error('Webhook request failed', {
+      type: data.type,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
