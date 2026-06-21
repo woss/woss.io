@@ -4,6 +4,10 @@ trustPolicyExclude:
   - chokidar@4.0.3
   - '@types/node@25.9.2'
 allowBuilds:
+  '@datadog/native-appsec': true
+  '@datadog/native-iast-taint-tracking': true
+  '@datadog/native-metrics': true
+  '@datadog/pprof': true
   better-sqlite3: true
   esbuild: true
   onnxruntime-node: true

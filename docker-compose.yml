@@ -26,6 +26,16 @@ services:
       #   condition: service_started
     restart: unless-stopped
     command: ['node', 'build/index.js']
+    environment:
+      - DD_API_KEY=${DD_API_KEY:-}
+      - DD_ENV=${DD_ENV:-production}
+      - DD_SERVICE=woss-io
+      - DD_SITE=${DD_SITE:-datadoghq.eu}
+      - DD_TRACE_SAMPLE_RATE=${DD_TRACE_SAMPLE_RATE:-1.0}
+      - DD_LOGS_INJECTION=true
+      - PUBLIC_DD_RUM_APP_ID=${PUBLIC_DD_RUM_APP_ID:-}
+      - PUBLIC_DD_RUM_CLIENT_TOKEN=${PUBLIC_DD_RUM_CLIENT_TOKEN:-}
+      - PUBLIC_APP_VERSION=${PUBLIC_APP_VERSION:-0.0.0}
 
   zinalog:
     image: ghcr.io/iamceeso/zinalog:latest

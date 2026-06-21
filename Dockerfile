@@ -27,3 +27,4 @@ COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.ya
 RUN chown -R 1000:1000 /app
 ENV NODE_ENV=production
 EXPOSE 3000
+CMD ["node", "build/index.js"]

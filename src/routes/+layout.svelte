@@ -2,6 +2,9 @@
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { browser } from '$app/environment';
+  import { dev } from '$app/environment';
+  import { env as publicEnv } from '$env/dynamic/public';
   import { appendQueryParams } from '$lib/utils/utm';
   import { Toaster } from 'svelte-sonner';
   import { Button, Drawer } from 'sv5ui';
@@ -47,6 +50,36 @@
   $effect(() => {
     void page.url.pathname;
     mobileMenuOpen = false;
+  });
+
+  // Datadog RUM — client-side only, skip in dev
+  $effect(() => {
+    if (!browser) return;
+    const appId = publicEnv.PUBLIC_DD_RUM_APP_ID;
+    const clientToken = publicEnv.PUBLIC_DD_RUM_CLIENT_TOKEN;
+    if (!appId || !clientToken) return;
+    (async () => {
+      try {
+        const { datadogRum } = await import('@datadog/browser-rum');
+        datadogRum.init({
+          applicationId: appId,
+          clientToken: clientToken,
+          site: 'datadoghq.eu',
+          service: 'woss-io',
+          env: dev ? 'development' : 'production',
+          version: publicEnv.PUBLIC_APP_VERSION ?? '0.0.0',
+          sessionSampleRate: 100,
+          sessionReplaySampleRate: 20,
+          trackUserInteractions: true,
+          trackResources: true,
+          trackLongTasks: true,
+          defaultPrivacyLevel: 'mask-user-input',
+        });
+        datadogRum.startSessionReplayRecording();
+      } catch (err) {
+        console.error('[RUM] init failed:', err);
+      }
+    })();
   });
 </script>
 

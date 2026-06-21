@@ -27,6 +27,7 @@ import { getPrettyFormatter } from '@logtape/pretty';
 import { env } from 'node:process';
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
+import { createDatadogSink } from './datadog-sink';
 import { traceStorage } from './trace-context';
 
 // Level mapping: LogTape → ZinaLog
@@ -137,6 +138,12 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   if (zinalogUrl && zinalogApiKey) {
     sinks.zinalog = getZinaLogSink(zinalogUrl, zinalogApiKey);
     extraSinks.push('zinalog');
+  }
+
+  const datadogSink = createDatadogSink();
+  if (datadogSink) {
+    sinks.datadog = datadogSink;
+    extraSinks.push('datadog');
   }
 
   await configure({
