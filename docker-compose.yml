@@ -1,0 +1,46 @@
+services:
+  search-index-init:
+    image: woss/woss-io:latest
+    build: .
+    env_file: .env
+    container_name: woss-search-index-init
+    volumes:
+      - ./data/:/app/data
+    command: ['pnpm', 'run', 'build-index']
+    restart: 'no'
+
+  app:
+    image: woss/woss-io:latest
+    build: .
+    env_file: .env
+    ports:
+      - '5173:3000'
+    volumes:
+      - ./data/:/app/data
+    depends_on:
+      zinalog:
+        condition: service_started
+      search-index-init:
+        condition: service_completed_successfully
+      # mermaid:
+      #   condition: service_started
+    restart: unless-stopped
+    command: ['node', 'build/index.js']
+
+  zinalog:
+    image: ghcr.io/iamceeso/zinalog:latest
+    container_name: woss-zinalog
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      PORT: '4000'
+      HOSTNAME: '0.0.0.0'
+      DATABASE_PATH: /data/logs.db
+      TRUST_PROXY: 'false'
+      ENCRYPTION_KEY: ${ZINALOG_ENCRYPTION_KEY}
+    volumes:
+      - ./data/zinalog:/data
+
+volumes:
+  search_data:

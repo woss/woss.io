@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BGE Embedding Space — 3D</title>
+<script src="https://cdn.plot.ly/plotly-3.0.0.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #fafafa; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+#plot { width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<div id="plot"></div>
+<script>
+var data = [
+    {
+      x: [0.17929328386180698,0.14667951844092642,0.21263752066691846,-0.20439386511071828,-0.11821820913489106,-0.09271021003127032],
+      y: [0.19804618056032092,0.26591028405238515,0.015593661006320961,0.4110305174899138,0.5092377710803936,0.46074378388193943],
+      z: [0.15237576772777336,0.06716482575915718,0.08733464045964325,0.08745539474354717,0.010264350084229615,0.09784756444667463],
+      text: ["Search GitHub for Daniel's repositories","Find Daniel's open issues on GitHub","What commits has Daniel made","How many stars does woss-io have","Show me the open issues on woss.io","Who contributed to woss-io recently"],
+      mode: 'markers',
+      type: 'scatter3d',
+      name: 'Tool SEED_QUERIES',
+      marker: { size: 6, color: '#3b82f6', line: { color: '#fff', width: 1 } },
+      hoverinfo: 'text',
+    },
+    {
+      x: [0.008278286808414234,0.10376047098134596,0.28375974715162333,0.2077983233062681,-0.22669548936581307,0.12876601959671213,0.23733758963180102,0.2267515396262837,0.1738410785501443,0.1486489110193338,0.1399574319006744,0.13389779615915823,0.14832536543096317,0.2203234617289829,0.18000153948408962,0.21859493158170337,0.1660049611418038],
+      y: [-0.145700499353801,-0.1476095568325121,-0.0807928686443407,-0.13950166604444064,0.4208522855187021,-0.013190560091475357,0.0022091628314695206,-0.08300566059393603,-0.16604201251973477,-0.1748414395023177,0.14334453749591666,-0.19457380970124774,-0.17749535741211867,-0.014436841926481665,-0.24344336161626456,-0.15144241680655418,-0.1771797297104684],
+      z: [-0.18699875561244605,-0.17212293484257607,0.03882247972112466,0.013904027243404277,-0.010758821014843777,-0.07511996923576957,0.015132006819960919,0.03757501965019481,0.056163256785376106,0.0959793707449439,0.12637220730679286,-0.17725104644941578,0.00004644402721591223,0.0050255572143899,-0.06635529438154943,0.03406937985830526,0.012679129082406643],
+      text: ["Tell me about Daniel","Describe Daniel's work experience","What projects has Daniel founded?","What skills and technologies does Daniel use","Tell me about woss.io","Tell me about Daniel's experience with copyrights and IP?","What DevOps and cloud experience does Daniel have?","How has Daniel grown as a software developer","What did Daniel learn building Anagolay Network","What did Daniel learn building Macula","What did Daniel learn building Woss.io","Tell me about Daniel's entrepreneurial journey","What leadership lessons did Daniel learn at Kelp Digital","How did Daniel's platform engineering skills grow at Ipsos","What did Daniel learn from being a digital nomad","How did Daniel develop his data visualization skills","What did Daniel learn from his first startup at Biddl"],
+      mode: 'markers',
+      type: 'scatter3d',
+      name: 'RAG SEED_QUERIES',
+      marker: { size: 6, color: '#22c55e', line: { color: '#fff', width: 1 } },
+      hoverinfo: 'text',
+    },
+    {
+      x: [0.12811152732149456,0.1788079742178736,0.15674104758751756,0.27605264550050307,0.14864997071469738,0.2298555306123237],
+      y: [0.04240838562228928,0.038004326859823453,-0.08163682239070259,0.1186725151814614,0.10365936548300271,-0.07205350892285697],
+      z: [-0.0773542136447459,0.055987476848220294,-0.04634691295449765,0.12877635651985173,0.013948943037185546,0.054800593861859176],
+      text: ["Show me Daniel's portfolio","Show me Daniel's AI projects and implementations","Daniel's experience and his recent PRs","What open source projects has Daniel contributed to","Tell me about Daniel and his GitHub activity","What grants has Daniel received"],
+      mode: 'markers',
+      type: 'scatter3d',
+      name: 'Ambiguous',
+      marker: { size: 6, color: '#f59e0b', line: { color: '#fff', width: 1 } },
+      hoverinfo: 'text',
+    },
+    {
+      x: [-0.5276424705613398,-0.5525985780478271,-0.5021226064582414,-0.3865377006055045,-0.3891646036048654,-0.5242388418434746,-0.3331864299046225,-0.2586664664295205],
+      y: [-0.21458304440600492,-0.20518621141497526,-0.15833296881773035,0.023582841515113646,-0.007568253171834123,-0.21149583588482,-0.04494071543973854,0.020418231827293114],
+      z: [0.37304823755145133,0.407141006549945,0.23317005250112124,-0.45012476171405524,-0.41747342756681716,0.3087248399002182,-0.480068921750366,-0.3728920899117294],
+      text: ["who is haistlin?","what is haistlin?","tell me about haistlin","who are you?","what is your name?","explain the name haistlin","tell me about yourself","what do you do?"],
+      mode: 'markers',
+      type: 'scatter3d',
+      name: 'Meta',
+      marker: { size: 6, color: '#a855f7', line: { color: '#fff', width: 1 } },
+      hoverinfo: 'text',
+    },
+    {
+      x: [0.02054800644879548,0.14702070380785215,-0.43426971218192395],
+      y: [0.31009369967854544,-0.07899116440644739,-0.09976324447408695],
+      z: [0.08374042387017079,-0.014872820181322655,-0.049809383055029036],
+      text: ["Tool centroid","RAG centroid","Meta centroid"],
+      mode: 'markers',
+      type: 'scatter3d',
+      name: 'Centroids',
+      marker: { size: 14, symbol: 'diamond', color: ["#3b82f6","#22c55e","#a855f7"], line: { color: '#000', width: 1.5 } },
+      hoverinfo: 'text',
+    }
+];
+var layout = {
+  title: { text: 'BGE Embedding Space — Tool vs RAG (3D PCA)', font: { size: 16 } },
+  scene: {
+    xaxis: { title: 'PC1' },
+    yaxis: { title: 'PC2' },
+    zaxis: { title: 'PC3' },
+  },
+  margin: { l: 0, r: 0, b: 0, t: 50 },
+  paper_bgcolor: '#fafafa',
+  plot_bgcolor: '#fafafa',
+  legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.8)', bordercolor: '#ddd', borderwidth: 1 },
+};
+Plotly.newPlot('plot', data, layout, { responsive: true });
+</script>
+</body>
+</html>

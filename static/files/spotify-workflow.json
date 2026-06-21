@@ -1,0 +1,1988 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6,
+              "triggerAtMinute": 31
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1760,
+        496
+      ],
+      "id": "e652544d-951b-41f5-837f-3cc561f2d99e",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { track, track_id} = $input.item.json\nreturn { track, track_id}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        1280
+      ],
+      "id": "bb6fb031-8ad4-4d5c-b2c1-6e75cb59ea9b",
+      "name": "clean payload"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.spotify.com/v1/users/{{ $json.id.id }}/playlists",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "next,items(id,snapshot_id,tracks.total)"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{$response.body.next === null}}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -192,
+        1152
+      ],
+      "id": "2f11488c-4172-4490-beed-19b8327d6f88",
+      "name": "my playlists",
+      "alwaysOutputData": false,
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "spotify-cred-id",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=select id, snapshot_id from playlist:{{ $json.id }};",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        368,
+        1184
+      ],
+      "id": "fb7b7751-a691-442c-a452-7f053784b2e4",
+      "name": "synced playlists",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "snapshot_id",
+        "joinMode": "keepNonMatches",
+        "outputDataFrom": "input1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        608,
+        944
+      ],
+      "id": "5f6fb8d6-8674-46f9-9653-7793bc766e42",
+      "name": "missing playlists",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=select id, snapshot_id from playlist:{{ $json.id }} where snapshot_id != \"{{ $json.snapshot_id }}\";",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        720,
+        1264
+      ],
+      "id": "c1fb9187-55e1-4078-8a27-0773eced9173",
+      "name": "query playlist with last snapshot",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const isObjectEmpty = (objectName) => {\n  return Object.keys(objectName).length === 0\n}\nlet changedPlaylist = []\nfor (const item of $input.all()) {\n  if(!isObjectEmpty(item.json)){\n    changedPlaylist.push({\n      id:item.json.id.id,\n      snapshot_id: item.json.snapshot_id\n    })\n  }\n}\n\n\nreturn changedPlaylist;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        1408
+      ],
+      "id": "96069448-feae-4e53-97f4-607c6d3d98bc",
+      "name": "playlists that need sync",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "url": "=https://api.spotify.com/v1/me",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1248,
+        480
+      ],
+      "id": "7483902d-7640-4f26-9c50-38a0bd27411d",
+      "name": "get me",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "spotify-cred-id",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "user",
+        "id": "={{ $json.id }}",
+        "data": "={{ $json }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        496
+      ],
+      "id": "b448287d-5e98-41d5-af5b-7d6b120a307a",
+      "name": "upsert me",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        0,
+        1392
+      ],
+      "id": "fbebf8d3-16fb-4be8-84c5-1a46bf0e303c",
+      "name": "combine all calls"
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=select count() from playlist_track where in = playlist:{{ $json.id }} group all;",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        368,
+        1392
+      ],
+      "id": "3d6402e5-b0c7-4551-8a44-aefd877f258c",
+      "name": "query playlist_tracks",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        800,
+        1648
+      ],
+      "id": "f46da863-e4a5-4254-abda-1f0728722fe6",
+      "name": "missing track for playlists"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "count"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        608,
+        1440
+      ],
+      "id": "4e0aa66b-c0b2-4da6-8b93-f5cdcfaefaa3",
+      "name": "Aggregate db count"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "tracks.total",
+              "renameField": true,
+              "outputFieldName": "spotify_totals"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        368,
+        1584
+      ],
+      "id": "1e5cc8f2-dddd-44fb-9729-0602aa79648e",
+      "name": "Aggregate spotify data"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "id",
+              "renameField": true,
+              "outputFieldName": "playlist_ids"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        368,
+        1776
+      ],
+      "id": "b4c2a9c1-862f-4010-b517-a5fb254aa3c4",
+      "name": "Aggregate spotify ids"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.spotify.com/v1/playlists/{{ $json.id }}/tracks?offset=0&limit=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body.next }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{$response.body.next === null}}",
+              "requestInterval": 100
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1728,
+        1584
+      ],
+      "id": "5760929a-f59c-48a5-8075-73e40527a650",
+      "name": "get all tracks for playlist",
+      "alwaysOutputData": false,
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "spotify-cred-id",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let data = {\n  count: [0],\n  spotify_totals: [0],\n  playlist_ids: ['']\n}\n\nfor (const input of $input.all()) {\n  if (input.json.count) {\n    data.count = input.json.count\n  }\n  if (input.json.spotify_totals) {\n    data.spotify_totals = input.json.spotify_totals\n  }\n  if (input.json.playlist_ids) {\n    data.playlist_ids = input.json.playlist_ids\n  }\n}\n\nlet retData = []\n\nfor (let index = 0; index < data.playlist_ids.length; index++) {\n  const playlist_id = data.playlist_ids[index];\n  const dbCount = data.count[index];\n  const spotifyTotal = data.spotify_totals[index];\n  if(dbCount !== spotifyTotal) {\n    retData.push({\n      id:playlist_id,\n      dbCount,\n      spotifyTotal,\n      diff: spotifyTotal - dbCount\n    })\n  }\n}\n\nreturn retData;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        1632
+      ],
+      "id": "55eec156-0549-44f7-b30d-5d5a4955b6b6",
+      "name": "filter out synced playlists"
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "album",
+        "id": "={{ $json.album_id }}",
+        "data": "={{ $json.album }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        3216,
+        1472
+      ],
+      "id": "672d8312-7a38-4bd5-a390-bd309484d46d",
+      "name": "Upsert album",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1456,
+        1376
+      ],
+      "id": "cdb224f3-2843-44b9-ab5d-8c65b8580837",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "amount": 0.5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3680,
+        1664
+      ],
+      "id": "80bab392-9add-4942-bc5a-0e93fe887663",
+      "name": "Wait",
+      "webhookId": "120a548b-67b4-428f-b457-c30c6023181f"
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "diff"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1232,
+        1632
+      ],
+      "id": "fc6d7bd2-9ecf-46aa-848b-20cfe01ae078",
+      "name": "Sort by diff ASC"
+    },
+    {
+      "parameters": {
+        "numberInputs": 7
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3440,
+        1296
+      ],
+      "id": "f16c5842-5ee3-4e0b-ae0a-8e345257ce8a",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "resource": "relationship",
+        "fromRecordId": "=album:{{ $json.album_id }}",
+        "relationshipType": "album_track",
+        "toRecordId": "=track:{{ $json.track_id }}",
+        "options": {},
+        "connectionPooling": {
+          "retryAttempts": 0
+        }
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        3216,
+        1664
+      ],
+      "id": "d059bd72-203a-4caf-bb8d-f171b07cc1f6",
+      "name": "album_track",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=DELETE from playlist_track where in=playlist:{{ $('Loop Over Items').item.json.id }};",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        2176,
+        1296
+      ],
+      "id": "4f4991a5-16c1-4aeb-a400-f031bfeec4a4",
+      "name": "delete all playlist_track items for playlist",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=RELATE playlist:{{ $json.playlist_id }}->playlist_track->track:{{ $json.track_id }} SET added_at = d'{{ $json.added_at }}';",
+        "options": {},
+        "connectionPooling": {
+          "retryAttempts": 0
+        }
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        3216,
+        1088
+      ],
+      "id": "4b52d517-ef2c-41ca-9f8d-66688a6bbea9",
+      "name": "playlist_track",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "track",
+        "id": "={{ $json.track_id }}",
+        "data": "={{ $json.track }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        3216,
+        1280
+      ],
+      "id": "c06ac4f6-056c-4ef2-a11b-2cc11c02082b",
+      "name": "Upsert track from playlist",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "playlist",
+        "id": "={{ $json.playlist_id }}",
+        "data": "={{ $json.playlist }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        352,
+        -944
+      ],
+      "id": "ca774a2c-d1b8-43ce-a7a5-b67bd749ee2f",
+      "name": "Upsert playlist",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "playlist",
+        "operation": "getUserPlaylists",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        -480
+      ],
+      "id": "6b843ca5-8e79-4e52-b74d-1228689c8541",
+      "name": "Get a user's playlists",
+      "executeOnce": false,
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "spotify-cred-id",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "relationship",
+        "fromRecordId": "=user:`{{ $('upsert me').item.json.id.id }}`",
+        "relationshipType": "has_playlist",
+        "toRecordId": "=playlist:{{ $json.playlist_id }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        352,
+        -752
+      ],
+      "id": "d55bd4a1-2cd8-41d6-a28d-e10d665a9b51",
+      "name": "has_playlist",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "relationship",
+        "fromRecordId": "=user:`{{ $json.owner_id }}`",
+        "relationshipType": "playlist_owner",
+        "toRecordId": "=playlist:{{ $json.playlist_id }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        352,
+        -560
+      ],
+      "id": "1e80d4dd-e65e-4285-844e-d565c6e6e585",
+      "name": "playlist_owner",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "user",
+        "id": "={{ $json.owner_id }}",
+        "data": "={{ $json.owner }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        352,
+        -368
+      ],
+      "id": "50bc9382-3352-469f-aa88-1d188fde4244",
+      "name": "upsert_user as owner",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = []\nfor (const item of $input.all()) {\n  const {owner, tracks, ...playlistRest} = item.json\n  const {id, ...playlist} = playlistRest\n  const {id: owner_id, ...ownerRest} = owner\n  payload.push({owner:ownerRest, tracks,playlist, playlist_id:id, owner_id })\n}\n\nreturn payload;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -480
+      ],
+      "id": "d6b8f5fd-f8d1-49d9-b7ed-0fe9ecac485d",
+      "name": "remap keys and restructure"
+    },
+    {
+      "parameters": {
+        "resource": "library",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        928,
+        560
+      ],
+      "id": "84fbc830-a987-4492-96f7-0958d78b186c",
+      "name": "Get liked tracks",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "spotify-cred-id",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "track",
+        "id": "={{ $json.track_id }}",
+        "data": "={{ $json.track }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        176
+      ],
+      "id": "8d8569c0-da13-42d5-b0c9-6412e2453373",
+      "name": "Upsert track",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=RELATE {{ $('upsert me').item.json.id.tb }}:{{ $('upsert me').item.json.id.id }}->likes_track->track:{{ $json.track_id }} SET added_at = d'{{ $json.added_at }}';",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        -48
+      ],
+      "id": "987963cb-5c38-4cdc-96ae-08e7fe8de89c",
+      "name": "me likes",
+      "notesInFlow": false,
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        704,
+        -16
+      ],
+      "id": "5756b167-b9a4-4c21-9723-4f12cade958d",
+      "name": "Liked songs in sync"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{run:1}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        384
+      ],
+      "id": "447aa68c-e7a8-4c16-a0ef-dff435ef30c9",
+      "name": "dummy single run"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {message: \"Sync success\"}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        240
+      ],
+      "id": "a4a91094-1396-44b4-9ac2-f1e5d9cee13e",
+      "name": "success"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {message: \"Sync error\"}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        432
+      ],
+      "id": "a5276f8d-c280-44e2-8dcf-35e029f6e9da",
+      "name": "error"
+    },
+    {
+      "parameters": {
+        "jsCode": "const retArray = []\n\nfor (const item of $input.all()) {\n  const {id, album, ...restTrack} = item.json.track\n  const {id: album_id, ...restAlbum} = album\n  \n  retArray.push({\n    track_id:id, \n    album_id, \n    album:restAlbum, \n    track: restTrack,\n    added_at:item.json.added_at\n  })\n}\n\nreturn retArray;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        560
+      ],
+      "id": "10fb92d2-5ac3-49f3-bf67-b3c61d8ede82",
+      "name": "modify output"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "advanced": true,
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "out.id",
+              "field2": "track_id"
+            }
+          ]
+        },
+        "joinMode": "keepNonMatches",
+        "outputDataFrom": "input2",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1296,
+        240
+      ],
+      "id": "adb51aea-b6e6-46f6-8a18-fa9c53331dab",
+      "name": "match only missing tracks"
+    },
+    {
+      "parameters": {
+        "url": "https://api.spotify.com/v1/me/tracks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "=total"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16,
+        400
+      ],
+      "id": "372ebad9-0d73-4983-8c86-6ee340e408d2",
+      "name": "get tracks total",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "spotify-cred-id",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        192
+      ],
+      "id": "17ec8479-9eba-43d2-a106-b29d612d0ad2",
+      "name": "passthrough"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "advanced": true,
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "dbTotal",
+              "field2": "total"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        256,
+        192
+      ],
+      "id": "ecde6ad2-ff26-4e65-831c-757073cda5cd",
+      "name": "merge local & spotify",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "content": "# Sync liked tracks",
+        "height": 848,
+        "width": 2304,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        -80
+      ],
+      "id": "d2d9ed98-2bd1-4ae9-bb85-24c65d02ff54",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "# Sync playlists",
+        "height": 848,
+        "width": 912,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        -1008
+      ],
+      "id": "cb14a38c-4f6d-44e2-bd3b-a651ecdf1005",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "# Sync playlists tracks",
+        "height": 1184,
+        "width": 4288,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        880
+      ],
+      "id": "b2434c3e-33e5-49d4-9182-04ba740549bc",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3478646e-57f4-49e0-a241-29aefe83332e",
+              "leftValue": "={{$json}}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1936,
+        1440
+      ],
+      "id": "bee25a0e-9f0d-4248-9e89-7e76ee0664d6",
+      "name": "with result"
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "useDataOfInput": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2416,
+        1488
+      ],
+      "id": "a30eb71b-37f3-4787-9a96-0be2a4342afd",
+      "name": "fwd input 2"
+    },
+    {
+      "parameters": {
+        "jsCode": "function slugify(str) {\n  return str\n    .toLowerCase()\n    .trim()\n    .replace(/[\\s\\W-]+/g, '_') // Replace spaces and non-word chars with -\n    .replace(/^-+|-+$/g, '');  // Remove leading/trailing -\n}\n\nfunction idFromLocal(uri) {\n  const onlyValue = uri.replace(\"spotify:local:\", \"\");\n  // const parts = onlyValue.split(\":\");\n  // const artist = parts[0];\n  // const album = parts[2];\n  // const track = parts[1];\n  // const duration = parts[3];\n  return slugify(decodeURIComponent(onlyValue));\n}\n\nconst url = $input.first().json.href;\nconst match = url.match(/\\/playlists\\/([^/]+)(?:\\/|$)/);\nconst playlist_id = match ? match[1] : null;\nlet allItems = [];\n\n// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  for (const i of item.json.items) {\n    if (i.track) {\n      const {\n        id: origId,\n        album: { id: album_id, ...restAlbum },\n        ...restItem\n      } = i.track;\n      let id = origId;\n      if (!origId) {\n        // need to create a meaningful id\n        id = idFromLocal(restItem.uri);\n      }\n\n      const _i = Object.assign(\n        {},\n        i,\n        { track: restItem },\n        {\n          album: restAlbum,\n          album_id,\n          playlist_id,\n          track_id: id,\n        }\n      );\n      allItems.push(_i);\n    } else {\n      console.log(\"Missing track\", item);\n    }\n  }\n}\n\nreturn allItems;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2672,
+        1360
+      ],
+      "id": "147390a8-22d0-4796-8dd7-0e82fe822e09",
+      "name": "restructure payload"
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "album",
+        "id": "={{ $json.album_id }}",
+        "data": "={{ $json.album }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        384
+      ],
+      "id": "723e93dc-53d9-4b70-ad84-7c064564cc8a",
+      "name": "Upsert album from liked tracks",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=select count() as dbTotal from likes_track where in = {{$json.id.tb}}:{{ $json.id.id }} group all;",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        32,
+        64
+      ],
+      "id": "85975a1a-024a-444d-8f8e-b068ab8617a6",
+      "name": "get liked tracks count",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "=select * from likes_track where in = {{$('upsert me').item.json.id.tb}}:{{ $('upsert me').item.json.id.id }};",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        928,
+        256
+      ],
+      "id": "7c7f5c81-3fc5-4628-b7a8-fbf8a0348cae",
+      "name": "get all liked tracks",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1712,
+        1168
+      ],
+      "id": "1a327cbd-614e-435a-91dd-453a6e6a80c1",
+      "name": "done iterating"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cc28f07a-1fff-41e4-92ec-69e99084fe96",
+              "leftValue": "={{ $json }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "e418c917-e9cb-4493-b074-74f426f7f760",
+              "leftValue": "={{ $json.total }}",
+              "rightValue": "={{ $json.dbTotal }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        192
+      ],
+      "id": "2ef080e9-5643-49b1-a760-82babe46503e",
+      "name": "in sync"
+    },
+    {
+      "parameters": {
+        "operation": "upsertRecord",
+        "table": "artist",
+        "id": "={{ $json.item.artistId }}",
+        "data": "={{ $json.item }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        192,
+        -1472
+      ],
+      "id": "65ef7a23-eaaf-4b5f-9bc2-f16575a26fb7",
+      "name": "Upsert artists",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "myData",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        -1472
+      ],
+      "id": "1e434a51-e2b3-4247-b665-aab32cdce31e",
+      "name": "Get your followed artists",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "spotify-cred-id",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "relationship",
+        "fromRecordId": "={{$('upsert me').item.json.id.tb}}:{{$('upsert me').item.json.id.id}}",
+        "relationshipType": "follows",
+        "toRecordId": "={{ $json.id.tb }}:{{ $json.id.id }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        432,
+        -1472
+      ],
+      "id": "b85f55e6-dbc8-4351-b821-460605dea535",
+      "name": "Create a relationship",
+      "notesInFlow": false,
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nconst ret = []\nfor (const item of $input.all()) {\n  ret.push({item: {...item.json, artistId: item.json.id}})\n}\n\nreturn ret;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -1472
+      ],
+      "id": "4e853958-8d93-4e69-b324-5f05e445ea7a",
+      "name": "add artistId"
+    },
+    {
+      "parameters": {
+        "content": "# Sync following artists",
+        "height": 432,
+        "width": 1072,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        -1616
+      ],
+      "id": "70135716-01bd-4679-b01a-55e84ad3ad78",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "resource": "relationship",
+        "fromRecordId": "=album:{{ $json.album_id }}",
+        "relationshipType": "album_track",
+        "toRecordId": "=track:{{ $json.track_id }}",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        576
+      ],
+      "id": "1a70d279-fdc8-47ba-8310-a826dfba7ed6",
+      "name": "album_track from liked songs",
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "query",
+        "query": "DEFINE TABLE IF NOT EXISTS album TYPE ANY SCHEMALESS PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS album_id_idx ON album FIELDS id UNIQUE; DEFINE INDEX IF NOT EXISTS album_uri_idx ON album FIELDS uri UNIQUE;  DEFINE TABLE IF NOT EXISTS artist TYPE ANY SCHEMALESS PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS artist_id_idx ON artist FIELDS id UNIQUE; DEFINE INDEX IF NOT EXISTS artist_uri_idx ON artist FIELDS uri UNIQUE;  DEFINE TABLE IF NOT EXISTS playlist TYPE ANY SCHEMALESS PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS snapshot_id ON playlist FIELDS snapshot_id; DEFINE INDEX IF NOT EXISTS playlist_uri_idx ON playlist FIELDS uri UNIQUE;  DEFINE TABLE IF NOT EXISTS track TYPE NORMAL SCHEMALESS PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS track_index ON track FIELDS id UNIQUE; DEFINE INDEX IF NOT EXISTS track_uri_idx ON track FIELDS uri UNIQUE;  DEFINE TABLE IF NOT EXISTS user TYPE NORMAL SCHEMALESS PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS user_idx ON user FIELDS id UNIQUE; DEFINE INDEX IF NOT EXISTS user_uri_idx ON user FIELDS uri UNIQUE;  DEFINE TABLE IF NOT EXISTS album_track TYPE RELATION IN album OUT track SCHEMAFULL PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS album_track ON album_track FIELDS in, out UNIQUE;  DEFINE TABLE IF NOT EXISTS follows TYPE RELATION IN user OUT artist SCHEMAFULL PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS user_follow_artist ON follows FIELDS in, out UNIQUE;  DEFINE TABLE IF NOT EXISTS has_playlist TYPE RELATION IN user OUT playlist SCHEMALESS PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS user_playlist ON has_playlist FIELDS in, out UNIQUE;  DEFINE TABLE IF NOT EXISTS likes_track TYPE RELATION IN user OUT track SCHEMALESS PERMISSIONS NONE; DEFINE FIELD IF NOT EXISTS added_at ON likes_track TYPE datetime PERMISSIONS FULL; DEFINE INDEX IF NOT EXISTS user_likes_track ON likes_track FIELDS in, out UNIQUE;  DEFINE TABLE IF NOT EXISTS playlist_owner TYPE RELATION IN user OUT playlist SCHEMAFULL PERMISSIONS NONE; DEFINE INDEX IF NOT EXISTS playlist_owner_idx ON playlist_owner FIELDS in, out UNIQUE;  DEFINE TABLE IF NOT EXISTS playlist_track TYPE RELATION IN playlist OUT track SCHEMALESS PERMISSIONS NONE; DEFINE FIELD IF NOT EXISTS added_at ON playlist_track TYPE datetime PERMISSIONS FULL; DEFINE INDEX IF NOT EXISTS playlist_track_id_idx ON playlist_track FIELDS id UNIQUE;",
+        "options": {},
+        "connectionPooling": {}
+      },
+      "type": "n8n-nodes-surrealdb.surrealDb",
+      "typeVersion": 1,
+      "position": [
+        -1520,
+        480
+      ],
+      "id": "7adba401-b78a-4fa2-bc2a-6d9d6c05fdc7",
+      "name": "setup database",
+      "alwaysOutputData": true,
+      "credentials": {
+        "surrealDbApi": {
+          "id": "surrealdb-cred-id",
+          "name": "SurrealDB woss-spotify"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "setup database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clean payload": {
+      "main": [
+        [
+          {
+            "node": "Upsert track from playlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "my playlists": {
+      "main": [
+        [
+          {
+            "node": "combine all calls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "synced playlists": {
+      "main": [
+        [
+          {
+            "node": "missing playlists",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "missing playlists": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "query playlist with last snapshot": {
+      "main": [
+        [
+          {
+            "node": "playlists that need sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "playlists that need sync": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get me": {
+      "main": [
+        [
+          {
+            "node": "upsert me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "upsert me": {
+      "main": [
+        [
+          {
+            "node": "my playlists",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get a user's playlists",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "passthrough",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get your followed artists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "combine all calls": {
+      "main": [
+        [
+          {
+            "node": "synced playlists",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "missing playlists",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "query playlist with last snapshot",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "query playlist_tracks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Aggregate spotify data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Aggregate spotify ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "query playlist_tracks": {
+      "main": [
+        [
+          {
+            "node": "Aggregate db count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "missing track for playlists": {
+      "main": [
+        [
+          {
+            "node": "filter out synced playlists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate db count": {
+      "main": [
+        [
+          {
+            "node": "missing track for playlists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate spotify data": {
+      "main": [
+        [
+          {
+            "node": "missing track for playlists",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Aggregate spotify ids": {
+      "main": [
+        [
+          {
+            "node": "missing track for playlists",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "get all tracks for playlist": {
+      "main": [
+        [
+          {
+            "node": "with result",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "fwd input 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "filter out synced playlists": {
+      "main": [
+        [
+          {
+            "node": "Sort by diff ASC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert album": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "done iterating",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "get all tracks for playlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sort by diff ASC": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "album_track": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 6
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "delete all playlist_track items for playlist": {
+      "main": [
+        [
+          {
+            "node": "fwd input 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "playlist_track": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Upsert track from playlist": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get a user's playlists": {
+      "main": [
+        [
+          {
+            "node": "remap keys and restructure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "remap keys and restructure": {
+      "main": [
+        [
+          {
+            "node": "Upsert playlist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "has_playlist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "playlist_owner",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "upsert_user as owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get liked tracks": {
+      "main": [
+        [
+          {
+            "node": "modify output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert track": {
+      "main": [
+        [
+          {
+            "node": "success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "me likes": {
+      "main": [
+        [
+          {
+            "node": "success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "dummy single run": {
+      "main": [
+        [
+          {
+            "node": "Get liked tracks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "get all liked tracks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "modify output": {
+      "main": [
+        [
+          {
+            "node": "match only missing tracks",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "match only missing tracks": {
+      "main": [
+        [
+          {
+            "node": "me likes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upsert track",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upsert album from liked tracks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "album_track from liked songs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get tracks total": {
+      "main": [
+        [
+          {
+            "node": "merge local & spotify",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "passthrough": {
+      "main": [
+        [
+          {
+            "node": "get liked tracks count",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "get tracks total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "merge local & spotify": {
+      "main": [
+        [
+          {
+            "node": "in sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "with result": {
+      "main": [
+        [
+          {
+            "node": "delete all playlist_track items for playlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fwd input 2": {
+      "main": [
+        [
+          {
+            "node": "restructure payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "restructure payload": {
+      "main": [
+        [
+          {
+            "node": "album_track",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upsert album",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "clean payload",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "playlist_track",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert album from liked tracks": {
+      "main": [
+        [
+          {
+            "node": "success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get liked tracks count": {
+      "main": [
+        [
+          {
+            "node": "merge local & spotify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get all liked tracks": {
+      "main": [
+        [
+          {
+            "node": "match only missing tracks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "in sync": {
+      "main": [
+        [
+          {
+            "node": "Liked songs in sync",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "dummy single run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert artists": {
+      "main": [
+        [
+          {
+            "node": "Create a relationship",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get your followed artists": {
+      "main": [
+        [
+          {
+            "node": "add artistId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "add artistId": {
+      "main": [
+        [
+          {
+            "node": "Upsert artists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "album_track from liked songs": {
+      "main": [
+        [
+          {
+            "node": "success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "setup database": {
+      "main": [
+        [
+          {
+            "node": "get me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "d7fb160d5014ebd550aa3e4b066299b782f6e449c5c9fa9ba5f6dc4ea6d4fc25"
+  }
+}
