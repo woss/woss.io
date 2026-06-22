@@ -107,7 +107,7 @@
   {#if !isChatPage}
     <nav
       aria-label="Main navigation"
-      class="shrink-0 h-(--nav-height) bg-surface/80 backdrop-blur-md border-b border-[rgba(255,255,255,0.08)] max-md:bg-transparent max-md:backdrop-blur-none max-md:border-b-0"
+      class="relative z-50 shrink-0 h-(--nav-height) bg-surface/80 backdrop-blur-md border-b border-[rgba(255,255,255,0.08)] max-md:bg-transparent max-md:backdrop-blur-none max-md:border-b-0"
     >
       <div class="flex items-center justify-between h-full mx-auto px-8 max-md:px-4">
         <a
@@ -137,7 +137,7 @@
         </div>
 
         <Button
-          variant="ghost" square size="md"
+          variant="ghost" size="md"
           icon={mobileMenuOpen ? 'lucide:x' : 'lucide:menu'}
           aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           aria-expanded={mobileMenuOpen}
@@ -152,7 +152,7 @@
       bind:open={mobileMenuOpen}
       direction="top"
       class="h-dvh max-h-dvh"
-      overlay={false}
+      overlay
       modal
       dismissible
       handle={false}
