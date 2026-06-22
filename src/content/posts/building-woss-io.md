@@ -404,6 +404,6 @@ Empty, it answers
 
 ---
 
-The code is open source at [github.com/woss/woss.io](https://github.com/woss/woss.io). The site runs on a cheap VPS with SQLite, USearch, and Transformers.js — no cloud services, only API dependency is the LLM provider.
+The code is open source at [github.com/woss/woss.io](https://github.com/woss/woss.io). The site runs on a cheap VPS with SQLite, USearch, and Transformers.js — the only cloud API dependency is the LLM provider.
 
 Is it over-engineered? Probably. But I'd rather show you what I can build than tell you.
