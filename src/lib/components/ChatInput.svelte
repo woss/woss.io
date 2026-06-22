@@ -150,9 +150,9 @@
     </div>
     <!-- Submit / Stop button -->
     {#if isLoading}
-      <Button icon="lucide:square" variant="soft" color="secondary" square size="md" class="!rounded-lg" onclick={handleStop} aria-label="Stop" />
+      <Button icon="lucide:square" variant="soft" color="secondary" square size="md" onclick={handleStop} aria-label="Stop" />
     {:else}
-      <Button icon="lucide:arrow-up" variant="solid" color="primary" square size="md" class="!rounded-lg" disabled={!hasText || isOverLimit} onclick={handleSend} aria-label="Send message" />
+      <Button icon="lucide:arrow-up" variant="solid" color="primary" square size="md" disabled={!hasText || isOverLimit} onclick={handleSend} aria-label="Send message" />
     {/if}
   </div>
   {@render toolbar()}
