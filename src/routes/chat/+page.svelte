@@ -5,6 +5,7 @@ import { resolve } from '$app/paths';
 import { matchSlashCommand } from '$lib/chat/slash-commands';
 import ChatSidebar from '$lib/components/ChatSidebar.svelte';
 import { Button, Icon } from 'sv5ui';
+import ChatInput from '$lib/components/ChatInput.svelte';
 import { toast } from 'svelte-sonner';
 import { SUGGESTED_QUESTIONS } from '$lib/chat/suggested-questions';
 import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
@@ -18,6 +19,11 @@ import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/c
  let showDeleteConfirm = $state<string | null>(null);
 let deleting = $state(false);
 let showMobile = $state(false);
+
+const MAX_CHARS = 500;
+let messageText = $state('');
+let isLoading = $state(false);
+let inputEl = $state<HTMLElement | null>(null);
 
 // Load userId from localStorage
  $effect(() => {
@@ -36,6 +42,42 @@ let showMobile = $state(false);
  .then(d => { chats = d.chats; chatsLoaded = true; })
  .catch(() => { chatsLoaded = true; });
  });
+
+async function sendMessage(text: string): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed || isLoading || trimmed.length > MAX_CHARS || !userId) return;
+
+  // Intercept navigation slash commands — skip chat creation
+  const matched = matchSlashCommand(trimmed);
+  if (matched) {
+    if (matched.name === 'show_posts') {
+      goto(resolve('/posts'));
+      return;
+    }
+    if (matched.name === 'show_experience') {
+      goto(resolve('/experience'));
+      return;
+    }
+    if (matched.name === 'about') {
+      goto(resolve('/about'));
+      return;
+    }
+    if (matched.name === 'show_chats') {
+      showMobile = true;
+      return;
+    }
+  }
+
+  if (!canCreateChat) {
+    toast.error(`Maximum ${config.public.maxChats} chats reached`);
+    return;
+  }
+
+  isLoading = true;
+  const id = await createChatApi(userId);
+  if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(trimmed)}`));
+  isLoading = false;
+}
 
  let canCreateChat = $derived(chats.length < config.public.maxChats);
 
@@ -71,15 +113,16 @@ let showMobile = $state(false);
  <title>Chats — woss</title>
 </svelte:head>
 
-<div class="flex flex-1 min-h-0">
+<div class="flex flex-col lg:flex-row flex-1 min-h-0">
   <!-- Mobile header bar (hamburger + title) -->
   <div class="md:hidden flex items-center justify-between px-4 py-3 border-b border-white/8 bg-surface shrink-0">
     <h1 class="font-heading text-sm font-semibold text-on-surface">Chats</h1>
     <Button
-      variant="ghost" square size="sm"
+      variant="outline" square size="sm"
       icon="lucide:menu"
       aria-label="Open chat list"
       onclick={() => (showMobile = true)}
+      class="[&_button]:rounded-md"
     />
   </div>
   <ChatSidebar
@@ -119,19 +162,32 @@ let showMobile = $state(false);
  </div>
  </div>
 {:else}
- <div class="flex-1 flex flex-col items-center justify-center bg-surface px-4 py-8">
- <h2 class="text-xl font-heading font-semibold text-on-surface mb-6">Why not start with these?</h2>
- <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl w-full">
-  {#each SUGGESTED_QUESTIONS as q (q)}
- <button
- onclick={() => askQuestion(q)}
- class="text-left flex items-start gap-3 p-4 rounded-xl bg-surface-container-high border border-[rgba(255,255,255,0.06)] hover:border-primary/30 hover:shadow-[0_0_20px_rgba(0,218,140,0.06)] hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
- >
- <Icon name="lucide:message-circle" size={18} class="shrink-0 mt-0.5 text-on-surface-variant" />
-  <span class="text-sm/snug text-on-surface">{q}</span>
- </button>
- {/each}
- </div>
- </div>
+  <div class="flex-1 flex flex-col bg-surface min-h-0">
+    <div class="flex-1 overflow-y-auto flex flex-col items-center justify-center px-4 py-8">
+      <h2 class="text-xl font-heading font-semibold text-on-surface mb-6">Why not start with these?</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl w-full">
+        {#each SUGGESTED_QUESTIONS as q (q)}
+          <button
+            onclick={() => askQuestion(q)}
+            class="text-left flex items-start gap-3 p-4 rounded-xl bg-surface-container-high border border-[rgba(255,255,255,0.06)] hover:border-primary/30 hover:shadow-[0_0_20px_rgba(0,218,140,0.06)] hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+          >
+            <Icon name="lucide:message-circle" size={18} class="shrink-0 mt-0.5 text-on-surface-variant" />
+            <span class="text-sm/snug text-on-surface">{q}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+    <!-- Chat input at bottom -->
+    <div class="sticky bottom-0 bg-surface pt-2 pb-4 px-4 max-md:px-1">
+      <div class="mx-auto w-full max-w-[720px]">
+        <ChatInput
+          bind:messageText
+          bind:isLoading
+          bind:inputEl
+          onsend={sendMessage}
+        />
+      </div>
+    </div>
+  </div>
 {/if}
 </div>

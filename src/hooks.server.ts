@@ -16,7 +16,7 @@ function buildCspPolicy(): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' https://u.macula.link data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' https://*.datadoghq.eu https://browser-intake-datadoghq.eu",
+    "connect-src 'self' https://*.datadoghq.eu https://browser-intake-datadoghq.eu https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
     "worker-src 'self' blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",

@@ -107,7 +107,8 @@
   {#if !isChatPage}
     <nav
       aria-label="Main navigation"
-      class="shrink-0 h-(--nav-height) bg-surface/80 backdrop-blur-md border-b border-[rgba(255,255,255,0.08)] max-md:bg-transparent max-md:backdrop-blur-none max-md:border-b-0"
+      class="relative z-50 shrink-0 h-(--nav-height) bg-surface/80 backdrop-blur-md border-b border-[rgba(255,255,255,0.08)] max-md:bg-transparent max-md:backdrop-blur-none max-md:border-b-0"
+      class:max-md:hidden={page.url.pathname === '/' || page.url.pathname.startsWith('/chat')}
     >
       <div class="flex items-center justify-between h-full mx-auto px-8 max-md:px-4">
         <a
@@ -142,7 +143,7 @@
           aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           aria-expanded={mobileMenuOpen}
           onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
-          class="md:hidden"
+          class="md:hidden [&_button]:rounded-md"
         />
       </div>
     </nav>
