@@ -10,7 +10,7 @@ import { SUGGESTED_QUESTIONS } from '$lib/chat/suggested-questions';
 import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
  import type { Chat } from '$lib/chat/types';
  import { config } from '$lib/config';
- import { USER_ID_KEY } from '$lib/chat/constants';
+ import { getUserId } from '$lib/chat/constants';
 
  let userId = $state('');
  let chats = $state<Chat[]>([]);
@@ -23,7 +23,7 @@ let showMobile = $state(false);
  $effect(() => {
  if (!browser) return;
  try {
- const stored = localStorage.getItem(USER_ID_KEY);
+ const stored = getUserId();
  if (stored) userId = stored;
  } catch { /* ignore */ }
  });

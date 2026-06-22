@@ -6,7 +6,7 @@
   import { matchSlashCommand } from '$lib/chat/slash-commands';
   import { parse } from 'devalue';
   import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
-  import { USER_ID_KEY } from '$lib/chat/constants';
+  import { USER_ID_KEY, getUserId } from '$lib/chat/constants';
   import Seo from '$lib/components/Seo.svelte';
 
   import ChatSidebar from '$lib/components/ChatSidebar.svelte';
@@ -59,7 +59,7 @@
   $effect(() => {
     if (!browser) return;
     try {
-      const stored = localStorage.getItem(USER_ID_KEY);
+      const stored = getUserId();
       if (stored) {
         userId = stored;
       } else {

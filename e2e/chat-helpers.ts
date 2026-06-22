@@ -14,7 +14,7 @@ export const TEST_USER_ID = 'e2e-test-user';
  */
 export function setupTestUser(page: Page): void {
   page.addInitScript((uid: string) => {
-    localStorage.setItem('woss-io_user-id', uid);
+    localStorage.setItem('woss:user-id', uid);
   }, TEST_USER_ID);
 }
 

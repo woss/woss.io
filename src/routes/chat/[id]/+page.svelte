@@ -32,7 +32,7 @@
     getCompletedToolCount,
   } from '$lib/stores/chat-sse.svelte';
   import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
-  import { USER_ID_KEY } from '$lib/chat/constants';
+  import { USER_ID_KEY, getUserId } from '$lib/chat/constants';
   import { SvelteMap } from 'svelte/reactivity';
 
   let { data } = $props() as { data: { messages: ChatMessage[]; locked: boolean; chatOwnerId?: string } };
@@ -489,7 +489,7 @@
     if (!browser || !chatId || !data?.chatOwnerId) return;
     let id: string;
     try {
-      const stored = localStorage.getItem(USER_ID_KEY);
+      const stored = getUserId();
       if (stored) {
         id = stored;
       } else {
