@@ -17,6 +17,9 @@
   import { randomUUID } from '$lib/utils/random-uuid';
   import { toast } from 'svelte-sonner';
   import { Banner } from 'sv5ui';
+  import FeatureTour from '$lib/components/FeatureTour.svelte';
+  import { TOUR_DEFINITIONS } from '$lib/chat/tour-config';
+  import type { TourDefinition } from '$lib/chat/tour-config';
 
   let { data } = $props();
 
@@ -25,6 +28,8 @@
   let messageText = $state('');
   let isLoading = $state(false);
   let inputEl: HTMLElement | null = $state(null);
+  let dismissedFeatures: string[] = $state([]);
+  let activeTour: TourDefinition | undefined = $state();
 
   interface Chat {
     id: string;
@@ -70,6 +75,18 @@
     } catch {
       userId = randomUUID();
     }
+  });
+
+  // Fetch dismissed tours once userId is set
+  $effect(() => {
+    if (!browser || !userId) return;
+    fetch(`/api/tours?userId=${encodeURIComponent(userId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        dismissedFeatures = data.dismissed ?? [];
+        activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
+      })
+      .catch(() => {});
   });
 
   onMount(() => {
@@ -139,6 +156,17 @@
     if (!canCreateChat) return;
     const id = await createChatApi(userId);
     if (id) goto(resolve(`/chat/${id}`));
+  }
+
+  function handleDismissTour(): void {
+    if (!activeTour || !userId) return;
+    fetch('/api/tours/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, featureIds: [activeTour.featureId] }),
+    }).catch(() => {});
+    dismissedFeatures = [...dismissedFeatures, activeTour.featureId];
+    activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
   }
 </script>
 
@@ -280,3 +308,12 @@
     <div class="relative z-2"></div>
   {/if}
 </div>
+
+{#if activeTour}
+  <FeatureTour
+    targetSelector={activeTour.targetSelector}
+    title={activeTour.title}
+    content={activeTour.content}
+    ondismiss={handleDismissTour}
+  />
+{/if}
