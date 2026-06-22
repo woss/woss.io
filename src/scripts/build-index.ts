@@ -14,6 +14,7 @@ import { embedTexts, releaseExtractor } from '../lib/server/embed.js';
 import { chunkContent } from './chunk-content.js';
 import { initDatabase } from '../lib/server/schema.js';
 import { initLogger, CAT, createLogger } from '../lib/server/logger.js';
+import { dispose } from '@logtape/logtape';
 import { centroidDataChanged, embedAndComputeCentroids, saveCentroids } from './seed-data.js';
 import { saveEmbeddingVisualizations } from './visualize-embedding-space.js';
 
@@ -609,16 +610,18 @@ const isMainScript = process.argv[1] && resolve(process.argv[1]) === fileURLToPa
 
 if (isMainScript) {
   buildIndex()
-    .then(() => {
+    .then(async () => {
+      await dispose();
       process.exit(0);
     })
-    .catch((err) => {
+    .catch(async (err) => {
       log.error`Build failed: ${err}`;
       try {
         closeDb();
       } catch {
         /* ignore close errors during crash */
       }
+      await dispose();
       process.exit(1);
     });
 }
