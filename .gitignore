@@ -1,0 +1,15 @@
+prod/
+node_modules
+.playwright-mcp/
+.svelte-kit/
+dist/
+build/
+data/
+.DS_Store
+.env
+test-results/
+playwright-report/
+e2e/screenshots/
+coverage/
+# *.png
+tmp/

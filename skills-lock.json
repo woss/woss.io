@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "skills": {
+    "blog-writing-guide": {
+      "source": "getsentry/skills",
+      "sourceType": "github",
+      "skillPath": "skills/blog-writing-guide/SKILL.md",
+      "computedHash": "f885b9890d8a1c43e8ed0386e2ef2c17e941a403aa354513d6b844e99229ffb7"
+    },
+    "but": {
+      "source": "gitbutlerapp/gitbutler",
+      "sourceType": "github",
+      "computedHash": "65c77d3ee7168d8abdd17c5fd478d3bac800b97745a02488cebfa29a20370dac"
+    },
+    "caveman": {
+      "source": "juliusbrussee/caveman",
+      "sourceType": "github",
+      "skillPath": "skills/caveman/SKILL.md",
+      "computedHash": "dfbf85749fd474feeb0bbe60c779795ecd5dbec0083299b56e68916bc3ddd8c9"
+    },
+    "copywriting": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "skillPath": "skills/copywriting/SKILL.md",
+      "computedHash": "d3191c3ad90610e0cacecf638d927418852264fabbd6e81c045094dad7d96f11"
+    },
+    "deno-typescript": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "computedHash": "53eb1146a49f04097769971b6cc817b5c7ee852e6f41860a29bcc15c1774a251"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336"
+    },
+    "sveltekit-structure": {
+      "source": "spences10/svelte-skills-kit",
+      "sourceType": "github",
+      "skillPath": "plugins/svelte-skills/skills/sveltekit-structure/SKILL.md",
+      "computedHash": "eef66314ca437f13272afc3db7e149b0e39a8b734040d4b0affa01697352e511"
+    },
+    "sveltekit-svelte5-tailwind-skill": {
+      "source": "claude-skills/sveltekit-svelte5-tailwind-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "bb72a52a2c415aa8743bf3146dd615f9084e17a8a05e2198f8c3ba23a8053b8b"
+    },
+    "tailwind-design-system": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md",
+      "computedHash": "cd61afd28f594e8b6712b61749209cbb4466e3eec4e4223793bbd97fc85c1b63"
+    },
+    "typescript-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "computedHash": "1676ebbc84a1d9506b46d7978b91c4bce30d189ac1c619a9e875becd6e1c2c55"
+    },
+    "vitest": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "computedHash": "04ed1b09da8ac778d693ad12fab49b1c48aadfe1758fe13eb4d6de3fdcbb22f4"
+    }
+  }
+}
