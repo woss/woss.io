@@ -9,6 +9,22 @@ import { env } from '$env/dynamic/private';
 
 const APP_ORIGIN = config().app.origin;
 
+function buildCspPolicy(): string {
+  const directives = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.datadoghq.eu",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' https://u.macula.link data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' https://*.datadoghq.eu https://browser-intake-datadoghq.eu",
+    "worker-src 'self' blob:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ];
+  return directives.join('; ');
+}
+
 let logInitialized = false;
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -61,9 +77,22 @@ export const handle: Handle = async ({ event, resolve }) => {
   const traceId = otelCtx?.traceId ?? generateTraceId();
   const spanId = otelCtx?.spanId ?? generateSpanId();
   const response = await withTrace(traceId, spanId, () => resolve(event));
-  if (response.status === 404) {
+
+  // CSP headers
+  const csp = buildCspPolicy();
+  const responseHeaders = new Headers(response.headers);
+  if (!responseHeaders.has('Content-Security-Policy')) {
+    responseHeaders.set('Content-Security-Policy', csp);
+  }
+  const cspResponse = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders,
+  });
+
+  if (cspResponse.status === 404) {
     const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
     log.warn`[404] ${event.request.method} ${event.url.pathname} UA=${event.request.headers.get('user-agent') ?? 'none'} IP=${ip}`;
   }
-  return response;
+  return cspResponse;
 };

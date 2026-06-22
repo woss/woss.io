@@ -1,5 +1,6 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { callWebhook } from '$lib/server/webhooks';
+import { checkRateLimit } from '$lib/server/rate-limiter';
 import { lookupCountry } from '$lib/server/geo';
 import { CAT, createLogger } from '$lib/server/logger';
 import { setReaction, softDeleteMessage } from '$lib/server/db';
@@ -17,6 +18,18 @@ const JSON_HEADERS = {
 
 // POST /api/messages/[messageId]/report — report a message
 export async function POST(event: RequestEvent): Promise<Response> {
+  const ip = getClientIP(event);
+  const rateCheck = checkRateLimit(ip);
+  if (!rateCheck.allowed) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429,
+      headers: {
+        'content-type': 'application/json',
+        'retry-after': String(Math.ceil((rateCheck.resetAt - Date.now()) / 1000)),
+      },
+    });
+  }
+
   const messageId = event.params.messageId;
 
   if (!messageId) {

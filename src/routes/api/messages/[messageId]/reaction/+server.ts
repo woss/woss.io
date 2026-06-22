@@ -1,5 +1,6 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { setReaction, deleteReaction, getReaction } from '$lib/server/db';
+import { checkRateLimit } from '$lib/server/rate-limiter';
 import { CAT, createLogger } from '$lib/server/logger';
 import { callWebhook } from '$lib/server/webhooks';
 import { lookupCountry } from '$lib/server/geo';
@@ -55,6 +56,18 @@ export async function GET(event: RequestEvent): Promise<Response> {
 
 // POST /api/messages/[messageId]/reaction — set or update a reaction
 export async function POST(event: RequestEvent): Promise<Response> {
+  const ip = getClientIP(event);
+  const rateCheck = checkRateLimit(ip);
+  if (!rateCheck.allowed) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429,
+      headers: {
+        'content-type': 'application/json',
+        'retry-after': String(Math.ceil((rateCheck.resetAt - Date.now()) / 1000)),
+      },
+    });
+  }
+
   const messageId = event.params.messageId;
 
   if (!messageId) {
@@ -119,6 +132,18 @@ export async function POST(event: RequestEvent): Promise<Response> {
 
 // DELETE /api/messages/[messageId]/reaction — remove a reaction
 export async function DELETE(event: RequestEvent): Promise<Response> {
+  const ip = getClientIP(event);
+  const rateCheck = checkRateLimit(ip);
+  if (!rateCheck.allowed) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429,
+      headers: {
+        'content-type': 'application/json',
+        'retry-after': String(Math.ceil((rateCheck.resetAt - Date.now()) / 1000)),
+      },
+    });
+  }
+
   const messageId = event.params.messageId;
   const userId = getUserId(event);
 
