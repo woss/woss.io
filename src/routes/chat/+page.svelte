@@ -76,10 +76,11 @@ let showMobile = $state(false);
   <div class="md:hidden flex items-center justify-between px-4 py-3 border-b border-white/8 bg-surface shrink-0">
     <h1 class="font-heading text-sm font-semibold text-on-surface">Chats</h1>
     <Button
-      variant="ghost" square size="sm"
+      variant="outline" square size="sm"
       icon="lucide:menu"
       aria-label="Open chat list"
       onclick={() => (showMobile = true)}
+      class="[&_button]:rounded-md"
     />
   </div>
   <ChatSidebar
