@@ -62,6 +62,7 @@ export function parseMcpServers(raw: string | undefined): McpServerConfig[] {
     throw new Error(
       `Failed to parse MCP_SERVERS (after env var resolution): ${errMsg}. ` +
         `Raw (first 200 chars): ${raw.slice(0, 200)}`,
+      { cause: e },
     );
   }
 

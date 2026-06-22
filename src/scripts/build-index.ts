@@ -603,12 +603,16 @@ async function buildIndex(): Promise<void> {
   closeDb();
 }
 
-buildIndex().catch((err) => {
-  log.error`Build failed: ${err}`;
-  try {
-    closeDb();
-  } catch {
-    /* ignore close errors during crash */
-  }
-  process.exit(1);
-});
+buildIndex()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    log.error`Build failed: ${err}`;
+    try {
+      closeDb();
+    } catch {
+      /* ignore close errors during crash */
+    }
+    process.exit(1);
+  });

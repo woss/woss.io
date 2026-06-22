@@ -5,7 +5,7 @@
 import { mcp } from './client.ts';
 import { config } from '$lib/server/config';
 import { CAT, createLogger } from '$lib/server/logger';
-import type { McpToolDefinition, McpToolCallResult } from './client.ts';
+import type { McpToolCallResult } from './client.ts';
 import { toRecord } from './utils.ts';
 
 const log = createLogger(CAT.mcp);
@@ -63,66 +63,11 @@ export interface McpToolDef {
   inputSchema?: Record<string, unknown>;
 }
 
-interface OpenAiTool {
-  type: 'function';
-  function: {
-    name: string;
-    description?: string;
-    parameters: Record<string, unknown>;
-  };
-}
-
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
-let _openAiToolsCache: { data: OpenAiTool[]; ts: number } | null = null;
 let _mcpToolDefsCache: { data: McpToolDef[]; ts: number } | null = null;
 let _mcpResourceContent: Map<string, { data: string; ts: number }> | null = null;
 let _mcpPromptContent: { data: string; ts: number } | null = null;
-
-/** @group OpenAI Tool Format */
-
-/**
- * Map an MCP tool definition to OpenAI function-calling format.
- * Description must include TOOL_ONLY_HINT before calling — this function does not add it.
- */
-function toOpenAiTool(tool: McpToolDefinition): OpenAiTool {
-  return {
-    type: 'function',
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.inputSchema || { type: 'object', properties: {} },
-    },
-  };
-}
-
-function resetMcpToolDefsCache(): void {
-  _mcpToolDefsCache = null;
-}
-
-function resetOpenAiToolsCache(): void {
-  _openAiToolsCache = null;
-}
-
-/**
- * Fetch all MCP tools and return them in OpenAI function-calling format.
- * Results are cached so subsequent calls return the same list.
- */
-async function getOpenAiTools(): Promise<OpenAiTool[]> {
-  if (_openAiToolsCache && Date.now() - _openAiToolsCache.ts < CACHE_TTL_MS) return _openAiToolsCache.data;
-
-  const tools = await mcp.listTools();
-  const mapped = tools.map((t) =>
-    toOpenAiTool({
-      name: t.name,
-      serverId: t.serverId,
-      description: TOOL_DESCRIPTION_OVERRIDES[t.name] ?? t.description ?? '',
-      inputSchema: toRecord(t.inputSchema),
-    }),
-  );
-  _openAiToolsCache = { data: mapped, ts: Date.now() };
-  return mapped;
-}
 
 /**
  * Fetch all MCP tools and return them in McpToolDef format.
@@ -150,7 +95,6 @@ export async function getMcpToolDefs(): Promise<McpToolDef[]> {
       await mcp.reconnectTools();
       // Invalidate caches so next request refetches with Macula tools
       _mcpToolDefsCache = null;
-      _openAiToolsCache = null;
       log.warn`Macula: reconnect completed — tools may now be available`;
     })();
     _reconnectPromise.finally(() => {
@@ -229,11 +173,4 @@ export async function getMcpPromptContent(): Promise<string> {
     log.info`📋 prompts: ${prompts.map((p) => p.name).join(', ')}`;
   }
   return data;
-}
-
-function resetMcpResourceContent(): void {
-  _mcpResourceContent = null;
-}
-function resetMcpPromptContent(): void {
-  _mcpPromptContent = null;
 }

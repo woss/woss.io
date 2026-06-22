@@ -104,7 +104,7 @@
       <div>
         <p class="font-heading text-2xl text-on-surface m-0">Daniel Maricic</p>
         <p class="font-body text-sm text-on-surface-variant mt-1 m-0 max-w-md max-md:mx-auto">
-          Forever learn and educate along the way. Always question the status-quo
+          Forever learn and educate along the way. Always question the status-quo — Barcelona
         </p>
       </div>
     </div>
