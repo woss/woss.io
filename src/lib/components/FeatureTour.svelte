@@ -14,7 +14,7 @@
   } = $props();
 
   let cardEl: HTMLDivElement | undefined = $state();
-  let style = $state('');
+  let style = $state('position:fixed;z-index:999');
   let arrowStyle = $state('');
   function position(): void {
     const target = document.querySelector(targetSelector);
