@@ -341,9 +341,8 @@ describe('streamWithRetry', () => {
       new Map([['traverse', 'macula']]),
     );
 
-    // answerText accumulates across retries (including failed hallucination attempts)
+    // answerText only contains the successful retry attempt's output
     expect(result.answerText).toContain('I need to call tools first');
-    expect(result.answerText).toContain('macula.link');
     // Retry succeeded — lastError is reset to null on the successful attempt
     expect(result.lastError).toBeNull();
   });

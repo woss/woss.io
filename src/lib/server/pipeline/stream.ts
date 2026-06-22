@@ -162,6 +162,11 @@ export async function streamWithRetry(
   let irrecoverable = false;
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
+      answerText = '';
+      reasoningText = '';
+      anyStepHadToolCalls = false;
+      anySuccessfulToolCalls = false;
+      doomLoopDetectedInRound = false;
       const xmlStripper = new ToolCallXmlStripper();
       const llmStream = mcpToolDefs
         ? chatStreamWithTools(messages, mcpToolDefs, abortController.signal)
