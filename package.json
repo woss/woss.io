@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:cov": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "build-index": "vite-node src/scripts/build-index.ts"
+    "build-index": "vite-node --script src/scripts/build-index.ts"
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.0",
