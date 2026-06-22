@@ -4,7 +4,7 @@
   import { slide } from 'svelte/transition';
   import type { Chat } from '$lib/chat/types';
   import { config } from '$lib/config';
-  import { Collapsible, Button, Drawer, Icon } from 'sv5ui';
+  import { Button, Drawer, Icon } from 'sv5ui';
 
   import SoundToggle from '$lib/components/SoundToggle.svelte';
   import McpServerStatus from '$lib/components/McpServerStatus.svelte';
@@ -63,43 +63,40 @@
   class:hidden={!showDesktop}
   style="width: {open ? '320px' : '60px'}; min-width: {open ? '320px' : '60px'};"
 >
-  <Collapsible bind:open class="flex flex-col flex-1 overflow-hidden" ui={{ content: 'flex flex-col flex-1 min-h-0' }}>
-    {#snippet trigger({ open, props })}
-      <div class="flex flex-col">
-        <!-- Header row: logo + toggle -->
-        <div class="flex items-center justify-between p-3">
-          <a href={resolve('/')} class="font-heading text-sm text-on-surface font-semibold">{open ? 'Chats' : 'C'}</a>
-          <Button
-            {...props}
-            variant="ghost"
-            square
-            size="xs"
-            aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
-            icon={open ? 'lucide:chevron-left' : 'lucide:menu'}
-          />
-        </div>
+  <!-- Header row: logo + toggle -->
+  <div class="flex items-center justify-between p-3">
+    <a href={resolve('/')} class="font-heading text-sm text-on-surface font-semibold">{open ? 'Chats' : 'C'}</a>
+    <Button
+      variant="ghost"
+      square
+      size="xs"
+      aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
+      icon={open ? 'lucide:chevron-left' : 'lucide:menu'}
+      onclick={() => open = !open}
+    />
+  </div>
 
-        <!-- Collapsed state: mini "+" button -->
-        {#if !open}
-          <div class="flex justify-center pb-2">
-            <Button
-              variant="ghost"
-              square
-              size="sm"
-              icon="lucide:plus"
-              onclick={(e: MouseEvent) => {
-                e.stopPropagation();
-                oncreateChat();
-              }}
-              disabled={!canCreateChat}
-              title={!canCreateChat ? `Maximum ${config.public.maxChats} chats` : 'New chat'}
-            />
-          </div>
-        {/if}
-      </div>
-    {/snippet}
+  <!-- Collapsed state: mini "+" button -->
+  {#if !open}
+    <div class="flex justify-center pb-2">
+      <Button
+        variant="ghost"
+        square
+        size="sm"
+        icon="lucide:plus"
+        onclick={(e: MouseEvent) => {
+          e.stopPropagation();
+          oncreateChat();
+        }}
+        disabled={!canCreateChat}
+        title={!canCreateChat ? `Maximum ${config.public.maxChats} chats` : 'New chat'}
+      />
+    </div>
+  {/if}
 
-    {#snippet content()}
+  <!-- Expanded content -->
+  {#if open}
+    <div class="flex flex-col flex-1 overflow-hidden min-h-0">
       <!-- New Chat button (expanded) -->
       <div class="p-3 border-b border-[rgba(255,255,255,0.08)]">
         <Button
@@ -162,12 +159,12 @@
       <McpServerStatus servers={mcpServers} />
 
       <SlashCommandsPanel {oncommand} />
-    {/snippet}
-  </Collapsible>
+    </div>
+  {/if}
 
   <!-- Footer (always visible) -->
   <div
-    class="flex items-center {open ? 'justify-between' : 'justify-center'} p-3 border-t border-[rgba(255,255,255,0.08)]"
+    class="flex items-center {open ? 'justify-between' : 'justify-center'} p-3 border-t border-[rgba(255,255,255,0.08)] mt-auto"
   >
     <SoundToggle />
     {#if open}

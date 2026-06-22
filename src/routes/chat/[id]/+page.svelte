@@ -899,6 +899,16 @@
   />
   <!-- ─── Main Chat Area ─── -->
   <div class="flex-1 flex flex-col min-w-0 overflow-hidden lg:pt-0">
+      <!-- Mobile header bar (hamburger + title) -->
+      <div class="md:hidden flex items-center justify-between px-4 py-3 border-b border-white/8 bg-surface shrink-0">
+        <h1 class="font-heading text-sm font-semibold text-on-surface truncate">{currentChatTitle || 'Chat'}</h1>
+        <Button
+          variant="ghost" square size="sm"
+          icon="lucide:menu"
+          aria-label="Open chat list"
+          onclick={() => (showMobile = true)}
+        />
+      </div>
     {#if !hasMessages && !isLoading}
       <!-- Empty state: vertically centered -->
       <div class="flex-1 flex flex-col items-center justify-center gap-8 px-8 max-md:px-4">

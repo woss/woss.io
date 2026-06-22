@@ -137,7 +137,7 @@
         </div>
 
         <Button
-          variant="outline" square size="md"
+          variant="ghost" square size="md"
           icon={mobileMenuOpen ? 'lucide:x' : 'lucide:menu'}
           aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           aria-expanded={mobileMenuOpen}
@@ -152,7 +152,7 @@
       bind:open={mobileMenuOpen}
       direction="top"
       class="h-dvh max-h-dvh"
-      overlay
+      overlay={false}
       modal
       dismissible
       handle={false}
