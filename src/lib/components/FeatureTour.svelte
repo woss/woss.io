@@ -72,6 +72,25 @@
       if (target) ro.unobserve(target);
     };
   });
+
+  // Re-position when target element appears (handles homepage where ChatInput is behind {#if ready})
+  let retries = 0;
+  $effect(() => {
+    const target = document.querySelector(targetSelector);
+    if (target || retries > 100) return;
+
+    const timer = setInterval(() => {
+      retries++;
+      if (document.querySelector(targetSelector)) {
+        clearInterval(timer);
+        tick().then(position);
+      } else if (retries > 100) {
+        clearInterval(timer);
+      }
+    }, 100);
+
+    return () => clearInterval(timer);
+  });
 </script>
 
 <div bind:this={cardEl} class="tour-card" {style} role="dialog" aria-label={title}>

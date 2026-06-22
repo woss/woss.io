@@ -14,7 +14,7 @@
   import { randomUUID } from '$lib/utils/random-uuid';
   import { SUGGESTED_QUESTIONS } from '$lib/chat/suggested-questions';
   import { CONTACT_DISMISSED_KEY } from '$lib/chat/constants';
-  import { Button } from 'sv5ui';
+  import { Button, Banner } from 'sv5ui';
   import FeatureTour from '$lib/components/FeatureTour.svelte';
   import { TOUR_DEFINITIONS } from '$lib/chat/tour-config';
   import type { TourDefinition } from '$lib/chat/tour-config';
@@ -1005,21 +1005,27 @@
         </div>
       {:else if isOwner}
         <div class="sticky bottom-0 bg-surface pt-2 pb-4">
+          {#if currentChat?.locked}
+            <div class="px-6 max-md:px-1 max-w-[720px] mx-auto w-full">
+              <Banner color="secondary" title="This chat has been locked because the question was off-topic.">
+                <Button variant="link" size="sm" onclick={() => createChat()}>Start a new chat</Button>
+              </Banner>
+            </div>
+          {:else if attemptsLeft > 0}
+            <div class="px-6 max-md:px-1 max-w-[720px] mx-auto w-full">
+              <Banner color="warning" title="{attemptsLeft} off-topic attempt{attemptsLeft > 1 ? 's' : ''} remaining before chat locks" />
+            </div>
+          {/if}
           <div class="mx-auto w-full max-w-[720px] px-6 max-md:px-1">
             <ChatInput
               bind:messageText
               {isLoading}
-              {currentChat}
-              {attemptsLeft}
-              messagesCount={userMessageCount}
-              maxMessages={config.public.maxMessages}
               {activeToolCount}
               {completedToolCount}
               currentStatus={sseState.currentStatus}
               bind:inputEl
               onsend={(text: string) => sendMessage(text)}
               onstop={handleStop}
-              oncreateChat={createChat}
             />
           </div>
         </div>

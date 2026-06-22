@@ -215,8 +215,7 @@
               bind:messageText
               bind:isLoading
               bind:inputEl
-               onsend={sendMessage}
-              variant="home"
+              onsend={sendMessage}
             />
           </div>
         {:else}
