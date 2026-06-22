@@ -1,6 +1,6 @@
 import { publishLive, publishPersistent } from '$lib/server/chat-events';
 import { callErrorWebhook } from '$lib/server/webhooks';
-import { addMessage, getDb, searchChunks } from '$lib/server/db';
+import { addMessage, getDb, getPosts, searchChunks } from '$lib/server/db';
 import { buildRagPrompt } from '$lib/server/openai-provider';
 import { getMcpToolDefs, type McpToolDef } from '$lib/server/mcp/tools';
 import { getToolSystemPrompt } from '../prompts.ts';
@@ -165,6 +165,41 @@ export async function startGeneration(
           type: r.chunk.type,
           chunkCount: slugCounts.get(r.chunk.slug) ?? 1,
         }));
+
+      // Post-metadata fallback: when RAG returns empty and query asks about posts,
+      // inject post titles directly from SQL (vector similarity fails for metadata queries)
+      if (ragChunks.length === 0 && /\b(post|blog|writing|article)\b/i.test(text)) {
+        const allPosts = getPosts();
+        const published = allPosts
+          .filter((p) => p.status === 'published')
+          .sort((a, b) => {
+            if (!a.date && !b.date) return 0;
+            if (!a.date) return 1;
+            if (!b.date) return -1;
+            return a.date! < b.date! ? 1 : -1;
+          });
+        if (published.length > 0) {
+          const postLines = published
+            .map((p) => `- ${p.title} (${p.date ? new Date(p.date).toISOString().split('T')[0] : 'no date'})`)
+            .join('\n');
+          ragChunks = [
+            {
+              title: 'Published Blog Posts',
+              text: `Daniel's published blog posts (newest first):\n${postLines}\n\nVisit /posts to see all posts.`,
+              score: 0,
+              slug: '',
+              type: 'post',
+            },
+          ];
+          sources = published.map((p) => ({
+            title: p.title,
+            score: 0,
+            slug: p.slug,
+            url: p.slug === 'about' ? '/about' : `/posts/${p.slug}`,
+          }));
+          log.info`📝 Post fallback: ${published.length} posts injected for "post" query (RAG returned empty)`;
+        }
+      }
     }
 
     // Auto-rename "New Chat" to user's first message (all paths)
@@ -201,8 +236,14 @@ export async function startGeneration(
 
     // 6b. Conditionally load MCP tools
     // githubNeeded and maculaNeeded already computed above in step 5b
+    // queryType gate: if classifyQuery says rag or meta, force tool-free to
+    // prevent classifyToolNeeds (which runs earlier in handleEarlyGates) from
+    // loading tools for queries the centroid classifier correctly identified
+    // as pure-RAG or meta (e.g. "show me posts" flagged as macula).
 
-    if (githubNeeded || maculaNeeded) {
+    if ((queryType === 'rag' || queryType === 'meta') && (githubNeeded || maculaNeeded)) {
+      log.info`📚 queryType=${queryType} overrides tool need — forcing tool-free mode`;
+    } else if (githubNeeded || maculaNeeded) {
       try {
         const toolDefs = await getMcpToolDefs();
         if (toolDefs.length > 0) {

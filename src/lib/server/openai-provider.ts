@@ -165,6 +165,10 @@ export function buildRagPrompt(question: string, chunks: RagChunk[], history?: C
     systemPrompt += `\n\nContext:\n${context}`;
   }
 
+  if (chunks.length === 0) {
+    systemPrompt += `\n\nNOTE: No relevant content was found from the portfolio database for this query. If you cannot answer from available context or tools, state that you don't have this information rather than fabricating any specific titles, names, dates, or details.`;
+  }
+
   messages.push({ role: 'system', content: systemPrompt });
 
   if (history && history.length > 0) {

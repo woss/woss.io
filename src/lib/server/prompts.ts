@@ -163,6 +163,9 @@ export function getToolClassifierUserPrompt(question: string, context?: string):
     '- User says "yup do it" after assistant offered to search GitHub → github',
     '- User says "3 more?" after assistant showed photos → macula',
     '- User says "thanks!" → none',
+    '- User says "show me posts" → none',
+    '- User says "show me blog posts" → none',
+    '- User says "show me your writing" → none',
   ];
   if (context) {
     parts.push('Conversation so far:', context, '');
@@ -177,11 +180,11 @@ export function getToolClassifierSystemPrompt(): string {
     ``,
     `GITHUB (answer: github): User wants to search code, list issues, pull requests, repos, stars, forks, commits — GitHub operations.`,
     ``,
-    `MACULA (answer: macula): User wants to view, search, or list photos, images, videos, files, media, keywords, licenses — Macula media/asset operations or view portfolio content.`,
+    `MACULA (answer: macula): User wants to view, search, or list photos, images, videos, files, media, keywords, licenses — Macula media/asset operations.`,
     ``,
     `BOTH (answer: both): The message requires both GitHub and Macula tools.`,
     ``,
-    `NONE (answer: none): The message is a simple reply, greeting, or question needing no tools.`,
+    `NONE (answer: none): The message is a simple reply, greeting, question needing no tools, or requests about blog posts, writing, or articles.`,
     ``,
     `Respond with exactly one word: github, macula, both, or none.`,
   ].join('\n');
