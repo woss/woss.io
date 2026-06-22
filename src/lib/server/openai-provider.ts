@@ -105,6 +105,7 @@ interface RagChunk {
   title: string;
   text: string;
   score: number;
+  type?: string;
 }
 
 type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
@@ -165,8 +166,13 @@ export function buildRagPrompt(question: string, chunks: RagChunk[], history?: C
     systemPrompt += `\n\nContext:\n${context}`;
   }
 
-  if (chunks.length === 0) {
-    systemPrompt += `\n\nNOTE: No relevant content was found from the portfolio database for this query. If you cannot answer from available context or tools, state that you don't have this information rather than fabricating any specific titles, names, dates, or details.`;
+  if (chunks.length === 0 || chunks.every((c) => c.type === 'post')) {
+    const isFallback = chunks.length > 0 && chunks.every((c) => c.type === 'post');
+    if (chunks.length === 0) {
+      systemPrompt += `\n\nNOTE: No relevant content was found from the portfolio database for this query. If you cannot answer from available context or tools, state that you don't have this information rather than fabricating any specific titles, names, dates, or details.`;
+    } else if (isFallback) {
+      systemPrompt += `\n\nNOTE: You have access to a list of post titles and their URLs but not the full content of any post. Do not fabricate specific technical details, code examples, or body content from posts you have not read. For URLs, use only those explicitly listed above. Do not construct file paths or slugs from title text.`;
+    }
   }
 
   messages.push({ role: 'system', content: systemPrompt });

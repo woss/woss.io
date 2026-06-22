@@ -180,12 +180,16 @@ export async function startGeneration(
           });
         if (published.length > 0) {
           const postLines = published
-            .map((p) => `- ${p.title} (${p.date ? new Date(p.date).toISOString().split('T')[0] : 'no date'})`)
+            .map((p) => {
+              const url = p.slug === 'about' ? '/about' : `/posts/${p.slug}`;
+              const date = p.date ? new Date(p.date).toISOString().split('T')[0] : 'no date';
+              return `- "${p.title}" (${date}) — ${url}`;
+            })
             .join('\n');
           ragChunks = [
             {
               title: 'Published Blog Posts',
-              text: `Daniel's published blog posts (newest first):\n${postLines}\n\nVisit /posts to see all posts.`,
+              text: `Daniel's published blog posts (newest first):\n${postLines}`,
               score: 0,
               slug: '',
               type: 'post',
@@ -266,6 +270,18 @@ export async function startGeneration(
       }
     } else {
       log.info`📚 RAG-only mode (no external tools needed for this query)`;
+      if (
+        messages.length > 0 &&
+        messages[0].role === 'system' &&
+        !messages[0].content.includes('NOTE: No tools are currently loaded')
+      ) {
+        messages[0] = {
+          ...messages[0],
+          content:
+            messages[0].content +
+            `\n\nNOTE: No tools are currently loaded. Do not narrate using, calling, or searching with any tools — they are not available. Answer only from the context provided above.`,
+        };
+      }
     }
 
     // Build tool name → serverId map for tool timing instrumentation
