@@ -21,7 +21,7 @@ jobs:
           VERSION_TAG="$(date +'%d-%m-%Y')-${SAFE_BRANCH}"
           TAGS="docker.io/woss/woss-io:${VERSION_TAG}"
           if [ "$BRANCH" = "main" ]; then
-            TAGS="${TAGS}\ndocker.io/woss/woss-io:latest"
+            TAGS="${TAGS}"$'\n'"docker.io/woss/woss-io:latest"
           fi
           echo "tags<<EOF
           ${TAGS}
