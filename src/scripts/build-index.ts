@@ -2,7 +2,8 @@ import 'dotenv/config';
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import GithubSlugger from 'github-slugger';
 import { Index, MetricKind, ScalarKind } from 'usearch';
 import Database from 'better-sqlite3';
@@ -603,16 +604,21 @@ async function buildIndex(): Promise<void> {
   closeDb();
 }
 
-buildIndex()
-  .then(() => {
-    process.exit(0);
-  })
-  .catch((err) => {
-    log.error`Build failed: ${err}`;
-    try {
-      closeDb();
-    } catch {
-      /* ignore close errors during crash */
-    }
-    process.exit(1);
-  });
+// Only run when executed directly (not when imported by tests)
+const isMainScript = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isMainScript) {
+  buildIndex()
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((err) => {
+      log.error`Build failed: ${err}`;
+      try {
+        closeDb();
+      } catch {
+        /* ignore close errors during crash */
+      }
+      process.exit(1);
+    });
+}

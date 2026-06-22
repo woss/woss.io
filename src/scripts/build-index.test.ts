@@ -55,9 +55,6 @@ vi.mock('node:fs', () => ({
   writeFileSync: vi.fn(),
 }));
 
-// Prevent module-level buildIndex().catch(...) from calling real process.exit
-vi.stubGlobal('process', { ...process, exit: vi.fn() });
-
 // ---------------------------------------------------------------------------
 // Import under test
 // ---------------------------------------------------------------------------

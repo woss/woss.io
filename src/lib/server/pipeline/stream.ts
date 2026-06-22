@@ -142,7 +142,7 @@ export async function streamWithRetry(
   log.debug`mcpToolDefs: ${mcpToolDefs?.map((t) => t.name).join(', ') ?? 'none'}`;
 
   let anyStepHadToolCalls = false;
-  let anySuccessfulToolCalls = false;
+  let anySuccessfulToolCalls;
   let doomLoopDetectedInRound = false;
   const collectedToolCalls: { name: string; serverId: string }[] = [];
 
