@@ -170,7 +170,11 @@
   }
 </script>
 
-<Seo title="woss.io — Ask me anything" description="Personal site of @woss — AI-powered chat and blog" />
+<Seo
+  title="woss.io — Ask me anything"
+  description="Personal site of @woss — AI-powered chat and blog"
+  image="https://u.macula.link/rRw4qd7WSwCWD8cw2q0NIA-7?preset=open_graph"
+/>
 
 <div class="relative overflow-hidden flex-1 flex">
   {#if ready}
