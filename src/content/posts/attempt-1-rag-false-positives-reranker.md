@@ -1,7 +1,7 @@
 ---
 published: true
 title: 'When Your RAG Returns the Wrong Answer (and Cosine Distance Blamed the Wrong Chunk)'
-slug: 'rag-false-positives-reranker'
+slug: 'attempt-to-fix-rag-false-positive-with-cross-encoder-reranker'
 description: 'A production RAG pipeline returned the wrong answer. Not because the data was missing, but because a single cosine distance threshold silently filtered out every relevant chunk and let a false positive through.'
 date: 2026-06-25
 tags:
@@ -12,6 +12,7 @@ tags:
   - woss.io
 featured: false
 part_of_series: 'building-woss-io'
+header_image: https://u.macula.link/bq6whOO3Qe6rc_2aEImxBQ-7
 ---
 
 Last weekend I published new woss.io, and shared it with the world. This includes my friends to test it. I tested it quite extensively, but as I was testing, I was also changing weights, RAG and other stuff. I didn't notice one of my top experiences in copyright and IP was buried and completely excluded from the RAG search.
@@ -107,7 +108,7 @@ My first instinct was a two-stage pipeline. Stage one: bi-encoder vector search 
 
 This is a well-known pattern. Cross-encoders don't compress text into vectors. They take two pieces of text — query and chunk — and run them through full transformer attention together. The query's words attend to the chunk's words directly. It can answer "does this chunk actually answer this question?" instead of "is this vector close to that vector?"
 
-I knew the trade-offs going in. Processing 24 query-chunk pairs takes 500–1500ms versus <1ms for vector search. For a chat app that already runs for seconds, that overhead is acceptable. The model ships as a single ONNX file — Transformers.js loads it natively.
+I knew the trade-offs going in. Processing 24 query-chunk pairs takes 500-1500ms versus <1ms for vector search. For a chat app that already runs for seconds, that overhead is acceptable. The model ships as a single ONNX file — Transformers.js loads it natively.
 
 I picked `Xenova/bge-reranker-base` and kicked off the download. 1.1GB of ONNX weights.
 
@@ -140,7 +141,7 @@ After cross-encoder re-ranking (relevance score, higher = closer):
 
 Near-zero across the board. Kelp.digital — the single most relevant chunk in the corpus for this query — scored 0.0064. The false positive scored 0.0032. The ordering was _technically_ correct (Kelp before System Prompt), but these scores can't be used as a relevance gate. There's no threshold you can set here — 0.15 filters out everything, 0.001 lets everything through. The model doesn't activate for this domain.
 
-I ran diagnostics. Near-identity pairs — same text on both sides — scored 0.999. Synonym matches scored 0.99. But production-relevant pairs in the copyright/IP domain scored 0.0002–0.0064. The model was running correctly. It just doesn't zero-shot well into content-rights and legal vocabulary.
+I ran diagnostics. Near-identity pairs — same text on both sides — scored 0.999. Synonym matches scored 0.99. But production-relevant pairs in the copyright/IP domain scored 0.0002-0.0064. The model was running correctly. It just doesn't zero-shot well into content-rights and legal vocabulary.
 
 I tried `text_pair` input format. I tried manual `</s></s>` formatting. Same output either way. The model loads, the scores change meaningfully between inputs, but the activation range for this domain starts at zero.
 
@@ -150,7 +151,7 @@ The cross-encoder couldn't gate relevance for this use case. The code was there,
 
 I stepped back. The cross-encoder approach was elegant but broken for my domain. What did I actually have?
 
-The real problem was the filter: `SOURCE_SCORE_THRESHOLD = 0.3`. I picked that number out of intuition and never validated it against real queries. The relevant chunks scored 0.3127–0.3297, just barely above the cutoff. The false positive scored 0.2874, just barely below.
+The real problem was the filter: `SOURCE_SCORE_THRESHOLD = 0.3`. I picked that number out of intuition and never validated it against real queries. The relevant chunks scored 0.3127-0.3297, just barely above the cutoff. The false positive scored 0.2874, just barely below.
 
 The fix was widening the threshold so relevant content gets through. Combined with `expansion_search: 200` (wider recall from the vector index), the pipeline returns more candidates and lets the LLM sort them out:
 
@@ -164,13 +165,13 @@ Same query, same index, new results:
 ```text
 Top USearch results (cosine distance, lower = closer):
 
-1.  0.2874  System Prompt Position Matters      ← was rank 1, now filtered
+1.  0.2874  System Prompt Position Matters      ← still passes at 0.5, now 1 of 4
 2.  0.3127  About Daniel Maricic                ← passes
 3.  0.3255  Kelp.digital - Founder and CTO      ← passes
 4.  0.3297  Anagolay Network - Founder, CTO     ← passes
 ```
 
-Filtering at 0.5 instead of 0.3: three relevant chunks make it through. The false positive is still in there, but now it's one of four instead of the only one. The LLM gets enough context to answer correctly.
+Filtering at 0.5 instead of 0.3: three relevant chunks and one false positive make it through. The false positive is still in there, but now it's one of four instead of the only one. The LLM gets enough context to answer correctly.
 
 That's it. I didn't need a new model or a two-stage pipeline. I needed to tune what was already there.
 
@@ -178,7 +179,7 @@ That's it. I didn't need a new model or a two-stage pipeline. I needed to tune w
 
 The cross-encoder code still lives in `reranker.ts`. It's there for a future model that handles this domain better. The download step is commented out in `build-index.ts` — no point pulling 1.1GB for a gate that doesn't gate.
 
-The real takeaway: tune what you have before adding complexity. The 0.3 threshold was pulled from intuition and never validated against real queries. I spent time researching cross-encoders, downloading models, and building infrastructure that addressed the wrong problem. The actual fix was changing one number.
+The real takeaway: tune what you have before adding complexity, saving you time and resources, in my case 5 hours of research coding and finding the correct ONNX. The 0.3 threshold was pulled from intuition and never validated against real queries. I spent time researching cross-encoders, downloading models, and building infrastructure that addressed the wrong problem. The actual fix was changing one number.
 
 Running the actual query through the pipeline and looking at the scores — that's what revealed the problem. Unit tests with mock data couldn't surface this because they used made-up scores. Only real production data at real query time showed the gap.
 
@@ -188,4 +189,4 @@ The bar is not that the answer is perfect. It's that the reasoning behind it hol
 
 ---
 
-The full source for this fix is at [github.com/woss-io/woss.io](https://github.com/woss-io/woss.io) in `src/lib/server/reranker.ts` and `src/lib/server/pipeline/orchestrator.ts` if you want to see exactly how it works.
+The full source for this fix is at [github.com/woss-io/woss.io](https://github.com/woss-io/woss.io) in PR [15](https://github.com/woss/woss.io/pull/15).

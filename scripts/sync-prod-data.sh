@@ -1,11 +1,18 @@
 #!/bin/bash
 set -e
 
-# Sync production data from buri-image remote server to local ./prod/
+# Sync production data from remote server to local ./prod/
 # Excludes HuggingFace cache (.hf-cache) which can be large and unnecessary locally.
+# REMOTE_HOST and REMOTE_PATH are loaded from .env — fail if missing.
 
-REMOTE_HOST="buri-image"
-REMOTE_PATH="/home/woss/projects/woss.io/data/"
+# Load .env from project root
+if [ -f "$(dirname "$0")/../.env" ]; then
+  source "$(dirname "$0")/../.env"
+fi
+
+# Fail hard if production sync target isn't configured
+: "${REMOTE_HOST:?REMOTE_HOST not set — add to .env}"
+: "${REMOTE_PATH:?REMOTE_PATH not set — add to .env}"
 LOCAL_DIR="./prod"
 EXCLUDE_PATTERN=".hf-cache"
 
