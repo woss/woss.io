@@ -28,18 +28,6 @@ vi.mock('$lib/server/db', () => ({
   searchChunks: vi.fn(() => []),
 }));
 
-vi.mock('$lib/server/reranker', () => ({
-  rerankSearchResults: vi.fn((_query: string, results: Array<{ score: number }>) =>
-    Promise.resolve(
-      results.map((r) => ({
-        chunk: { text: 'test' },
-        cosineScore: r.score,
-        rerankerScore: 0,
-      })),
-    ),
-  ),
-}));
-
 vi.mock('$lib/server/openai-provider', () => ({
   buildRagPrompt: vi.fn((text: string) => [
     { role: 'system', content: 'You are Haistlin.' },

@@ -18,7 +18,7 @@ Last weekend I published new woss.io, and shared it with the world. This include
 
 I found out about this when my nephew clicked the `/surprise_me` slash command and it asked this question: "Tell me about Daniel's experience with copyrights and IP?". He called me up and said, "Unc, the AI says you don't have any experience with copyrights and IP. I know you do, are you sure about that?". That sent me to the logs to see what happened.
 
-I was shocked to see that the RAG pipeline returned a false positive and filtered out all relevant chunks. I had to fix this, and the fix ended up being a combination: wider cosine threshold and a cross-encoder re-ranker to make sure the right chunks come first. This post is about what happened, why it happened, and how I fixed it.
+I was shocked to see that the RAG pipeline returned a false positive and filtered out all relevant chunks. This post is about what happened, why it happened, and how I fixed it — which ended up being simpler than I expected.
 
 ## The Usual Suspects
 
@@ -101,58 +101,15 @@ The embedding model maps text to a 1024-dimensional space. Two texts can land cl
 
 Bi-encoders have this limitation. That's what embedding models are. They compress everything into a single vector and lose the fine-grained interactions between query terms and document terms. They're fast: USearch can search 221 vectors in under a millisecond. Speed comes at the cost of precision.
 
-## The Fix: A Cross-Encoder Re-ranker
+## The Attempt: A Cross-Encoder Re-ranker
 
-The fix is a two-stage pipeline. First, fast bi-encoder search gets candidates. Then a slower but more accurate cross-encoder re-ranks them.
+My first instinct was a two-stage pipeline. Stage one: bi-encoder vector search gets candidates. Stage two: a cross-encoder re-ranker examines each query-chunk pair and scores actual relevance. The cross-encoder would gate what reaches the LLM — if a chunk scores below a threshold, it's out, no matter how close the vectors are.
 
-The USearch index config sets `expansion_search` to 200 (default is 50), giving the first stage a wider net. More candidates gives the cross-encoder better raw material to work with — a false positive at rank 1 shouldn't leave you stuck with it.
+This is a well-known pattern. Cross-encoders don't compress text into vectors. They take two pieces of text — query and chunk — and run them through full transformer attention together. The query's words attend to the chunk's words directly. It can answer "does this chunk actually answer this question?" instead of "is this vector close to that vector?"
 
-A cross-encoder doesn't convert text into a vector. It takes two pieces of text, the query and the chunk, and processes them together through a full transformer attention layer. The query's words can attend to the chunk's words directly. The model can ask "does this chunk actually answer this question?" instead of "is this vector close to that vector?"
+I knew the trade-offs going in. Processing 24 query-chunk pairs takes 500–1500ms versus <1ms for vector search. For a chat app that already runs for seconds, that overhead is acceptable. The model ships as a single ONNX file — Transformers.js loads it natively.
 
-I went with `Xenova/bge-reranker-base` — it ships as a single self-contained ONNX file, which is what the Transformers.js runtime expects. The larger BGE-reranker-v2-m3 scores better on benchmarks, but its ONNX export uses external data files that this runtime can't load. For a personal site, the accuracy difference is noise anyway.
-
-The trade-off is speed. Processing 24 query-chunk pairs takes 500-1500ms versus <1ms for a vector search. For a chat application that already takes seconds to generate a response, that's acceptable overhead.
-
-The new filter logic looks like this:
-
-```ts
-const SOURCE_SCORE_THRESHOLD = 0.5; // relaxed — cross-encoder re-orders above this
-
-const reranked = await rerankSearchResults(text, results);
-const hasReranker = reranked.length > 0 && reranked.some((r) => r.rerankerScore > 0);
-
-const filtered = hasReranker
-  ? reranked.filter((r) => r.cosineScore < SOURCE_SCORE_THRESHOLD)
-  : results.filter((r) => r.score < SOURCE_SCORE_THRESHOLD);
-```
-
-When the cross-encoder is active, it re-orders the chunks by relevance score. The cosine threshold is the gate — catch-all for truly far chunks. If the cross-encoder fails to load (model not cached yet, OOM), the system falls back to cosine-only with the same threshold. The key difference: without the re-ranker, the false positive is at rank 1. With it, the relevant chunk is at rank 1.
-
-Here's what the same search looks like after re-ranking — results sorted by cross-encoder relevance score:
-
-```
-Top USearch results (cosine distance, lower = closer):
-
-1.  0.2874  System Prompt Position Matters      ← rank 1 false positive
-2.  0.3127  About Daniel Maricic
-3.  0.3255  Kelp.digital - Founder and CTO
-4.  0.3297  Anagolay Network - Founder, CTO
-
-After cross-encoder re-ranking (relevance score, higher = closer):
-
-1.  0.0064  Kelp.digital - Founder and CTO      ← promoted to rank 1
-2.  0.0032  System Prompt Position Matters      ← demoted to rank 2
-3.  0.0012  About Daniel Maricic
-4.  0.0008  Anagolay Network - Founder, CTO
-```
-
-The cross-encoder scores are tiny — bge-reranker-base maps everything to the lower end of its range for this domain — but the ORDERING is meaningful. Kelp.digital goes from rank 3 to rank 1. The false positive goes from rank 1 to rank 2. Combined with the relaxed cosine threshold (0.3 → 0.5), the relevant content now reaches the LLM.
-
-The scores aren't cleanly separable into a threshold. What they give you is a better ordering. And that's enough — the LLM gets relevant context first, the false positive sinks to where it matters less.
-
-### You Have to Download 1.1GB Before Anything Happens
-
-What the code above doesn't show: this thing is 1.1GB. Transformers.js fires progress events for every file chunk during download. If you just log them all, your build output fills with thousands of lines that look like this:
+I picked `Xenova/bge-reranker-base` and kicked off the download. 1.1GB of ONNX weights.
 
 ```sh
   Xenova/bge-reranker-base: 1% (12MB/1100MB)
@@ -160,7 +117,7 @@ What the code above doesn't show: this thing is 1.1GB. Transformers.js fires pro
   Xenova/bge-reranker-base: 1% (14MB/1100MB)
 ```
 
-I ended up writing a single-line progress bar that overwrites in place with `\r` and updates only when the percentage changes, plus a download speed in MB/s:
+I built a progress bar for this thing. Single-line overwrite with `\r`, updates only when percentage changes, download speed in MB/s:
 
 ```sh
   Downloading cross-encoder model...
@@ -168,17 +125,66 @@ I ended up writing a single-line progress bar that overwrites in place with `\r`
   ✓ Cross-encoder model downloaded
 ```
 
-I probably spent more time on this progress bar than it deserved, but it's oddly satisfying to watch. The embedding model is another 1.3GB, so the full `build-index` run downloads about 2.4GB of ONNX weights before it even starts processing content. The progress bar at least makes the wait visible instead of wondering if the process hung.
+I probably spent more time on the progress bar than it deserved, but watching it is oddly satisfying. The embedding model is another 1.3GB, so the full build-index run downloads about 2.4GB of ONNX weights before it even starts. The bar at least makes the wait visible instead of leaving you wondering if the process hung.
+
+Then I ran it on the actual query.
+
+```text
+After cross-encoder re-ranking (relevance score, higher = closer):
+
+1.  0.0064  Kelp.digital - Founder and CTO
+2.  0.0032  System Prompt Position Matters
+3.  0.0012  About Daniel Maricic
+4.  0.0008  Anagolay Network - Founder, CTO
+```
+
+Near-zero across the board. Kelp.digital — the single most relevant chunk in the corpus for this query — scored 0.0064. The false positive scored 0.0032. The ordering was _technically_ correct (Kelp before System Prompt), but these scores can't be used as a relevance gate. There's no threshold you can set here — 0.15 filters out everything, 0.001 lets everything through. The model doesn't activate for this domain.
+
+I ran diagnostics. Near-identity pairs — same text on both sides — scored 0.999. Synonym matches scored 0.99. But production-relevant pairs in the copyright/IP domain scored 0.0002–0.0064. The model was running correctly. It just doesn't zero-shot well into content-rights and legal vocabulary.
+
+I tried `text_pair` input format. I tried manual `</s></s>` formatting. Same output either way. The model loads, the scores change meaningfully between inputs, but the activation range for this domain starts at zero.
+
+The cross-encoder couldn't gate relevance for this use case. The code was there, the pipeline was built, and the gate didn't gate.
+
+## The Real Fix: Simpler Than I Thought
+
+I stepped back. The cross-encoder approach was elegant but broken for my domain. What did I actually have?
+
+The real problem was the filter: `SOURCE_SCORE_THRESHOLD = 0.3`. I picked that number out of intuition and never validated it against real queries. The relevant chunks scored 0.3127–0.3297, just barely above the cutoff. The false positive scored 0.2874, just barely below.
+
+The fix was widening the threshold so relevant content gets through. Combined with `expansion_search: 200` (wider recall from the vector index), the pipeline returns more candidates and lets the LLM sort them out:
+
+```ts
+const SOURCE_SCORE_THRESHOLD = 0.5; // wider threshold
+const filtered = results.filter((r) => r.score < SOURCE_SCORE_THRESHOLD);
+```
+
+Same query, same index, new results:
+
+```text
+Top USearch results (cosine distance, lower = closer):
+
+1.  0.2874  System Prompt Position Matters      ← was rank 1, now filtered
+2.  0.3127  About Daniel Maricic                ← passes
+3.  0.3255  Kelp.digital - Founder and CTO      ← passes
+4.  0.3297  Anagolay Network - Founder, CTO     ← passes
+```
+
+Filtering at 0.5 instead of 0.3: three relevant chunks make it through. The false positive is still in there, but now it's one of four instead of the only one. The LLM gets enough context to answer correctly.
+
+That's it. I didn't need a new model or a two-stage pipeline. I needed to tune what was already there.
 
 ## What Stuck
 
-Cosine distance gets candidates into the room, but the difference between 0.28 and 0.33 is meaningless when the wrong chunk has the better score. And the threshold you set will be wrong — you'll only find out in production. I set 0.3 based on intuition and never validated it against actual query results. Running the embedding through the index and looking at the scores — that's what revealed the problem. Unit tests with mock data. I had plenty of those, but they couldn't surface this because they used made-up scores. Only real production data at real query time showed the gap.
+The cross-encoder code still lives in `reranker.ts`. It's there for a future model that handles this domain better. The download step is commented out in `build-index.ts` — no point pulling 1.1GB for a gate that doesn't gate.
 
-The cross-encoder re-ranker addresses the ordering problem. It promotes relevant chunks above false positives so the LLM sees better context first. But the absolute scores from bge-reranker-base turned out to be less useful than I expected — low confidence across the board for this domain. The real fix was a combination: wider cosine threshold + cross-encoder ordering.
+The real takeaway: tune what you have before adding complexity. The 0.3 threshold was pulled from intuition and never validated against real queries. I spent time researching cross-encoders, downloading models, and building infrastructure that addressed the wrong problem. The actual fix was changing one number.
 
-The AI now answers "what about Daniel and copyrights" better than before. Some false positive content still reaches the LLM, but it's buried below the relevant chunks. The improvement isn't dramatic — it's the difference between an answer based on one wrong piece of context and an answer based on several relevant pieces with a wrong one lower in the stack.
+Running the actual query through the pipeline and looking at the scores — that's what revealed the problem. Unit tests with mock data couldn't surface this because they used made-up scores. Only real production data at real query time showed the gap.
 
-That's the bar. Not that the answer is perfect, but that the _reasoning_ behind it holds up.
+The AI now answers "what about Daniel and copyrights" better. The false positive is still in the context window, but it's one of several relevant chunks instead of the only source of truth. That's the difference between a wrong answer and a grounded one.
+
+The bar is not that the answer is perfect. It's that the reasoning behind it holds up.
 
 ---
 

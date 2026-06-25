@@ -13,7 +13,6 @@ import { generateTraceId, withTrace } from '$lib/server/trace-context';
 import { handleEarlyGates } from './early-gates';
 import { streamWithRetry } from './stream';
 import { saveAndEmitResult } from './save-result';
-import { rerankSearchResults } from '$lib/server/reranker';
 
 const log = createLogger(CAT.chat);
 const searchLog = createLogger(CAT.search);
@@ -108,35 +107,11 @@ export async function startGeneration(
       // Search more candidates for type-balanced selection
       const results = searchChunks(embedding.data, maxChunks * 3);
 
-      // Cross-encoder re-ranker — catches false positives that cosine distance misses.
-      // Falls through to cosine-only if model unavailable (graceful degradation).
-      const reranked = await rerankSearchResults(text, results);
-      // Check if any result has a non-zero cross-encoder score — means the model ran successfully
-      const hasReranker = reranked.length > 0 && reranked.some((r) => r.rerankerScore > 0);
-      log.info`Cross-encoder re-ranker ${hasReranker ? 'active' : 'unavailable — using cosine fallback'}`;
-      if (reranked.length > 0) {
-        searchLog.info`Re-ranker top: [${reranked
-          .slice(0, 10)
-          .map(
-            (r) =>
-              `${(r.chunk as (typeof results)[0]['chunk']).title}: reranker=${r.rerankerScore.toFixed(4)} cos=${r.cosineScore.toFixed(3)}`,
-          )
-          .join(', ')}]`;
-      }
-
-      let filtered: typeof results;
-      if (hasReranker) {
-        // Re-ranker active: use cross-encoder ordering, keep cosine distance as the gate.
-        // The cross-encoder scores are meaningful for ranking even when absolute values are low.
-        filtered = reranked
-          .filter((r) => r.cosineScore < SOURCE_SCORE_THRESHOLD)
-          .map((r) => ({ chunk: r.chunk as (typeof results)[0]['chunk'], score: r.cosineScore }));
-        searchLog.info`RAG sources (reranked): [${filtered.map((r) => `${r.chunk.title} (cos=${r.score.toFixed(3)})`).join(', ')}]`;
-      } else {
-        // Re-ranker unavailable: fall back to cosine-only filter
-        filtered = results.filter((r) => r.score < SOURCE_SCORE_THRESHOLD);
-        searchLog.info`RAG sources (cosine): [${filtered.map((r) => `${r.chunk.title} (${r.score.toFixed(3)})`).join(', ')}]`;
-      }
+      // Future: cross-encoder re-ranker re-orders results (src/lib/server/reranker.ts).
+      // bge-reranker-base produced near-zero scores for this domain, so it couldn't gate.
+      // Cosine threshold alone does the filtering.
+      const filtered = results.filter((r) => r.score < SOURCE_SCORE_THRESHOLD);
+      searchLog.info`RAG sources: [${filtered.map((r) => `${r.chunk.title} (${r.score.toFixed(3)})`).join(', ')}]`;
 
       log.info`${filtered.length}/${results.length} RAG chunks passed filter`;
       if (filtered.length === 0) {

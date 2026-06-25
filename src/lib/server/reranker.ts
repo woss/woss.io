@@ -1,15 +1,15 @@
 /**
  * Cross-encoder re-ranker via Transformers.js (ONNX).
  *
- * Uses AutoModelForSequenceClassification + AutoTokenizer directly (not pipeline).
- * Query+chunk pairs are manually formatted with </s></s> separator
- * (XLMRoberta pair format) to avoid Transformers.js text_pair bugs.
+ * RESERVED FOR FUTURE USE — NOT ACTIVE IN PIPELINE.
  *
- * BGE-reranker-base is an XLMRobertaForSequenceClassification cross-encoder:
- * it takes (query, passage) pairs and outputs a relevance score (0-1).
- * This catches false positives that cosine distance misses.
+ * bge-reranker-base produces near-zero scores for this content domain
+ * (0.0064 for relevant pairs like "copyrights/IP" → Kelp.digital).
+ * The model couldn't gate effectively. Cosine threshold does the filtering.
  *
- * Lazy singleton pattern matches embed.ts:29-40.
+ * Kept as a swap-ready option if a better domain-specific model emerges.
+ * To re-enable: uncomment downloadReranker() in build-index.ts,
+ * re-enable the reranker import + call in orchestrator.ts.
  */
 import { env, AutoModelForSequenceClassification, AutoTokenizer } from '@huggingface/transformers';
 import { join } from 'node:path';

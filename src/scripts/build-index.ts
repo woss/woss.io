@@ -11,7 +11,8 @@ import { parseFrontmatter } from '../content/index.js';
 import { load as parseYaml } from 'js-yaml';
 import { getDb, closeDb } from '../lib/server/db.js';
 import { downloadEmbedder, embedTexts, releaseExtractor } from '../lib/server/embed.js';
-import { downloadReranker } from '../lib/server/reranker.js';
+// Future: cross-encoder re-ranker (src/lib/server/reranker.ts)
+// import { downloadReranker } from '../lib/server/reranker.js';
 import { chunkContent } from './chunk-content.js';
 import { initDatabase } from '../lib/server/schema.js';
 import { initLogger, CAT, createLogger } from '../lib/server/logger.js';
@@ -305,19 +306,23 @@ async function buildIndex(): Promise<void> {
   });
   process.stdout.write('\r  ✓ Embedding model cached\n');
 
-  process.stdout.write('  Downloading cross-encoder model...\n');
-  lastPct = -1;
-  const rankStart = Date.now();
-  await downloadReranker((pct, loaded) => {
-    if (pct > lastPct) {
-      lastPct = pct;
-      const bars = Math.floor(pct / 10);
-      const elapsed = (Date.now() - rankStart) / 1000;
-      const speed = elapsed > 0.1 && loaded > 0 ? loaded / 1024 / 1024 / elapsed : 0;
-      process.stdout.write(`\r  ${'█'.repeat(bars)}${'░'.repeat(10 - bars)} ${pct}% @ ${speed.toFixed(1)} MB/s`);
-    }
-  });
-  process.stdout.write('\r  ✓ Cross-encoder model cached\n');
+  // Future: cross-encoder model download (bge-reranker-base, +1.1GB)
+  // Uncomment when a domain-effective reranker model is found.
+  // See src/lib/server/reranker.ts for the implementation.
+  //
+  // process.stdout.write('  Downloading cross-encoder model...\n');
+  // lastPct = -1;
+  // const rankStart = Date.now();
+  // await downloadReranker((pct, loaded) => {
+  //   if (pct > lastPct) {
+  //     lastPct = pct;
+  //     const bars = Math.floor(pct / 10);
+  //     const elapsed = (Date.now() - rankStart) / 1000;
+  //     const speed = elapsed > 0.1 && loaded > 0 ? loaded / 1024 / 1024 / elapsed : 0;
+  //     process.stdout.write(`\r  ${'█'.repeat(bars)}${'░'.repeat(10 - bars)} ${pct}% @ ${speed.toFixed(1)} MB/s`);
+  //   }
+  // });
+  // process.stdout.write('\r  ✓ Cross-encoder model cached\n');
 
   // 2. Ensure database exists — create schema if missing
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
