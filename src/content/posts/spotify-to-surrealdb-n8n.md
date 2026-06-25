@@ -41,12 +41,14 @@ I landed on this stack after trying a few other approaches. Here's the thinking 
 
 ## The Graph Model
 
-The database has four tables: `track`, `album`, `playlist`, `artist`, connected by graph edges. The schema is dead simple:
+The database has five tables: `track`, `album`, `playlist`, `artist`, `user`, connected by graph edges. The schema is dead simple:
 
-- `(artist)-[:released]->(album)`
-- `(album)-[:includes]->(track)`
+- `(album)-[:album_track]->(track)`
 - `(playlist)-[:playlist_track]->(track)`
 - `(user)-[:likes_track]->(track)`
+- `(user)-[:follows]->(artist)`
+- `(user)-[:has_playlist]->(playlist)`
+- `(user)-[:playlist_owner]->(playlist)`
 
 ![Database design screenshot showing tables and relation edges](https://u.macula.link/gH6WZ7Y4SruO2InnawnZNg-7?preset=sys_md)
 
@@ -56,22 +58,22 @@ The beauty of this model is that it maps directly to the Spotify API responses. 
 
 The workflow has four sub-flows, each triggered on a schedule. They're designed to be independent. One failing doesn't block the others.
 
-**1. Following artists.** Smallest and simplest. Fetch the list of artists I follow, UPSERT each one into the `artist` table. Runs every few hours since this list rarely changes.
+**1. Following artists.** Smallest and simplest. Fetch the list of artists I follow, UPSERT each one into the `artist` table, then create the `follows` edge from my user node to each artist.
 
-**2. Playlists.** Fetch all playlists in my library, UPSERT each into the `playlist` table. Straightforward until a playlist gets deleted — then I need to detect that and mark it inactive. Currently I just let stale records sit there. I should clean those up.
+**2. Playlists.** Fetch all playlists in my library, UPSERT each into the `playlist` table, then create the `has_playlist` and `playlist_owner` edges from my user node to each playlist. Straightforward until a playlist gets deleted — then I need to detect that and mark it inactive. Currently I just let stale records sit there. I should clean those up.
 
-**3. Liked tracks.** Fetch my saved tracks from the "Liked Songs" endpoint (Spotify calls it the library). For each track, UPSERT the track record, extract the album, UPSERT the album, and create the `likes_track` edge from my user node to the track node.
+**3. Liked tracks.** Fetch my saved tracks from the "Liked Songs" endpoint (Spotify calls it the library). For each track, UPSERT the track record, extract the album, UPSERT the album, create the `album_track` edge from album to track, and create the `likes_track` edge from my user node to the track node.
 
-**4. Playlist tracks.** This is the big one. The flow loops over every playlist, then loops over every track in each playlist. Here's where it gets gnarly.
+**4. Playlist tracks.** This is the big one. The flow loops over every playlist, then loops over every track in each playlist.
 
-Spotify paginates playlist tracks at 50 per page. Some of my playlists have over 1,000 tracks. So the first thing this flow does is fetch the first page, count the total, then loop until it's pulled everything.
+Each playlist sync is a full rebuild. The flow first deletes all existing `playlist_track` edges for the playlist, then re-fetches every track. n8n handles Spotify's pagination automatically — the API returns a `next` URL and n8n follows it until it's done, fetching 100 tracks per page.
 
-For each track in each page, the flow needs to:
+For each track, the flow needs to:
 
 - UPSERT the track record (title, artist reference, duration, Spotify URI)
 - Extract the album reference from the track payload
 - UPSERT the album record (title, release date, cover art URL)
-- Create or verify the `released` edge from artist to album
+- Create the `album_track` edge connecting the album to the track
 - Create the `playlist_track` edge connecting the playlist to the track
 
 That's up to five database operations per track. For a playlist with 1,200 tracks, that's 6,000 operations. The whole sync processes about 27,000 tracks across all playlists, so the total operation count is well into six figures. This is where UPSERT earns its keep — without it, every operation would need a pre-check for existing records.
@@ -146,11 +148,9 @@ Switch the Surrealist query tab to "Live" mode and results stream in as records 
 
 ## Try It
 
-The complete n8n workflow JSON is at **[`/files/spotify-workflow.json`](/files/spotify-workflow.json)**. Download it, open it in a text editor, and replace the placeholder credential IDs with your own:
+At the bottom of this post is the helper form where you add two ids. The form will replace them for you. Then you can copy the workflow JSON and paste it in your n8n instance. The workflow is designed to be self-contained, so you can run it as-is after adding your credentials.
 
 - `surrealdb-cred-id` — your SurrealDB credential ID (visible in the n8n URL when editing the credential)
 - `spotify-cred-id` — your Spotify OAuth credential ID (same deal)
-
-Then import the JSON into n8n (create a new workflow, paste the JSON). The credentials section of the frontmatter in this post also lists these if you're reading the source.
 
 I'd love to see what integrations other people are building with this pattern. [Open a GitHub issue](https://github.com/woss/woss.io/issues) or tag me — what's the next sync you want to build?
