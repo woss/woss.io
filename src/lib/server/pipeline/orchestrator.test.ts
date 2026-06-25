@@ -28,6 +28,18 @@ vi.mock('$lib/server/db', () => ({
   searchChunks: vi.fn(() => []),
 }));
 
+vi.mock('$lib/server/reranker', () => ({
+  rerankSearchResults: vi.fn((_query: string, results: Array<{ score: number }>) =>
+    Promise.resolve(
+      results.map((r) => ({
+        chunk: { text: 'test' },
+        cosineScore: r.score,
+        rerankerScore: 0,
+      })),
+    ),
+  ),
+}));
+
 vi.mock('$lib/server/openai-provider', () => ({
   buildRagPrompt: vi.fn((text: string) => [
     { role: 'system', content: 'You are Haistlin.' },
@@ -301,8 +313,8 @@ describe('source score threshold', () => {
 
     vi.mocked(searchChunks).mockReturnValueOnce([
       { score: 0.1, chunk: makeChunk('Good', 'good') },
-      { score: 0.4, chunk: makeChunk('Bad', 'bad') },
-      { score: 0.29, chunk: makeChunk('Edge', 'edge') },
+      { score: 0.6, chunk: makeChunk('Bad', 'bad') },
+      { score: 0.4, chunk: makeChunk('Edge', 'edge') },
     ]);
 
     await startGeneration('Hello', 'chat-1', 'user-1', 5);
@@ -350,8 +362,8 @@ describe('source score threshold', () => {
     });
 
     vi.mocked(searchChunks).mockReturnValueOnce([
-      { score: 0.35, chunk: makeChunk('A', 'a') },
-      { score: 0.5, chunk: makeChunk('B', 'b') },
+      { score: 0.6, chunk: makeChunk('A', 'a') },
+      { score: 0.8, chunk: makeChunk('B', 'b') },
     ]);
 
     await startGeneration('Hello', 'chat-1', 'user-1', 5);
@@ -402,7 +414,7 @@ describe('source score threshold', () => {
 
     vi.mocked(searchChunks).mockReturnValueOnce([
       { score: 0.1, chunk: makeChunk('X', 'x') },
-      { score: 0.2, chunk: makeChunk('Y', 'y') },
+      { score: 0.4, chunk: makeChunk('Y', 'y') },
     ]);
 
     await startGeneration('Hello', 'chat-1', 'user-1', 5);

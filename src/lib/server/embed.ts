@@ -100,3 +100,37 @@ export async function releaseExtractor(): Promise<void> {
     _extractorPromise = null;
   }
 }
+
+/**
+ * Eagerly download the embedding model to disk cache.
+ *
+ * Called during `build-index` so the model is cached at
+ * `data/.hf-cache/` before the server starts. Shows real-time
+ * download progress via Transformers.js progress_callback.
+ * The runtime lazy loader finds the cached files and skips download.
+ */
+export async function downloadEmbedder(
+  onProgress?: (pct: number, loadedBytes: number, totalBytes: number) => void,
+): Promise<void> {
+  if (!onProgress) log.info`Downloading embedding model: ${EMBEDDING_MODEL}`;
+  try {
+    const p = await pipeline('feature-extraction', EMBEDDING_MODEL, {
+      dtype: 'fp32',
+      progress_callback: (info) => {
+        if (info.status === 'progress_total') {
+          const pct = Math.round(info.progress);
+          if (onProgress) {
+            onProgress(pct, info.loaded, info.total);
+          } else {
+            log.info`${EMBEDDING_MODEL}: ${pct}% (${(info.loaded / 1024 / 1024).toFixed(0)}MB/${(info.total / 1024 / 1024).toFixed(0)}MB)`;
+          }
+        }
+      },
+    });
+    await p.dispose();
+    log.info`Embedding model cached.`;
+  } catch (err) {
+    log.error`Failed to download embedding model ${EMBEDDING_MODEL}: ${err}`;
+    log.warn('Embedding model will load lazily at runtime');
+  }
+}

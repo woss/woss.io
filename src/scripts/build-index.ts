@@ -10,7 +10,8 @@ import Database from 'better-sqlite3';
 import { parseFrontmatter } from '../content/index.js';
 import { load as parseYaml } from 'js-yaml';
 import { getDb, closeDb } from '../lib/server/db.js';
-import { embedTexts, releaseExtractor } from '../lib/server/embed.js';
+import { downloadEmbedder, embedTexts, releaseExtractor } from '../lib/server/embed.js';
+import { downloadReranker } from '../lib/server/reranker.js';
 import { chunkContent } from './chunk-content.js';
 import { initDatabase } from '../lib/server/schema.js';
 import { initLogger, CAT, createLogger } from '../lib/server/logger.js';
@@ -289,7 +290,36 @@ export async function processFile(file: ContentItem, chunkOffset: number): Promi
 // ---------------------------------------------------------------------------
 
 async function buildIndex(): Promise<void> {
-  // Ensure database exists — create schema if missing
+  // 1. Preload ML models before any work — fail fast on download issues
+  process.stdout.write('  Downloading embedding model...\n');
+  let lastPct = -1;
+  const embedStart = Date.now();
+  await downloadEmbedder((pct, loaded) => {
+    if (pct > lastPct) {
+      lastPct = pct;
+      const bars = Math.floor(pct / 10);
+      const elapsed = (Date.now() - embedStart) / 1000;
+      const speed = elapsed > 0.1 && loaded > 0 ? loaded / 1024 / 1024 / elapsed : 0;
+      process.stdout.write(`\r  ${'█'.repeat(bars)}${'░'.repeat(10 - bars)} ${pct}% @ ${speed.toFixed(1)} MB/s`);
+    }
+  });
+  process.stdout.write('\r  ✓ Embedding model cached\n');
+
+  process.stdout.write('  Downloading cross-encoder model...\n');
+  lastPct = -1;
+  const rankStart = Date.now();
+  await downloadReranker((pct, loaded) => {
+    if (pct > lastPct) {
+      lastPct = pct;
+      const bars = Math.floor(pct / 10);
+      const elapsed = (Date.now() - rankStart) / 1000;
+      const speed = elapsed > 0.1 && loaded > 0 ? loaded / 1024 / 1024 / elapsed : 0;
+      process.stdout.write(`\r  ${'█'.repeat(bars)}${'░'.repeat(10 - bars)} ${pct}% @ ${speed.toFixed(1)} MB/s`);
+    }
+  });
+  process.stdout.write('\r  ✓ Cross-encoder model cached\n');
+
+  // 2. Ensure database exists — create schema if missing
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
   const dbPath = 'data/woss.db';
@@ -596,6 +626,7 @@ async function buildIndex(): Promise<void> {
   // Index is persisted to disk; native USearch memory will be released when the process exits
 
   log.info`\nSaved USearch index (${rowCount} vectors) to ${INDEX_PATH}`;
+
   log.info`${JSON.stringify({
     total: rowCount,
     fileCount: fileEntries.length,
