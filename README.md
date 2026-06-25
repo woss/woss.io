@@ -1,58 +1,46 @@
 # woss.io
 
-AI-native personal portfolio built with **SvelteKit 2 + Svelte 5 (runes) + Tailwind CSS v4**.
+This is my AI-native portfolio. It's a SvelteKit app that knows everything about me and talks to you about it. Drop a question into the chat and it searches my blog posts, resume, and project docs before answering. It can also call real tools: browse my GitHub repos, check pull requests, pull photography from my Macula site.
 
-Turn your resume into an interactive AI assistant that knows everything about you.
+Everything runs locally: embeddings, vector search, LLM calls. No external AI services beyond whatever model endpoint you point it at.
 
-## Features
+## What it does
 
-- **AI Chat Assistant** — Portfolio-aware LLM chatbot. Asks questions about your skills, experience, and projects. Uses RAG (Retrieval-Augmented Generation) over your content.
-- **MCP Tool Calling** — AI can call real tools: browse GitHub repos, check PRs, search issues, pull photography from Macula. Configurable per deployment.
-- **Semantic LLM Cache** — USearch ANN index caches similar responses. Reduces API calls. Configurable threshold.
-- **Local Embeddings** — HuggingFace Transformers.js (ONNX) for in-process text embeddings. No external embedding API.
-- **RAG Pipeline** — Content chunked, embedded (bge-large-en-v1.5), stored in USearch vector index. Queries matched semantically before LLM generation.
-- **Blog + Resume** — Markdown-backed content with vector search. Tags, excerpts, series linking.
-- **Dynamic OG Images** — Satori + resvg-js generates Open Graph images server-side per post. No external service.
-- **Mermaid Diagrams** — Sidecar service (Deno + Lightpanda) renders Mermaid to SVG in blog posts.
-- **Real-time Streaming** — Server-Sent Events for live AI response streaming.
-- **Dark/Light mode** — mode-watcher with system preference detection.
-- **Rate Limiting** — SQLite-backed IP-based (10 req/min).
-- **GeoIP** — Country detection via geoip-country.
-- **Structured Logging** — LogTape with file rotation + ZinaLog dashboard.
-- **Webhook Notifications** — Events pushed to external webhooks.
-- **Message Reactions** — Visitors can upvote/downvote/heart AI responses.
-- **Contact + Intent Detection** — AI detects hiring/contact intent alongside contact form.
-- **Dockerized** — Multi-stage build, production-ready.
+The core idea is pretty simple: a chat interface on top of everything I've built and written. When you ask something, the app chunks up my content into vectors, matches what you're asking against the index, then feeds the relevant bits to an LLM along with the tools it can call. You get answers backed by real content, not hallucination.
 
-## Prerequisites
+The LLM cache is worth calling out specifically. It's a USearch ANN index that checks if someone already asked something similar before hitting the API. Same question gets an instant cached response. Close question gets a partial match. Configurable threshold so you can tune how aggressive the dedup is.
 
-- **Node.js 25.x** (defined in `devEngines`)
-- **pnpm** — package manager
-- **OpenAI-compatible LLM endpoint** — local (LM Studio, Ollama, vLLM) or cloud
+Beyond the chat, there's:
 
-Optional:
+- **Blog and resume**: markdown files with frontmatter, full-text and vector searchable
+- **OG images**: rendered server-side per post with Satori and resvg-js, no external service
+- **Dark and light mode**: follows your system preference, handled by mode-watcher
+- **Rate limiting**: SQLite-backed, 10 requests per minute per IP
+- **GeoIP**: country detection via geoip-country so I know roughly where visitors are
+- **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing
+- **Webhooks**: events pushed to external URLs when interesting things happen
+- **Message reactions**: upvote, downvote, or heart AI responses
+- **Contact and intent detection**: the AI can figure out if you're trying to hire me or just browsing
+- **Docker**: multi-stage build, production ready
 
-- **Docker** — for containerized deployment
-- **Mermaid sidecar** — for diagram rendering in blog posts
-
-## Quick Start
+## Getting started
 
 ```bash
-# 1. Install dependencies
 pnpm install
-
-# 2. Configure environment
 cp example.env .env
 # Edit .env: set PROVIDER_API_KEY, LLM_PROVIDER_BASE_URL, OPENAI_MODEL
-
-# 3. Start dev server
 pnpm run dev
+```
 
-# 4. (Optional) Build search index for RAG
+Optionally build the search index for RAG:
+
+```bash
 pnpm run build-index
 ```
 
-Open <http://localhost:5173>.
+Open http://localhost:5173.
+
+You'll need Node.js 26.x (see devEngines) and an OpenAI-compatible LLM endpoint. LM Studio, Ollama, or vLLM for local. Any cloud provider works too. Docker is optional but recommended for deployment.
 
 ## Configuration
 
@@ -67,16 +55,14 @@ Open <http://localhost:5173>.
 | `OPENAI_TOOL_CLASSIFY_TIMEOUT` | `15000`                    | Tool classification timeout (ms)   |
 | `OPENAI_MAX_ROUNDS`            | `3`                        | Max tool-calling rounds            |
 | `MCP_SERVERS`                  | `[]`                       | JSON array of MCP server configs   |
-| `GITHUB_TOKEN`                 | —                          | GitHub PAT for MCP server          |
+| `GITHUB_TOKEN`                 | -                          | GitHub PAT for MCP server          |
 | `LLM_CACHE_ENABLED`            | `true`                     | Enable semantic LLM response cache |
 | `PUBLIC_WOSS_MAX_MESSAGES`     | `50`                       | Max messages per chat              |
 | `PUBLIC_WOSS_MAX_CHATS`        | `100`                      | Max chats per visitor              |
-| `WOSS_USER_WEBHOOK_URL`        | —                          | Webhook URL for events             |
-| `WOSS_USER_WEBHOOK_ERROR_URL`  | —                          | Webhook URL for errors             |
-| `WOSS_USER_WEBHOOK_TOKEN`      | —                          | Webhook auth token                 |
-| `MERMAID_API_KEY`              | —                          | API key for Mermaid sidecar        |
-| `MERMAID_RENDER_BASE_URL`      | `http://localhost:8121`    | Mermaid sidecar URL                |
-| `ZINALOG_ENCRYPTION_KEY`       | —                          | Encryption key for ZinaLog         |
+| `WOSS_USER_WEBHOOK_URL`        | -                          | Webhook URL for events             |
+| `WOSS_USER_WEBHOOK_ERROR_URL`  | -                          | Webhook URL for errors             |
+| `WOSS_USER_WEBHOOK_TOKEN`      | -                          | Webhook auth token                 |
+| `ZINALOG_ENCRYPTION_KEY`       | -                          | Encryption key for ZinaLog         |
 
 ### MCP Server Configuration
 
@@ -101,7 +87,9 @@ Open <http://localhost:5173>.
 ]
 ```
 
-## Customizing Content
+## Customizing content
+
+Content lives in markdown files. Here's where everything is:
 
 | What           | Where                                | Format                                                |
 | -------------- | ------------------------------------ | ----------------------------------------------------- |
@@ -141,7 +129,7 @@ Renders as color-coded callout boxes with left border accent and tinted backgrou
 
 Supported types: `INFO`, `WARNING`, `ERROR`, `SUCCESS`.
 
-Implemented via custom rehype plugin (`src/lib/server/rehype-admonitions.ts`) — no extra dependencies.
+Implemented via custom rehype plugin (`src/lib/server/rehype-admonitions.ts`) with no extra dependencies.
 
 ## Supported LLMs
 
@@ -160,7 +148,7 @@ The AI backend expects OpenAI-compatible JSON tool calling format. Compatible lo
 
 ### Incompatible Models
 
-- **Gemma 4** (gemma-4-e4b-it) — uses native `<|tool_call|>` tokens instead of OpenAI JSON schema. Causes tool-calling failures.
+- **Gemma 4** (gemma-4-e4b-it): uses native `<|tool_call|>` tokens instead of OpenAI JSON schema. Causes tool-calling failures.
 
 All models must be served via an OpenAI-compatible API (LM Studio, Ollama, vLLM) at the configured endpoint.
 
@@ -177,21 +165,21 @@ docker run -p 3000:3000 --env-file .env -v ./data:/app/data woss/woss-io
 
 Docker Compose stacks:
 
-- **app** — Main SvelteKit app (port 5173 → 3000)
-- **search-index-init** — One-shot search index builder
-- **zinalog** — Log aggregation dashboard (port 4000)
-- **ollama** (commented) — Local LLM server sidecar
-- **mermaid** (commented) — Diagram rendering sidecar
+- **app**: Main SvelteKit app (port 5173 → 3000)
+- **search-index-init**: One-shot search index builder
+- **zinalog**: Log aggregation dashboard (port 4000)
 
 ## Stack
 
+The tech side in one shot:
+
 - **Framework**: SvelteKit 2, Svelte 5 (runes)
 - **Styling**: Tailwind CSS v4, Tailwind Typography, Bits-UI
-- **Runtime**: Node.js 25, pnpm
+- **Runtime**: Node.js 26, pnpm
 - **Database**: SQLite (better-sqlite3)
 - **Vector Index**: USearch (ANN)
 - **AI SDK**: Vercel AI SDK (streamText, tool calling)
-- **Embeddings**: HuggingFace Transformers.js (ONNX)
+- **Embeddings**: HuggingFace Transformers.js (ONNX), in-process, no external API
 - **MCP Client**: @modelcontextprotocol/sdk
 - **OG Images**: Satori + resvg-js
 - **Logging**: LogTape + ZinaLog
