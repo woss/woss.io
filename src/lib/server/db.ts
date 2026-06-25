@@ -760,7 +760,7 @@ function getPosts(slug?: string): {
   tags: string[];
   status: string;
   excerpt: string;
-  headerImage: { alt: string; url: string } | null;
+  headerImage: string | null;
   featured: boolean;
   position: number | null;
   partOfSeries: number | null;
@@ -803,7 +803,7 @@ function getPosts(slug?: string): {
       tags: JSON.parse(String(r.tags ?? '[]')),
       status: String(r.status),
       excerpt: String(r.excerpt ?? ''),
-      headerImage: JSON.parse(String(r.header_image ?? 'null')) as { alt: string; url: string } | null,
+      headerImage: (r.header_image ? String(r.header_image) : null) as string | null,
       featured: Number(r.featured) === 1,
       position: r.position != null ? Number(r.position) : null,
       partOfSeries: r.part_of_series != null ? Number(r.part_of_series) : null,

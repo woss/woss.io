@@ -14,7 +14,7 @@ tags:
   - migrations
   - dali
 audience: general
-header_image: '[Future in the city](https://u.macula.link/HR7CSIPkTFOBV8xVNmVUxg-7?preset=sys_lg)'
+header_image: 'https://u.macula.link/HR7CSIPkTFOBV8xVNmVUxg-7?preset=sys_lg'
 ---
 
 DaliORM is in early alpha. Expect breaking changes and bugs as I iterate toward 1.0. Don't use it in production, but feedback and contributions are welcome.

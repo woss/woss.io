@@ -14,7 +14,7 @@ tags:
   - SQLite
   - dashboard
   - open source
-header_image: '[ocv dashboard](https://u.macula.link/9BH9LsNYSJ6za1-x5QxLEA-7)'
+header_image: 'https://u.macula.link/9BH9LsNYSJ6za1-x5QxLEA-7'
 ---
 
 You use AI coding tools daily. You have thousands of sessions, millions of

@@ -13,7 +13,7 @@ tags:
   - MCP
   - SQLite
   - portfolio
-header_image: '[Space whale](https://u.macula.link/Z1TIROJeSMmFYnmvlCOPLg-7)'
+header_image: 'https://u.macula.link/Z1TIROJeSMmFYnmvlCOPLg-7'
 ---
 
 The old woss.io was static. A simple portfolio page, blog posts rendered from markdown, a contact form. It worked, but it didn't reflect how I actually work, with AI tools daily, building systems that reason, search, and generate. Earlier this year a friend of mine asked me about my CV and I sent him my woss.io link. He replied with this message: "when did you last update this? Early 2000?". I laughed and thought, "Yeah, it's time for a rebuild." But I didn't want a static site.
@@ -319,7 +319,7 @@ tags:
   - opencode
   - CLI tools
 - Deno
-header_image: '[Alt](https://example.com/image.png)'
+header_image: 'https://example.com/image.png'
 ---
 ```
 

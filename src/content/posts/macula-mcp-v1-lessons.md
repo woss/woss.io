@@ -12,7 +12,7 @@ tags:
   - API design
   - production
 part_of_series: macula-mcp-announcement
-header_image: '[Building a Public MCP Server](https://u.macula.link/G_6XL5TeQbS0g3SkbxyWDQ-7)'
+header_image: 'https://u.macula.link/G_6XL5TeQbS0g3SkbxyWDQ-7'
 ---
 
 The Model Context Protocol is becoming the standard way to connect AI agents to external data sources. When we decided to expose our Unified Link service through MCP, we faced an unusual constraint: we needed a public, read-only MCP server that could serve AI agents without authentication while still being production-grade secure.

@@ -15,7 +15,8 @@ import { streamWithRetry } from './stream';
 import { saveAndEmitResult } from './save-result';
 
 const log = createLogger(CAT.chat);
-const SOURCE_SCORE_THRESHOLD = 0.3;
+const searchLog = createLogger(CAT.search);
+const SOURCE_SCORE_THRESHOLD = 0.5; // cosine distance threshold for source inclusion
 
 /** Active generation AbortControllers keyed by chatId */
 const activeGenerations = new Map<string, AbortController>();
@@ -105,9 +106,16 @@ export async function startGeneration(
       publishLive(chatId, 'status', { step: 'searching' });
       // Search more candidates for type-balanced selection
       const results = searchChunks(embedding.data, maxChunks * 3);
+
+      // Future: cross-encoder re-ranker re-orders results (src/lib/server/reranker.ts).
+      // bge-reranker-base produced near-zero scores for this domain, so it couldn't gate.
+      // Cosine threshold alone does the filtering.
       const filtered = results.filter((r) => r.score < SOURCE_SCORE_THRESHOLD);
+      searchLog.info`RAG sources: [${filtered.map((r) => `${r.chunk.title} (${r.score.toFixed(3)})`).join(', ')}]`;
+
+      log.info`${filtered.length}/${results.length} RAG chunks passed filter`;
       if (filtered.length === 0) {
-        log.warn`All ${results.length} RAG chunks filtered by score threshold ${SOURCE_SCORE_THRESHOLD} — no sources available`;
+        log.warn`All ${results.length} RAG chunks filtered — no sources available`;
       }
 
       // Split by type for balanced selection

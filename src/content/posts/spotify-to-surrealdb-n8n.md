@@ -12,7 +12,7 @@ tags:
   - SurrealDB
   - n8n
   - automation
-header_image: '[Space whale](https://u.macula.link/KdGkDiG_S-SqfqDpIJE-Sw-7)'
+header_image: 'https://u.macula.link/KdGkDiG_S-SqfqDpIJE-Sw-7'
 workflow_files:
   - label: 'Spotify Sync Workflow'
     file: 'spotify-workflow.json'

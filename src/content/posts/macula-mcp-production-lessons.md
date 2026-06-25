@@ -13,7 +13,7 @@ tags:
   - TypeScript
   - SurrealDB
 part_of_series: macula-mcp-announcement
-header_image: '[Macula Content Graph Visualization](https://u.macula.link/URMl_ZDDQh2rbEyeo7xngQ-7)'
+header_image: 'https://u.macula.link/URMl_ZDDQh2rbEyeo7xngQ-7'
 ---
 
 Every MCP server exposes a graph. The question is whether you design for it or fight it.

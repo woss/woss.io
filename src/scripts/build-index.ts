@@ -10,7 +10,9 @@ import Database from 'better-sqlite3';
 import { parseFrontmatter } from '../content/index.js';
 import { load as parseYaml } from 'js-yaml';
 import { getDb, closeDb } from '../lib/server/db.js';
-import { embedTexts, releaseExtractor } from '../lib/server/embed.js';
+import { downloadEmbedder, embedTexts, releaseExtractor } from '../lib/server/embed.js';
+// Future: cross-encoder re-ranker (src/lib/server/reranker.ts)
+// import { downloadReranker } from '../lib/server/reranker.js';
 import { chunkContent } from './chunk-content.js';
 import { initDatabase } from '../lib/server/schema.js';
 import { initLogger, CAT, createLogger } from '../lib/server/logger.js';
@@ -289,7 +291,40 @@ export async function processFile(file: ContentItem, chunkOffset: number): Promi
 // ---------------------------------------------------------------------------
 
 async function buildIndex(): Promise<void> {
-  // Ensure database exists — create schema if missing
+  // 1. Preload ML models before any work — fail fast on download issues
+  process.stdout.write('  Downloading embedding model...\n');
+  let lastPct = -1;
+  const embedStart = Date.now();
+  await downloadEmbedder((pct, loaded) => {
+    if (pct > lastPct) {
+      lastPct = pct;
+      const bars = Math.floor(pct / 10);
+      const elapsed = (Date.now() - embedStart) / 1000;
+      const speed = elapsed > 0.1 && loaded > 0 ? loaded / 1024 / 1024 / elapsed : 0;
+      process.stdout.write(`\r  ${'█'.repeat(bars)}${'░'.repeat(10 - bars)} ${pct}% @ ${speed.toFixed(1)} MB/s`);
+    }
+  });
+  process.stdout.write('\r  ✓ Embedding model cached\n');
+
+  // Future: cross-encoder model download (bge-reranker-base, +1.1GB)
+  // Uncomment when a domain-effective reranker model is found.
+  // See src/lib/server/reranker.ts for the implementation.
+  //
+  // process.stdout.write('  Downloading cross-encoder model...\n');
+  // lastPct = -1;
+  // const rankStart = Date.now();
+  // await downloadReranker((pct, loaded) => {
+  //   if (pct > lastPct) {
+  //     lastPct = pct;
+  //     const bars = Math.floor(pct / 10);
+  //     const elapsed = (Date.now() - rankStart) / 1000;
+  //     const speed = elapsed > 0.1 && loaded > 0 ? loaded / 1024 / 1024 / elapsed : 0;
+  //     process.stdout.write(`\r  ${'█'.repeat(bars)}${'░'.repeat(10 - bars)} ${pct}% @ ${speed.toFixed(1)} MB/s`);
+  //   }
+  // });
+  // process.stdout.write('\r  ✓ Cross-encoder model cached\n');
+
+  // 2. Ensure database exists — create schema if missing
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
   const dbPath = 'data/woss.db';
@@ -430,10 +465,9 @@ async function buildIndex(): Promise<void> {
       // Allow frontmatter slug to override filename-derived slug
       if (data.slug && typeof data.slug === 'string') entry.slug = data.slug;
 
-      // Parse header_image from markdown link "[alt](url)" into structured object
-      if (data.header_image && typeof data.header_image === 'string') {
-        const linkMatch = /\[([^\]]*)\]\(([^)]*)\)/.exec(data.header_image);
-        data.header_image = linkMatch ? { alt: linkMatch[1], url: linkMatch[2] } : null;
+      // header_image is a plain URL string
+      if (data.header_image && typeof data.header_image !== 'string') {
+        data.header_image = null;
       }
 
       // Process title, date, tags — handle Date objects from frontmatter
@@ -485,7 +519,7 @@ async function buildIndex(): Promise<void> {
           JSON.stringify(tags),
           data.status || (data.published !== false ? 'published' : 'draft'),
           data.excerpt ?? '',
-          JSON.stringify(data.header_image ?? null),
+          data.header_image ?? null,
           data.featured ? 1 : 0,
           data.position ?? null,
           null, // part_of_series — resolved in second pass below
@@ -596,6 +630,7 @@ async function buildIndex(): Promise<void> {
   // Index is persisted to disk; native USearch memory will be released when the process exits
 
   log.info`\nSaved USearch index (${rowCount} vectors) to ${INDEX_PATH}`;
+
   log.info`${JSON.stringify({
     total: rowCount,
     fileCount: fileEntries.length,

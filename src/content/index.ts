@@ -35,7 +35,7 @@ export interface BlogPost {
   body: string; // raw markdown body (frontmatter removed)
   status: string;
   featured?: boolean;
-  headerImage?: { alt: string; url: string };
+  headerImage?: string;
   id?: number;
   partOfSeries?: number;
   workflowFiles?: WorkflowFileEntry[];
