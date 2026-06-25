@@ -130,7 +130,7 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
       bufferSize: 0,
       flushInterval: 0,
       nonBlocking: true,
-      maxFiles: 7,
+      maxFiles: 70,
       maxSize: 10 * 1024 * 1024, // 10 MB per file
     }),
   };

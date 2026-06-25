@@ -274,7 +274,7 @@
                   >
                     {#if post.headerImage}
                       <div class="w-full aspect-video rounded-lg overflow-hidden bg-surface-container">
-                        <img src={post.headerImage.url} alt={post.headerImage.alt} width="640" height="360" class="size-full object-cover" />
+                        <img src={post.headerImage} alt={post.title} width="640" height="360" class="size-full object-cover" />
                       </div>
                     {/if}
                     <div class="flex flex-col gap-1 min-w-0">

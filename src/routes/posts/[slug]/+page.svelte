@@ -17,7 +17,7 @@
     date: string | null;
     tags: string[];
     excerpt: string;
-    headerImage: { alt: string; url: string } | null;
+    headerImage: string | null;
     toc: { id: string; text: string; level: number }[];
     body: string;
     partOfSeries?: number;
@@ -245,7 +245,7 @@
 <Seo
   title="{data.post.title} · woss.io"
   description={data.post.excerpt}
-  image={data.post.headerImage?.url ?? `https://woss.io/api/og/${page.params.slug}.png`}
+  image={data.post.headerImage ?? `https://woss.io/api/og/${page.params.slug}.png`}
   type="article"
   publishedTime={data.post.date}
   tags={data.post.tags}
@@ -284,15 +284,15 @@
             <figure
               class="relative m-0 mb-10 mx-[-17px] md:mx-[-25px] lg:mx-[-33px] mt-[-17px] md:mt-[-25px] lg:mt-[-33px]"
             >
-              {#if data.post.headerImage.url.includes('u.macula.link')}
-                {@const base = data.post.headerImage.url.split('?')[0]}
+              {#if data.post.headerImage.includes('u.macula.link')}
+                {@const base = data.post.headerImage.split('?')[0]}
                 <picture class="block">
                   <source media="(max-width: 480px)" srcset={appendQueryParams(base + '?preset=sys_sm', qp)} />
                   <source media="(max-width: 768px)" srcset={appendQueryParams(base + '?preset=sys_md', qp)} />
                   <source media="(max-width: 1024px)" srcset={appendQueryParams(base + '?preset=sys_lg', qp)} />
                   <img
                     src={appendQueryParams(base + '?preset=sys_xl', qp)}
-                    alt={data.post.headerImage.alt}
+                    alt={data.post.title}
                     width="1200" height="600"
                     class="w-full object-cover aspect-2/1 max-sm:aspect-3/1"
                     loading="eager"
@@ -300,8 +300,8 @@
                 </picture>
               {:else}
                 <img
-                  src={data.post.headerImage.url}
-                  alt={data.post.headerImage.alt}
+                  src={data.post.headerImage}
+                  alt={data.post.title}
                   width="1200" height="600"
                   class="w-full object-cover aspect-2/1 max-sm:aspect-3/1"
                   loading="eager"
@@ -310,7 +310,7 @@
               <CopyComponent text={formatPostMd()} toastMessage="Post copied as Markdown" label="Copy as Markdown" class="absolute top-3 right-3 z-10 bg-black/30 hover:bg-black/50 text-white rounded-md" />
               {#if data.imageMeta}
                 <ImageAttribution
-                  title={data.imageMeta.title ?? data.post.headerImage.alt}
+                  title={data.imageMeta.title ?? data.post.title}
                   creator={data.imageMeta.creator}
                   license={data.imageMeta.licenseShort ?? data.imageMeta.license}
                   dataMining={data.imageMeta.dataMiningFull}

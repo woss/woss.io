@@ -3,7 +3,7 @@ import { getPosts } from '$lib/server/db';
 import { renderMarkdown } from '$lib/server/markdown';
 import { CAT, createLogger } from '$lib/server/logger';
 
-type HeaderImage = { alt: string; url: string } | null;
+type HeaderImage = string | null;
 
 type ImageMeta = {
   title?: string;
@@ -28,8 +28,8 @@ export async function load({ params, fetch }: { params: Record<string, string>; 
   const headerImage: HeaderImage = currentRaw.headerImage;
 
   let imageMeta: ImageMeta = null;
-  if (headerImage?.url) {
-    const match = headerImage.url.match(/u\.macula\.link\/([a-zA-Z0-9_-]+)/);
+  if (headerImage) {
+    const match = headerImage.match(/u\.macula\.link\/([a-zA-Z0-9_-]+)/);
     if (match) {
       try {
         const res = await fetch(`https://u.macula.link/${match[1]}.json`);

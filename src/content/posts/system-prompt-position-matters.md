@@ -12,7 +12,7 @@ tags:
   - woss.io
 featured: false
 part_of_series: 'building-woss-io'
-header_image: '[system prompt position matters](https://u.macula.link/8X6UjTL2RlGOsiE7W6M5xw-7)'
+header_image: 'https://u.macula.link/8X6UjTL2RlGOsiE7W6M5xw-7'
 ---
 
 I was staring at the system prompt for my AI assistant, trying to figure out why it kept making things up. Fake commit SHAs. PR numbers that were close but wrong. The usual hallucination stuff that makes you wonder if you're wasting your time.

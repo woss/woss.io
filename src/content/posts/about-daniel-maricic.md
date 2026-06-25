@@ -13,7 +13,7 @@ tags:
   - infrastructure
   - ai
   - open source
-header_image: '[Star trails over Catalonia](https://u.macula.link/6P2P0eXISH-fR6PJzDhlTw-7)'
+header_image: 'https://u.macula.link/6P2P0eXISH-fR6PJzDhlTw-7'
 ---
 
 ## Professional Summary

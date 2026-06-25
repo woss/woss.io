@@ -12,7 +12,7 @@ tags:
   - SQLite
   - TypeScript
   - API design
-header_image: [Opencode visualizer MCP](https://u.macula.link/K-Yi_Xa9RjmyA-jC-BKSXg-7)
+header_image: 'https://u.macula.link/K-Yi_Xa9RjmyA-jC-BKSXg-7'
 part_of_series: opencode-visualizer
 ---
 

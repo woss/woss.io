@@ -13,7 +13,7 @@ tags:
   - content graph
   - prompt engineering
 part_of_series: macula-mcp-announcement
-header_image: '[Macula Content Graph Visualization](https://u.macula.link/Pi4guk9pQGebQU0lWPIGxQ-7)'
+header_image: 'https://u.macula.link/Pi4guk9pQGebQU0lWPIGxQ-7'
 ---
 
 We set out to build an MCP server for a content platform — files, users, directories, keywords, licenses connected through relationships. Standard stuff. Data model. REST endpoints. We'd done it before.
