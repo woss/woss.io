@@ -1,9 +1,9 @@
 ---
 published: false
 title: "The 7-Second Classifier: Why Your Smallest Task Shouldn't Run on Your Biggest Model"
-slug: 'llm-task-classifier'
-description: 'How woss.io was using a 284B-parameter reasoning model to answer "is this github, macula, or none?" — and the lessons from routing it to something saner.'
-date: 2026-06-16
+slug: 'classifier-lessons'
+description: 'Two classifiers, one lesson: the tool classifier that took 7 seconds to say "none" and the relevance gate that stopped off-topic queries — and what both taught us about right-sizing your LLM pipeline.'
+date: 2026-06-25
 tags:
   - LLM
   - tool classifier
@@ -62,7 +62,45 @@ If the main chat used `deepseek-v4-flash` (a giant reasoning model), the classif
 
 The classifier's prompt was tiny — maybe 20 lines, a few hundred tokens. Running a 284B-parameter model on it means paying for millions of idle parameters while the model figures out it needs to output `none`.
 
-## Exploring the Fix
+## A Different Problem: The Open Gate
+
+Portfolio site with an AI chat. Visitors ask about Daniel's work — projects, experience, skills. RAG pipeline retrieves chunks from a vector store, LLM generates answers. MCP tools for GitHub queries. Clean, scoped, intentional.
+
+Until someone asked: "Search GitHub for open source AI coding agents."
+
+Chat `06a1bf7b-6a98-453b-8ca4-b03470c70f1e`. User submits a completely generic query. Three assistant messages return. Content: a ranked list of open-source AI coding agents — goose, deer-flow, LibreChat, plandex, Kilo. None of them Daniel's projects. None related to his portfolio. The AI was polite, thorough, and entirely wrong.
+
+This wasn't a hallucination. It was a systemic bypass.
+
+Five layers of defense that didn't exist:
+
+### Layer 1: No Relevance Gate
+
+POST /api/ask validates: text ≤ 500 chars, rate limit 10/min, max 50 msg/chat. Nothing checks whether the query belongs here at all.
+
+### Layer 2: classifyQuery Never Rejects
+
+classifyQuery() uses embedding centroids to sort queries into tool, rag, or hybrid. It optimizes the pipeline — it never rejects. Every query gets served.
+
+### Layer 3: needsExternalTools Too Broad
+
+```typescript
+function needsExternalTools(text: string): boolean {
+  return /open\s*source.*contribut|pr\b|pull/.test(text);
+}
+```
+
+The regex matched because the query contained "open source" and the topic was generally "contribut[ion]-adjacent." No check for whether the query referenced anything about Daniel or his projects.
+
+### Layer 4: Unrestricted MCP Tools
+
+The model had access to search_code and search_repositories GitHub tools. The tool descriptions said nothing about scope. The model searched all of GitHub for AI coding agents.
+
+### Layer 5: No Refusal Instruction
+
+The system prompt guided the model to be helpful and accurate. It never told the model what not to answer.
+
+## Exploring the Fix — Right-Size the Tool Classifier
 
 Once I noticed the problem, I had a few directions to go.
 
@@ -103,13 +141,11 @@ The more patterns the keyword layer catches, the fewer LLM classifications neede
 
 The classifier already sliced history to the last 2 exchanges via `.slice(-2)` — this was never a problem. But it's worth checking: any time the caller loads 50 messages but the callee only needs 2, the unnecessary DB fetch is a minor micro-optimization target.
 
-## What I Actually Did
+## What I Actually Did for the Tool Classifier
 
 I went with the separate model approach. The classifier always used `.slice(-2)` so context was never bloated — that was already handled.
 
 The separate model env var let me route the classifier to `mimo-v2.5-free`. The first MiMo request told the story:
-
-### The First MiMo Request
 
 The MiMo experiment lasted exactly one request. The log for chat `4d0e8274` told the story:
 
@@ -127,7 +163,121 @@ I pulled MiMo from the classifier route. It fell back to the main model (DeepSee
 
 The real win wasn't a faster model — it was having the option to swap models per-component, even if the first swap candidate didn't work out.
 
-### A Related Problem: The RAG Query Classifier
+## Building the Relevance Gate
+
+The other classifier needed to be built from scratch — there was nothing to right-size, because nothing existed.
+
+### The Fix: LLM-Powered Relevance Gate
+
+We needed something fast, cheap, and effective. Pattern matching wouldn't cover the long tail. Embedding classification adds complexity. The simplest path: ask the same LLM a binary question.
+
+```typescript
+async function isRelevant(
+  question: string,
+  history: { role: string; content: string }[],
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const context = history
+    .slice(-2)
+    .map((m) => `${m.role}: ${m.content}`)
+    .join('\n');
+  try {
+    const response = await fetch(`${config.openai.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.openai.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.openai.model,
+        temperature: 0,
+        max_tokens: 5000,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a classifier. Classify the following question as relevant or not relevant to Daniel Maricic's portfolio. If the request is positive feedback or a wish to contact, hire, or collaborate, consider it relevant. Answer exactly one word: yes or no. Do not explain. Do not reason. Do not output anything else.`,
+          },
+          { role: 'user', content },
+        ],
+      }),
+      signal: signal ?? AbortSignal.timeout(5000),
+    });
+    const body = await response.json();
+    const msg = body.choices?.[0]?.message;
+    const answer = (msg?.content ?? msg?.reasoning_content ?? '').trim().toLowerCase();
+    return answer === 'yes';
+  } catch (err) {
+    log.warn`Relevance check failed: ${err} — allowing query (fail-open)`;
+    return true;
+  }
+}
+```
+
+Key decisions:
+
+- **Same provider/endpoint** — no new infrastructure, same auth, same reliability
+- **Temperature 0** — deterministic, no creativity in the answer
+- **Fail-open** — if the LLM is down, let the query through. Downtime shouldn't create false positives
+- **~300 tokens per check** — at typical LLM pricing, roughly $0.0001 per call
+
+### Placement
+
+The gate fires in startGeneration(), after loading chat history but before embedding:
+
+```
+POST handler (saves message, returns 202)
+  └─ startGeneration()
+       ├─ publish user_message event
+       ├─ isRelevant() ← HERE
+       │    ├─ yes → continue
+       │    └─ no  → publish error, lock chat, fire webhook, return
+       ├─ embedText()
+       ├─ checkCache()
+       ├─ classifyQuery()
+       └─ stream generation
+```
+
+This is important: the user message is already saved, so the user sees it in the UI. The gate runs in the background on the generation path, not on the request path. No added latency to the 202 response.
+
+### Three Supporting Layers
+
+Gate alone isn't enough. We hardened the other layers too:
+
+**needsExternalTools() — Tightened:**
+
+```typescript
+function needsExternalTools(text: string): boolean {
+  const t = text.toLowerCase();
+  const referencesDaniel = /\b(daniel|woss|anagolay|idiyanale|sensio)\b/.test(t);
+  if (!referencesDaniel) return false;
+  return /pr|pull request|commit|issue|repo|repository|github|stars|fork/.test(t);
+}
+```
+
+GitHub tools only fire when the query explicitly references Daniel or his projects.
+
+**System prompt — Hardened:** Appended a CRITICAL — REFUSAL RULE instructing the model to refuse off-topic questions with a specific message.
+
+**MCP tool descriptions — Scoped:** All 23 tool descriptions now end with "Only use for queries about Daniel Maricic's work."
+
+### Debugging: The Gap Between Theory and Practice
+
+First test: "Search GitHub for open source AI coding agents."
+
+**Bug 1: The Thinking Model Problem.** We set `max_tokens: 5`. The LLM responded with `reasoning_content` populated and `content` empty. The model was a reasoning model that routed the classification answer to the reasoning field. Fix: read both fields as fallback — `const answer = (msg?.content ?? msg?.reasoning_content ?? '').trim().toLowerCase()`. Also bumped `max_tokens` to 5000 because reasoning models need room to think.
+
+**Bug 2: The Silent Error.** The SSE event handler on the frontend had a guard — `if (typeof msgId !== 'string') return;` — that silently dropped the relevance gate error event because no assistant message was created. Fix: combine the guard with the dedup check — `if (typeof msgId === 'string' && messages.some((m) => m.id === msgId)) return;`.
+
+### Chat Locking
+
+Once a query is rejected, there's no point letting the user keep trying. The answer won't change. So we lock the chat:
+
+- POST handler checks `isChatLocked` before processing any message — returns 400 if locked
+- Relevance gate calls `lockChat()` on rejection
+- The error UI hides the "Try again" button via an irrecoverable flag
+- A webhook fires for observability
+
+## A Related Problem — When Classifiers Gate Each Other
 
 The tool classifier isn't the only classifier in the system. There's a parallel classification step — `classifyQuery` in `query-classifier.ts` — that determines whether a query needs RAG context (`rag`), tool execution (`tool`), both (`hybrid`), or neither (`meta`).
 
@@ -147,9 +297,11 @@ ragResults = await retrieveContext(query);
 
 RAG now runs on every query, independent of tool classification. The classifiers still serve their original purpose — the tool classifier determines which MCP tools to load, the query classifier determines how to route the request — but neither can starve the model of context anymore.
 
-The lesson applies to both classifiers: a classifier should gate what it classifies, not what its neighbors do. The tool classifier decides which tools. It shouldn't also decide whether RAG runs.
+The lesson applies to both classifiers: a classifier should gate what it classifies, not what its neighbors do. The tool classifier decides which tools. It shouldn't also decide whether RAG runs. The relevance gate revealed the same pattern — it decides whether to answer, not which tools to load.
 
-## The Deeper Lesson
+## Lessons
+
+### Right-Size Your Models
 
 This is a case study in a pattern I've seen across the entire woss.io stack: defaulting to the biggest model.
 
@@ -165,4 +317,26 @@ The right architecture isn't one model that does everything. It's a spectrum:
 
 Each level handles what it's good at. The big model only fires when the small models signal that it's needed. This isn't just about cost — it's about latency, about reliability, about designing a system where every component is appropriately sized for its job.
 
-The seven-second classifier is fixed now. But the pattern lives on in every pipeline that defaults to "the big model" for "a small task." It's worth checking yours.
+At ~300 tokens per check on a $0.15/M input token model, the relevance gate costs roughly $0.000045 per query. Even at 1000 queries, that's $0.05. The cost of serving an off-topic query is easily 100x more. Right-sizing isn't just about speed — the economics compound.
+
+### Defense in Depth Wins
+
+Five layers of failure meant a single regex bypass took down the whole system. The relevance gate, tightened keyword checks, hardened system prompt, scoped tool descriptions, and chat locking each catch a different failure mode. Bypassing one still leaves four.
+
+### Fail-Open is a Safety Valve
+
+The relevance gate could false-positive on legitimate queries if the LLM is degraded. Fail-open (return true) means downtime of the classifier doesn't block the core product. The tool classifier followed the same pattern — if the LLM call fails, fall through to `none` and let the rest of the pipeline handle it gracefully.
+
+### Classifiers Should Gate One Dimension
+
+A classifier should gate what it classifies, not what its neighbors do. The tool classifier decides which tools. The relevance gate decides whether to answer. The query classifier decides how to route. When a classifier starts controlling adjacent concerns — like the tool classifier gating RAG — it creates blind spots that are hard to trace.
+
+### Test End-to-End
+
+Unit tests can't catch production score thresholds, silent error drops, or frontend guards that never triggered. The relevance gate was correct in unit terms — but the frontend error handler had a bug that existed for months, just never triggered because every previous error path happened to include a messageId. Only an end-to-end test revealed it.
+
+### The Takeaway
+
+Building AI products means building boundaries. The model is powerful and wants to be helpful — perhaps too helpful. The seven-second classifier is fixed now, and the relevance gate catches queries that shouldn't be answered at all. But the pattern lives on in every pipeline that defaults to "the big model" for "a small task," or trusts a single layer of defense to guard the gate.
+
+It's worth checking yours.
