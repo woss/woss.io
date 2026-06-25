@@ -194,7 +194,7 @@
         for (let i = 0; i < rawAssistantMessages.length; i++) {
           const result = reactionResults[i];
           if (result.status === 'fulfilled' && result.value) {
-            reactionMap.set(rawAssistantMessages[i].id as string, result.value);
+            reactionMap.set(rawAssistantMessages[i].id as string, result.value.reaction);
           }
         }
 
@@ -463,14 +463,14 @@
     sendMessage(text);
   }
 
-  async function fetchReaction(messageId: string): Promise<{ type: 'up' | 'down' | 'heart'; reason: string } | null> {
+  async function fetchReaction(messageId: string): Promise<{ reaction: { type: 'up' | 'down' | 'heart'; reason: string } | null } | null> {
     try {
       const res = await fetch(`/api/messages/${messageId}/reaction`, {
         headers: { 'x-user-id': userId },
       });
       if (res.ok) {
         const data = await res.json();
-        return data.reaction;
+        return { reaction: data.reaction };
       }
     } catch {
       /* ignore */
@@ -503,9 +503,9 @@
     isOwner = id === data.chatOwnerId;
   });
 
-  // Fetch dismissed tours once userId is set
+  // Fetch dismissed tours once userId is set — skip for read-only shared chats
   $effect(() => {
-    if (!browser || !userId) return;
+    if (!browser || !userId || !isOwner) return;
     fetch(`/api/tours?userId=${encodeURIComponent(userId)}`)
       .then((r) => r.json())
       .then((data) => {

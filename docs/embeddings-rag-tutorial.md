@@ -195,6 +195,9 @@ export class VectorStore {
     this.index = new Index({
       dimensions: DIMENSIONS,
       metric: MetricKind.Cos,
+      connectivity: 16,
+      expansion_add: 128,
+      expansion_search: 200,
     });
 
     const indexPath = join(DATA_DIR, 'vectors.usearch');
@@ -336,7 +339,7 @@ understands meaning.
 import { embedText } from './embed';
 import { VectorStore } from './store';
 
-async function search(query: string, topK = 5, threshold = 1.5): Promise<void> {
+async function search(query: string, topK = 5, threshold = 0.5): Promise<void> {
   const store = new VectorStore();
   const start = performance.now();
 
@@ -351,7 +354,7 @@ async function search(query: string, topK = 5, threshold = 1.5): Promise<void> {
   results
     .filter((r) => r.score < threshold)
     .forEach((r, i) => {
-      const relevance = r.score < 0.4 ? '★ High' : r.score < 0.7 ? '● Medium' : '○ Low';
+      const relevance = r.score < 0.3 ? '★ High' : r.score < 0.5 ? '● Medium' : '○ Low';
 
       console.log(`#${i + 1} ${relevance} (${r.score.toFixed(3)})`);
       console.log(`   Source: ${r.chunk.source}`);
@@ -391,7 +394,7 @@ const client = new OpenAI({
   apiKey: process.env.LLM_API_KEY,
 });
 
-async function ask(question: string): Promise<void> {
+async function ask(question: string, threshold = 0.5): Promise<void> {
   const store = new VectorStore();
 
   // 1. Embed the question
@@ -399,7 +402,7 @@ async function ask(question: string): Promise<void> {
 
   // 2. Retrieve relevant chunks
   const results = store.search(queryVector, 6);
-  const relevant = results.filter((r) => r.score < 1.5);
+  const relevant = results.filter((r) => r.score < threshold);
 
   if (relevant.length === 0) {
     console.log('No relevant context found.');
@@ -458,7 +461,73 @@ ask("What are Daniel's strengths in leading teams?");
 
 ---
 
-## 7. Environment Setup
+## 7. Cross-Encoder Re-ranker (Optional)
+
+A bi-encoder maps each text to a single vector, then measures distance
+in that space. Fast, but lossy — it can't look at the query and
+document _together_ to decide if they're related. A cross-encoder does
+exactly that: it takes the pair, runs them through the model at the
+same time, and gives back a relevance score. That's how it catches
+false positives.
+
+Here's the two-stage version:
+
+1. **Bi-encoder recall** — retrieve ~50 candidates from USearch (fast)
+2. **Cross-encoder precision** — re-rank those 50 with a relevance model
+
+```ts
+// src/rerank.ts
+import { pipeline } from '@huggingface/transformers';
+
+let reranker: any = null;
+
+async function getReranker() {
+  if (!reranker) {
+    reranker = await pipeline('text-classification', 'Xenova/bge-reranker-v2-m3');
+  }
+  return reranker;
+}
+
+export async function rerank(
+  query: string,
+  chunks: Array<{ text: string; score: number }>,
+): Promise<Array<{ text: string; score: number; rerankerScore: number }>> {
+  const model = await getReranker();
+  const pairs = chunks.map((c) => ({ text: query, text_pair: c.text }));
+  const results = await model(pairs);
+  return chunks.map((c, i) => ({
+    ...c,
+    rerankerScore: results[i].score,
+  }));
+}
+```
+
+Then filter by `rerankerScore` instead of cosine distance:
+
+```ts
+const RERANKER_MIN_SCORE = 0.15;
+const reranked = await rerank(query, candidates);
+const filtered = reranked.filter((r) => r.rerankerScore >= RERANKER_MIN_SCORE);
+```
+
+**Trade-offs:**
+
+| Factor         | Bi-encoder only | With cross-encoder           |
+| -------------- | --------------- | ---------------------------- |
+| Latency        | ~50ms           | ~50ms + ~200ms for 50 docs   |
+| Accuracy       | False positives | Catches semantic mismatches  |
+| Model download | ~1.3GB          | +~1.1GB (bge-reranker-v2-m3) |
+
+The cross-encoder model downloads on first use — same pattern as the
+embedding model. Make sure your USearch config sets
+`expansion_search: 200` so the re-ranker gets enough candidates to
+score.
+
+> See [RAG False Positives: When Cosine Distance Lies](/posts/rag-false-positives-reranker) for a real-world breakdown.
+
+---
+
+## 8. Environment Setup
 
 ```bash
 # Install dependencies
@@ -470,7 +539,7 @@ export LLM_API_KEY="sk-or-v1-..."
 export LLM_BASE_URL="https://openrouter.ai/api/v1"
 export LLM_MODEL="openai/gpt-4o-mini"
 
-# Build the index (first time — downloads model ~150MB)
+# Build the index (first time — downloads model ~1.3GB)
 npx tsx src/index.ts
 
 # Semantic search (no LLM required)
@@ -481,7 +550,7 @@ npx tsx src/ask.ts
 ```
 
 On first run, Transformers.js downloads the `bge-large-en-v1.5` model
-(~150MB) and caches it. Subsequent runs load from cache.
+(~1.3GB) and caches it. Subsequent runs load from cache.
 
 ---
 
@@ -534,10 +603,17 @@ USearch returns **distance** (0 = identical, 2 = opposite). The
 similarity would be `1 - distance/2` but thresholding against distance
 is equivalent and avoids a division per result.
 
-- `< 0.4` — highly relevant (strong match)
-- `0.4–0.7` — moderately relevant
-- `0.7–1.5` — weakly relevant
-- `> 1.5` — noise (filter out)
+- `< 0.3` — highly relevant (strong match)
+- `0.3–0.5` — moderately relevant
+- `0.5–0.7` — weakly relevant
+- `> 0.7` — noise (filter out)
+
+> **⚠️ Bi-encoder gotcha:** Cosine distance on a single vector is a
+> lossy comparison. Two texts can land close in this space — sharing
+> technical vocabulary or topic keywords — without being semantically
+> related in the way your query needs. You get false positives: chunks
+> that look good by distance but aren't actually relevant. For
+> production, add a cross-encoder re-ranker (see section 7).
 
 ### Why Local Embeddings?
 

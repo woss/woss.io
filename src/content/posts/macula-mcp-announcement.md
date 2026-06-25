@@ -10,7 +10,7 @@ tags:
   - content discovery
   - AI agents
   - API design
-header_image: '[Making Content Accessible to AI](https://u.macula.link/tY372ROkTd-nvcoFnh9bHw-7)'
+header_image: 'https://u.macula.link/tY372ROkTd-nvcoFnh9bHw-7'
 ---
 
 Macula is a platform for photographers and creators to publish their work with proper licensing and metadata. We've been serving a public API (`unified-link`) for a while, but AI agents don't connect to REST APIs easily. They need MCP.

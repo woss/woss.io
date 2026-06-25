@@ -78,22 +78,22 @@
             aria-label="Read: {post.title}"
           >
             {#if post.headerImage}
-              {#if post.headerImage.url.includes('u.macula.link')}
-                {@const base = post.headerImage.url.split('?')[0]}
+              {#if post.headerImage.includes('u.macula.link')}
+                {@const base = post.headerImage.split('?')[0]}
                 <picture>
                   <source media="(max-width: 480px)" srcset={appendQueryParams(base + '?preset=sys_sm', qp)} />
                   <source media="(max-width: 768px)" srcset={appendQueryParams(base + '?preset=sys_md', qp)} />
                   <source media="(max-width: 1024px)" srcset={appendQueryParams(base + '?preset=sys_lg', qp)} />
                   <img
                     src={appendQueryParams(base + '?preset=sys_xl', qp)}
-                    alt={post.headerImage.alt}
+                    alt={post.title}
                     width="1200" height="600"
                     loading="lazy"
                     class="w-full aspect-2/1 object-cover"
                   />
                 </picture>
               {:else}
-                <img src={post.headerImage.url} alt={post.headerImage.alt} width="1200" height="600" class="w-full aspect-2/1 object-cover" />
+                <img src={post.headerImage} alt={post.title} width="1200" height="600" class="w-full aspect-2/1 object-cover" />
               {/if}
             {:else}
               <img

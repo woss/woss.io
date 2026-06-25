@@ -12,7 +12,7 @@ tags:
   - REST
   - API design
 part_of_series: macula-mcp-announcement
-header_image: '[Content Graph Visualization](https://u.macula.link/Kh9NMfIeSUakGgg3sOL12w-7)'
+header_image: 'https://u.macula.link/Kh9NMfIeSUakGgg3sOL12w-7'
 ---
 
 ## The Gallery

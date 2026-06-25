@@ -460,10 +460,9 @@ async function buildIndex(): Promise<void> {
       // Allow frontmatter slug to override filename-derived slug
       if (data.slug && typeof data.slug === 'string') entry.slug = data.slug;
 
-      // Parse header_image from markdown link "[alt](url)" into structured object
-      if (data.header_image && typeof data.header_image === 'string') {
-        const linkMatch = /\[([^\]]*)\]\(([^)]*)\)/.exec(data.header_image);
-        data.header_image = linkMatch ? { alt: linkMatch[1], url: linkMatch[2] } : null;
+      // header_image is a plain URL string
+      if (data.header_image && typeof data.header_image !== 'string') {
+        data.header_image = null;
       }
 
       // Process title, date, tags — handle Date objects from frontmatter
@@ -515,7 +514,7 @@ async function buildIndex(): Promise<void> {
           JSON.stringify(tags),
           data.status || (data.published !== false ? 'published' : 'draft'),
           data.excerpt ?? '',
-          JSON.stringify(data.header_image ?? null),
+          data.header_image ?? null,
           data.featured ? 1 : 0,
           data.position ?? null,
           null, // part_of_series — resolved in second pass below
