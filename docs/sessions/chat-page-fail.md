@@ -1,0 +1,242 @@
+- generic [ref=e2]:
+  - navigation "Main navigation" [ref=e3]:
+    - generic [ref=e4]:
+      - link "woss.io" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e6]:
+        - link "Ask" [ref=e7] [cursor=pointer]:
+          - /url: /
+        - link "Experience" [ref=e8] [cursor=pointer]:
+          - /url: /experience
+        - link "Posts" [ref=e9] [cursor=pointer]:
+          - /url: /posts
+        - link "About" [ref=e10] [cursor=pointer]:
+          - /url: /about
+  - region "Notifications alt+T"
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - complementary [ref=e13]:
+        - button "New Chat" [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+          - generic [ref=e17]: New Chat
+        - generic [ref=e18]:
+          - generic [ref=e93]:
+            - link "show me daniels photography portfolio 1" [ref=e94] [cursor=pointer]:
+              - /url: /chat/ca0ef475-0ac2-4068-8b34-91eec22a48ff
+              - img [ref=e95]
+              - generic [ref=e97]: show me daniels photography portfolio
+              - generic [ref=e98]: "1"
+            - button "Delete chat" [ref=e99] [cursor=pointer]: ×
+          - generic [ref=e100]:
+            - link "show me daniels photography portfolio 1" [ref=e101] [cursor=pointer]:
+              - /url: /chat/9171d35b-6723-40df-aaa9-891ffbce478d
+              - img [ref=e102]
+              - generic [ref=e104]: show me daniels photography portfolio
+              - generic [ref=e105]: "1"
+            - button "Delete chat" [ref=e106] [cursor=pointer]: ×
+          - generic [ref=e107]:
+            - link "show me daniels photography portfolio 1" [ref=e108] [cursor=pointer]:
+              - /url: /chat/488a4f8c-2028-4a50-8b8b-0ce9fa02152d
+              - img [ref=e109]
+              - generic [ref=e111]: show me daniels photography portfolio
+              - generic [ref=e112]: "1"
+            - button "Delete chat" [ref=e113] [cursor=pointer]: ×
+          - generic [ref=e114]:
+            - link "show me daniels photography portfolio 1" [ref=e115] [cursor=pointer]:
+              - /url: /chat/9c2aa740-9917-44ac-ad7a-a84a145c8fea
+              - img [ref=e116]
+              - generic [ref=e118]: show me daniels photography portfolio
+              - generic [ref=e119]: "1"
+            - button "Delete chat" [ref=e120] [cursor=pointer]: ×
+          - generic [ref=e121]:
+            - link "show me daniels photography portfolio 1" [ref=e122] [cursor=pointer]:
+              - /url: /chat/8ae02efe-f0a5-4016-bd28-feac3eea9829
+              - img [ref=e123]
+              - generic [ref=e125]: show me daniels photography portfolio
+              - generic [ref=e126]: "1"
+            - button "Delete chat" [ref=e127] [cursor=pointer]: ×
+          - generic [ref=e128]:
+            - link "show me daniels photography portfolio 1" [ref=e129] [cursor=pointer]:
+              - /url: /chat/bcdea4cb-2ace-4242-9c0c-cbe15573654e
+              - img [ref=e130]
+              - generic [ref=e132]: show me daniels photography portfolio
+              - generic [ref=e133]: "1"
+            - button "Delete chat" [ref=e134] [cursor=pointer]: ×
+          - generic [ref=e135]:
+            - link "show me daniels photography portfolio 1" [ref=e136] [cursor=pointer]:
+              - /url: /chat/6a1c543e-5c39-4dab-882e-5395c44b5adf
+              - img [ref=e137]
+              - generic [ref=e139]: show me daniels photography portfolio
+              - generic [ref=e140]: "1"
+            - button "Delete chat" [ref=e141] [cursor=pointer]: ×
+          - generic [ref=e142]:
+            - link "show me daniels photography portfolio 1" [ref=e143] [cursor=pointer]:
+              - /url: /chat/6d62b0ef-c9ab-44df-828b-d6951be8c08f
+              - img [ref=e144]
+              - generic [ref=e146]: show me daniels photography portfolio
+              - generic [ref=e147]: "1"
+            - button "Delete chat" [ref=e148] [cursor=pointer]: ×
+          - generic [ref=e149]:
+            - link "show me daniels photography portfolio 1" [ref=e150] [cursor=pointer]:
+              - /url: /chat/6f698720-7685-4302-9c41-5151c6268f35
+              - img [ref=e151]
+              - generic [ref=e153]: show me daniels photography portfolio
+              - generic [ref=e154]: "1"
+            - button "Delete chat" [ref=e155] [cursor=pointer]: ×
+          - generic [ref=e156]:
+            - link "show me daniels photography portfolio 1" [ref=e157] [cursor=pointer]:
+              - /url: /chat/134ccd9b-059d-45ec-87c0-ac67a01f8f78
+              - img [ref=e158]
+              - generic [ref=e160]: show me daniels photography portfolio
+              - generic [ref=e161]: "1"
+            - button "Delete chat" [ref=e162] [cursor=pointer]: ×
+          - generic [ref=e163]:
+            - link "show me daniels photography portfolio 1" [ref=e164] [cursor=pointer]:
+              - /url: /chat/7cf43147-0e4a-4722-961e-949d94e46320
+              - img [ref=e165]
+              - generic [ref=e167]: show me daniels photography portfolio
+              - generic [ref=e168]: "1"
+            - button "Delete chat" [ref=e169] [cursor=pointer]: ×
+          - generic [ref=e170]:
+            - link "does daniel have any creative hobbies 3" [ref=e171] [cursor=pointer]:
+              - /url: /chat/aa0e0483-07ff-4602-8410-7ed35b5f139d
+              - img [ref=e172]
+              - generic [ref=e174]: does daniel have any creative hobbies
+              - generic [ref=e175]: "3"
+            - button "Delete chat" [ref=e176] [cursor=pointer]: ×
+          - generic [ref=e177]:
+            - link "Show me Daniel's pull requests 3" [ref=e178] [cursor=pointer]:
+              - /url: /chat/b90b075a-9c16-4105-ae5f-9adfaa7aebb5
+              - img [ref=e179]
+              - generic [ref=e181]: Show me Daniel's pull requests
+              - generic [ref=e182]: "3"
+            - button "Delete chat" [ref=e183] [cursor=pointer]: ×
+          - generic [ref=e184]:
+            - link "show me last 10 images from daniel's win 2" [ref=e185] [cursor=pointer]:
+              - /url: /chat/b53eea56-ce61-4008-95b6-541e2c8ca796
+              - img [ref=e186]
+              - generic [ref=e189]: show me last 10 images from daniel's win
+              - generic [ref=e190]: "2"
+            - button "Delete chat" [ref=e191] [cursor=pointer]: ×
+          - generic [ref=e192]:
+            - link "New Chat 1" [ref=e193] [cursor=pointer]:
+              - /url: /chat/f173c96a-c754-4691-a8c3-522c357a1061
+              - img [ref=e194]
+              - generic [ref=e196]: New Chat
+              - generic [ref=e197]: "1"
+            - button "Delete chat" [ref=e198] [cursor=pointer]: ×
+          - generic [ref=e199]:
+            - link "What projects has Daniel founded? 12" [ref=e200] [cursor=pointer]:
+              - /url: /chat/7c2a30d6-3f9f-4c42-9356-d19b4294b948
+              - img [ref=e201]
+              - generic [ref=e203]: What projects has Daniel founded?
+              - generic [ref=e204]: "12"
+            - button "Delete chat" [ref=e205] [cursor=pointer]: ×
+          - generic [ref=e206]:
+            - link "what are daniels hobbies 7" [ref=e207] [cursor=pointer]:
+              - /url: /chat/a9527bdb-a90f-4ba7-98e5-451186f15a51
+              - img [ref=e208]
+              - generic [ref=e210]: what are daniels hobbies
+              - generic [ref=e211]: "7"
+            - button "Delete chat" [ref=e212] [cursor=pointer]: ×
+          - generic [ref=e213]:
+            - link "show me your images from macula 2" [ref=e214] [cursor=pointer]:
+              - /url: /chat/cf4f9863-7bf5-4715-851b-32abf5aa238d
+              - img [ref=e215]
+              - generic [ref=e217]: show me your images from macula
+              - generic [ref=e218]: "2"
+            - button "Delete chat" [ref=e219] [cursor=pointer]: ×
+          - generic [ref=e220]:
+            - link "show me daniels photos 5" [ref=e221] [cursor=pointer]:
+              - /url: /chat/561545a9-24a3-4194-a062-716788eb5f94
+              - img [ref=e222]
+              - generic [ref=e224]: show me daniels photos
+              - generic [ref=e225]: "5"
+            - button "Delete chat" [ref=e226] [cursor=pointer]: ×
+          - generic [ref=e227]:
+            - link "What DevOps and cloud experience does Da 3" [ref=e228] [cursor=pointer]:
+              - /url: /chat/6b5de034-482e-4c44-b01a-92243c7084cf
+              - img [ref=e229]
+              - generic [ref=e232]: What DevOps and cloud experience does Da
+              - generic [ref=e233]: "3"
+            - button "Delete chat" [ref=e234] [cursor=pointer]: ×
+          - generic [ref=e235]:
+            - link "What projects has Daniel founded? 1" [ref=e236] [cursor=pointer]:
+              - /url: /chat/02a74807-57ac-4977-99c4-e608cd74d40d
+              - img [ref=e237]
+              - generic [ref=e239]: What projects has Daniel founded?
+              - generic [ref=e240]: "1"
+            - button "Delete chat" [ref=e241] [cursor=pointer]: ×
+          - generic [ref=e242]:
+            - link "show me daniels portfolio 1" [ref=e243] [cursor=pointer]:
+              - /url: /chat/50979d2a-6067-4bdb-ae0a-2bd3cc19bf74
+              - img [ref=e244]
+              - generic [ref=e246]: show me daniels portfolio
+              - generic [ref=e247]: "1"
+            - button "Delete chat" [ref=e248] [cursor=pointer]: ×
+          - generic [ref=e249]:
+            - link "what are daniels hobbirs 5" [ref=e250] [cursor=pointer]:
+              - /url: /chat/e0f0bb82-12d1-45a6-aaf5-35e3c9e98b85
+              - img [ref=e251]
+              - generic [ref=e253]: what are daniels hobbirs
+              - generic [ref=e254]: "5"
+            - button "Delete chat" [ref=e255] [cursor=pointer]: ×
+        - generic [ref=e256]:
+          - paragraph [ref=e257]: Services
+          - generic [ref=e258]:
+            - generic [ref=e260]: GitHub
+            - link "Macula" [ref=e265] [cursor=pointer]
+        - generic [ref=e20]:
+          - paragraph [ref=e21]: Commands
+          - generic [ref=e22]:
+            - generic [ref=e23]:
+              - generic [ref=e24]: /contact
+              - generic [ref=e25]: Show contact form
+            - generic [ref=e26]:
+              - generic [ref=e27]: /summarize
+              - generic [ref=e28]: Summarize conversation
+        - paragraph [ref=e30]: 23/100 chats
+      - generic [ref=e31]:
+        - generic [ref=e33]:
+          - generic [ref=e35]:
+            - generic [ref=e36]: show me daniels photography portfolio
+            - generic [ref=e37]:
+              - generic [ref=e38]: a few seconds ago
+              - button "Copy link to message" [ref=e40] [cursor=pointer]:
+                - img [ref=e41]
+          - generic [ref=e45]:
+            - paragraph [ref=e47]: Let me look up Daniel's Macula profile to find his photography portfolio.
+            - generic [ref=e48]:
+              - generic [ref=e49]: Was this helpful?
+              - button "Thumbs up" [ref=e50] [cursor=pointer]:
+                - img [ref=e51]
+              - button "Thumbs down" [ref=e53] [cursor=pointer]:
+                - img [ref=e54]
+              - button "Heart" [ref=e56] [cursor=pointer]:
+                - img [ref=e57]
+              - button "Copy as markdown" [ref=e60] [cursor=pointer]:
+                - img [ref=e61]
+              - button "Copy link to message" [ref=e65] [cursor=pointer]:
+                - img [ref=e66]
+            - generic [ref=e69]:
+              - generic [ref=e70]: 7.1s
+              - generic [ref=e71]: ·
+              - generic [ref=e72]: a few seconds ago
+            - generic [ref=e270]:
+              - generic [ref=e271]:
+                - generic [ref=e272]: (1)
+                - text: ⚙ macula/get_users
+                - generic [ref=e273]: 1.0s
+              - generic [ref=e274]:
+                - generic [ref=e275]: (1)
+                - text: ⚙ macula/traverse
+        - generic [ref=e77]:
+          - textbox "Curious about Daniel? Ask away." [ref=e79]
+          - generic [ref=e80]:
+            - generic [ref=e81]: 1/50 messages
+            - button "Send message" [disabled] [ref=e83]:
+              - img [ref=e84]
+        - generic [ref=e86]:
+          - button "Mute sounds" [ref=e87] [cursor=pointer]:
+            - img [ref=e88]
+          - paragraph [ref=e92]: AI can make mistakes. Verify important information.
