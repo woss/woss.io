@@ -803,7 +803,10 @@ function getPosts(slug?: string): {
       tags: JSON.parse(String(r.tags ?? '[]')),
       status: String(r.status),
       excerpt: String(r.excerpt ?? ''),
-      headerImage: (r.header_image ? String(r.header_image) : null) as string | null,
+      headerImage: (() => {
+        const raw = r.header_image ? String(r.header_image) : null;
+        return (raw === 'null' || raw === 'undefined' ? null : raw) as string | null;
+      })(),
       featured: Number(r.featured) === 1,
       position: r.position != null ? Number(r.position) : null,
       partOfSeries: r.part_of_series != null ? Number(r.part_of_series) : null,

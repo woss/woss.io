@@ -92,7 +92,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   if (cspResponse.status === 404) {
     const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
-    log.warn`[404] ${event.request.method} ${event.url.pathname} UA=${event.request.headers.get('user-agent') ?? 'none'} IP=${ip}`;
+    const referer = event.request.headers.get('referer') ?? 'none';
+    log.warn`[404] ${event.request.method} ${event.url.pathname} UA=${event.request.headers.get('user-agent') ?? 'none'} Ref=${referer} IP=${ip}`;
   }
   return cspResponse;
 };
