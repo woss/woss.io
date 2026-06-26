@@ -466,7 +466,7 @@ async function buildIndex(): Promise<void> {
       if (data.slug && typeof data.slug === 'string') entry.slug = data.slug;
 
       // header_image is a plain URL string
-      if (data.header_image && typeof data.header_image !== 'string') {
+      if (data.header_image && (typeof data.header_image !== 'string' || data.header_image === 'null')) {
         data.header_image = null;
       }
 

@@ -245,7 +245,7 @@
 <Seo
   title="{data.post.title} · woss.io"
   description={data.post.excerpt}
-  image={data.post.headerImage ?? `https://woss.io/api/og/${page.params.slug}.png`}
+  image={data.post.headerImage && data.post.headerImage !== 'null' ? data.post.headerImage : `https://woss.io/api/og/${page.params.slug}.png`}
   type="article"
   publishedTime={data.post.date}
   tags={data.post.tags}
@@ -280,7 +280,7 @@
           id="main-content"
           class="bg-surface-container border border-[rgba(255,255,255,0.08)] rounded-lg overflow-hidden p-4 md:p-6 lg:p-8"
         >
-          {#if data.post.headerImage}
+          {#if data.post.headerImage && data.post.headerImage !== 'null'}
             <figure
               class="relative m-0 mb-10 mx-[-17px] md:mx-[-25px] lg:mx-[-33px] mt-[-17px] md:mt-[-25px] lg:mt-[-33px]"
             >

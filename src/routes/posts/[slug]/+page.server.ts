@@ -28,7 +28,7 @@ export async function load({ params, fetch }: { params: Record<string, string>; 
   const headerImage: HeaderImage = currentRaw.headerImage;
 
   let imageMeta: ImageMeta = null;
-  if (headerImage) {
+  if (headerImage && headerImage !== 'null') {
     const match = headerImage.match(/u\.macula\.link\/([a-zA-Z0-9_-]+)/);
     if (match) {
       try {

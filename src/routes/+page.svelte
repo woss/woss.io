@@ -272,7 +272,7 @@
                     href={resolve('/posts/[slug]', { slug: post.slug })}
                     class="flex flex-col gap-2 rounded-xl bg-surface-container-high border border-[rgba(255,255,255,0.06)] p-4 no-underline transition-all duration-150 hover:border-primary/30 hover:shadow-[0_0_20px_rgba(0,218,140,0.06)] hover:-translate-y-0.5"
                   >
-                    {#if post.headerImage}
+                    {#if post.headerImage && post.headerImage !== 'null'}
                       <div class="w-full aspect-video rounded-lg overflow-hidden bg-surface-container">
                         <img src={post.headerImage} alt={post.title} width="640" height="360" class="size-full object-cover" />
                       </div>

@@ -77,7 +77,7 @@
             class="flex flex-col no-underline text-inherit focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-4 focus-visible:rounded-lg"
             aria-label="Read: {post.title}"
           >
-            {#if post.headerImage}
+            {#if post.headerImage && post.headerImage !== 'null'}
               {#if post.headerImage.includes('u.macula.link')}
                 {@const base = post.headerImage.split('?')[0]}
                 <picture>
