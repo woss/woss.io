@@ -30,6 +30,7 @@
     { href: '/experience', label: 'Experience' },
     { href: '/posts', label: 'Posts' },
     { href: '/about', label: 'About' },
+    { href: '/contact', label: 'Contact' },
   ] as const;
 
   function isActive(href: string): boolean {

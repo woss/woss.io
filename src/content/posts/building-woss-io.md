@@ -348,7 +348,7 @@ The visual design follows a few principles:
 
 ## What Building This Taught Me
 
-**Local embeddings are viable**. I started this project assuming I'd need an external embedding API (OpenAI, Cohere, etc.). Transformers.js proved me wrong. The BGE model runs comfortably in a $10/month VPS. Inference takes ~50ms per query. No API costs, no rate limits, no data leaving the server.
+**Local embeddings are viable**. I started this project assuming I'd need an external embedding API (OpenAI, Cohere, etc.). Transformers.js proved me wrong. The BGE model runs comfortably in a cheap VPS. Inference takes ~50ms per query.
 
 **MCP changes everything about portfolio AIs**. Without MCP, the LLM would guess about my GitHub projects and fabricate photos. With it, it searches my actual repos, reads my actual code, browses my actual photo portfolio via Macula, lists my actual issues. The difference between "sounds plausible" and "probably correct" is night and day. But none of this worked until I stopped designing tools for developers and started designing them for how LLMs process information, the graph-walk pattern (`traverse`) replacing 14 specialized endpoints was the turning point. [Designing MCP Servers for How LLMs Think](/posts/macula-designing-mcp-for-llms) documents the full evolution. The first thing I did after getting it working was put on my hiring-manager hat, watched the AI pull my real repos, real PRs, real photos into answers comparing me against specific roles. Things I'd have spent hours digging for myself.
 

@@ -104,7 +104,10 @@ export function connectSSE(chatId: string, callbacks: SSECallbacks): () => void 
   });
 
   es.addEventListener('done', (e: MessageEvent) => {
-    if (currentGen !== generation) return;
+    if (currentGen !== generation) {
+      console.warn('[SSE] done event ignored — stale generation', { currentGen, generation });
+      return;
+    }
     clearTimeout(sseTimeout);
     if (typeof e.data !== 'string') return;
     const data = (() => {
@@ -114,7 +117,10 @@ export function connectSSE(chatId: string, callbacks: SSECallbacks): () => void 
         return {};
       }
     })();
-    if (typeof data.messageId !== 'string') return;
+    if (typeof data.messageId !== 'string') {
+      console.warn('[SSE] done event missing messageId', { data });
+      return;
+    }
 
     const completedToolCalls = Object.values(sseState.streamingToolCalls).map((tc) => ({
       id: tc.id,

@@ -86,6 +86,7 @@
 
   let messageText = $state('');
   let isLoading = $state(false);
+  let loadingAbortTimeout: ReturnType<typeof setTimeout> | undefined;
   let lastSentText = $state('');
   let inputEl: HTMLDivElement | null = $state(null);
   let messageListEl: HTMLDivElement | undefined = $state();
@@ -123,6 +124,20 @@
           el.href = ORIGINAL_FAV_HREF;
         };
       }
+    }
+  });
+
+  // Safety net: if isLoading stays true for 180s, reset (SSE 'done' may have been missed)
+  $effect(() => {
+    if (!browser) return;
+    if (isLoading) {
+      loadingAbortTimeout = setTimeout(() => {
+        if (isLoading) {
+          isLoading = false;
+          console.warn('[SSE] Generation timeout — done/error event not received within 180s');
+        }
+      }, 180_000);
+      return () => clearTimeout(loadingAbortTimeout);
     }
   });
 
@@ -728,6 +743,7 @@
         const existingIdx = messages.findIndex((m) => m.id === messageId);
         if (existingIdx !== -1) {
           messages[existingIdx] = { ...messages[existingIdx], error: undefined };
+          if (isLoading) isLoading = false;
           return;
         }
 
@@ -812,7 +828,10 @@
         const { messageId, message, irrecoverable, attemptsLeft: attempts } = data;
 
         // Don't set error on messages already loaded from DB — they have correct state
-        if (typeof messageId === 'string' && messages.some((m) => m.id === messageId)) return;
+        if (typeof messageId === 'string' && messages.some((m) => m.id === messageId)) {
+          if (isLoading) isLoading = false;
+          return;
+        }
 
         const last = messages[messages.length - 1];
         if (last?.role !== 'assistant') {
