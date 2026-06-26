@@ -4,7 +4,7 @@ title: 'Type-Safe SurrealDB: Meet the ORM That Ships'
 slug: 'daliorm-announcement'
 featured: true
 description: 'Introducing DaliORM — a type-safe query builder for SurrealDB. Your schema becomes your TypeScript, your queries chain like they should, and compile-time validation catches errors before runtime.'
-date: 2026-06-12
+date: 2026-06-17
 tags:
   - SurrealDB
   - orm
