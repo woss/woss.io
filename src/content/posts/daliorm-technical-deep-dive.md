@@ -3,7 +3,7 @@ published: true
 title: 'DaliORM: Technical Deep Dive into Our Type-Safe Migration System for SurrealDB'
 slug: 'daliorm-technical-deep-dive'
 description: 'Technical architecture of DaliORM — a type-safe migration system for SurrealDB. CLI commands, programmatic API, and schema management with a migration-first approach.'
-date: 2026-06-07
+date: 2026-06-19
 featured: true
 tags:
   - DaliORM
@@ -18,7 +18,7 @@ tags:
   - migration system
   - dali
 audience: developers
-
+part_of_series: 'daliorm-announcement'
 header_image: 'https://u.macula.link/OhwxSXORQUCgirpGcMJfDg-7?preset=sys_lg'
 ---
 
