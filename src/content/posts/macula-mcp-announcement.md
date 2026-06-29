@@ -2,7 +2,7 @@
 published: true
 title: 'Macula Meets MCP: Giving AI Agents Structured Access to Creative Work'
 slug: 'macula-mcp-announcement'
-description: 'How Macula uses MCP to let AI agents discover and explore creative content — with 14 tools, real-world use cases, and the ecosystem advantage for photographers.'
+description: 'How Macula uses MCP to let AI agents discover and explore creative content with 14 tools, real-world use cases, and the ecosystem advantage for photographers.'
 date: 2026-04-21
 tags:
   - macula
@@ -13,11 +13,11 @@ tags:
 header_image: 'https://u.macula.link/tY372ROkTd-nvcoFnh9bHw-7'
 ---
 
-Macula is a platform for photographers and creators to publish their work with proper licensing and metadata. We've been serving a public API (`unified-link`) for a while, but AI agents don't connect to REST APIs easily. They need MCP.
+Macula is a platform for photographers and creators to publish their work with proper licensing and metadata. We've been serving a public API (`unified-link`) for a while, but AI agents don't connect to REST APIs easily. We think they need MCP.
 
-MCP (Model Context Protocol) is a standard way for AI agents to connect to external data sources. Think of it as a universal adapter — a common language that AI agents can use to query databases, file systems, and services without custom integration work for each one. When an AI agent connects to a service with MCP support, it gains access to a set of **tools** (actions it can perform), **prompts** (pre-built workflows), and **resources** (documentation and context).
+MCP (Model Context Protocol) is a standard way for AI agents to connect to external data sources. Think of it as a universal adapter for data access. A common language that lets agents query file systems or databases through a single service interface, without custom integration work for each one. When an AI agent connects to a service with MCP support, it gains access to a set of **tools** (actions it can perform), **prompts** (pre-built workflows), and **resources** (documentation and context).
 
-We built an MCP server for Macula. Here's what it does and why it matters.
+We've built an MCP server for Macula. Here's what it does and why we think it matters.
 
 ## How Macula's MCP Works
 
@@ -25,7 +25,7 @@ When an AI agent connects to Macula's MCP server, it establishes a connection to
 
 ### The 14 Tools
 
-We built 14 specialized tools organized by domain:
+We've built 14 specialized tools organized by domain:
 
 **File Discovery**
 
@@ -40,37 +40,37 @@ We built 14 specialized tools organized by domain:
 - Browse paginated collections of someone's work
 - Discover random content for exploration or inspiration
 
-**Search & Navigation**
+**Search & Browse**
 
 - Search our keyword taxonomy
 - Find all files tagged with a specific keyword
-- Navigate through user directory structures
+- Browse through user directory structures
 
 ### The 14 Prompts
 
-Beyond individual tools, we built pre-configured prompts for common workflows:
+Beyond individual tools, we've built pre-configured prompts for common workflows:
 
 **Discovery Flows**
 
-- `discover_user_content` — Explore a creator's full portfolio
-- `random_exploration` — Find inspiration through random content
-- `search_discovery` — Search by keywords to find relevant content
+- `discover_user_content`: Explore a creator's full portfolio
+- `random_exploration`: Find inspiration through random content
+- `search_discovery`: Search by keywords to find relevant content
 
 **Analysis Flows**
 
-- `content_analysis` — Analyze file metadata and quality
-- `metadata_extraction` — Extract structured data for processing
+- `content_analysis`: Analyze file metadata and quality
+- `metadata_extraction`: Extract structured data for processing
 
 **Rights & Licensing**
 
-- `license_discovery` — Find content by license type
-- `rights_audit` — Audit usage rights across a collection
-- `rights_verification` — Verify specific rights for a use case
-- `data_mining_discovery` — Find content permitted for AI training
+- `license_discovery`: Find content by license type
+- `rights_audit`: Audit usage rights across a collection
+- `rights_verification`: Verify specific rights for a use case
+- `data_mining_discovery`: Find content permitted for AI training
 
 **Optimization**
 
-- `rendition_optimization` — Find the best version for a specific use (web, print, social)
+- `rendition_optimization`: Find the best version for a specific use (web, print, social)
 
 ## Real-World Use Cases
 
@@ -88,7 +88,7 @@ An agent analyzing creative trends could access a creator's profile, explore the
 
 ### Use Case 4: AI-Powered Photographer Portfolio
 
-Sarah is a professional landscape photographer. She publishes her best work on Macula with clear licensing — some images are CC-BY for maximum reach, others are All Rights Reserved for commercial licensing. She has AI data mining enabled on select images to allow AI model training while protecting her commercial work.
+Sarah is a professional landscape photographer. She publishes her best work on Macula with clear licensing. Some images are CC-BY for maximum reach, others are All Rights Reserved for commercial licensing. She has AI data mining enabled on select images to allow AI model training while protecting her commercial work.
 
 She connects Manus AI to Macula's MCP server, and here's what happens.
 
@@ -104,7 +104,7 @@ A client needs a photographer for a sustainable architecture magazine. Sarah ask
 
 A travel blog wants to feature Sarah's Iceland photography. The blog's AI agent (connected to Macula via MCP) uses `list_files_by_keyword` with `keyword: "iceland"`, examines candidates with `get_file`, grabs the right image sizes with `get_file_presets`, and generates an article draft with properly attributed images, correct license links, and photographer credit automatically.
 
-Sarah gets attribution. The blog gets content. Everyone wins.
+Sarah gets attribution and the blog gets content with proper licenses and credit baked in.
 
 **Managing AI Data Mining Permissions**
 
@@ -112,7 +112,7 @@ Sarah wants to see which of her images are enabled for AI training. Manus uses `
 
 Sarah doesn't need to manually update her portfolio across multiple platforms. Macula is her single source of truth. Images are hosted with full metadata and licensing. MCP access lets AI agents read her work with correct attribution. When she publishes new work, AI agents see it immediately. Every image has clear license and copyright info baked in.
 
-Tools like Manus AI, Lovable, Cursor, and any other MCP-connected agent can now access her work properly — not by scraping websites or guessing licensing, but through structured, permissioned access that respects her choices.
+Tools like Manus AI, Lovable, Cursor, and any other MCP-connected agent can now access her work properly. Not by scraping websites or guessing licensing, but through structured, permissioned access that respects her choices.
 
 ## Security & Performance
 
@@ -129,7 +129,7 @@ We use two-layer rate limiting to ensure fair access:
 
 ### Input Validation
 
-Every request is validated and sanitized — string inputs checked against strict patterns, length limits prevent oversized requests, dangerous characters stripped.
+Every request is validated and sanitized. String inputs are checked against strict patterns, length limits prevent oversized requests, and dangerous characters get stripped.
 
 ## Developer Experience
 
@@ -157,20 +157,20 @@ The MCP interface abstracts away our internal implementation. You don't need to 
 
 #### File Tools (6)
 
-| Tool                       | Description                                                                                                            |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `get_file`                 | Get file information by unifiedId — title, description, creator, links, assets, presets, size, copyright info, AI info |
-| `get_file_metadata`        | Get full EXIF/XMP/IPTC metadata. Optional `a` parameter for specific metadata fields                                   |
-| `get_file_presets`         | Get available renditions (sys_sm, sys_lg, open_graph, etc.) with size and MIME info                                    |
-| `get_file_json_schema`     | Get the JSON Schema for the get_file tool output                                                                       |
-| `get_metadata_json_schema` | Get the JSON Schema for the metadata tool output                                                                       |
-| `list_files_for_ai`        | List files filtered by data mining allowance (DMI-ALLOWED or DMI-UNSPECIFIED)                                          |
+| Tool                       | Description                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `get_file`                 | Get file information by unifiedId. Includes title, description, creator, links, assets, presets, size, copyright info, AI info |
+| `get_file_metadata`        | Get full EXIF/XMP/IPTC metadata. Optional `a` parameter for specific metadata fields                                           |
+| `get_file_presets`         | Get available renditions (sys_sm, sys_lg, open_graph, etc.) with size and MIME info                                            |
+| `get_file_json_schema`     | Get the JSON Schema for the get_file tool output                                                                               |
+| `get_metadata_json_schema` | Get the JSON Schema for the metadata tool output                                                                               |
+| `list_files_for_ai`        | List files filtered by data mining allowance (DMI-ALLOWED or DMI-UNSPECIFIED)                                                  |
 
 #### User Tools (3)
 
 | Tool                | Description                                                                     |
 | ------------------- | ------------------------------------------------------------------------------- |
-| `get_user`          | Get user profile — name, bio, directories, stats                                |
+| `get_user`          | Get user profile. Includes name, bio, directories, stats                        |
 | `list_user_files`   | List user's files (paginated). Filter by type: images, videos, audio, documents |
 | `list_random_files` | Get random files for discovery and inspiration                                  |
 
@@ -216,17 +216,17 @@ The MCP interface abstracts away our internal implementation. You don't need to 
 
 ---
 
-All tools are read-only. You can query and analyze, but not modify data. Keeps the system safe and predictable.
+All tools are read-only. You can query and analyze, but not modify data. This keeps the system safe and predictable.
 
 ### Works With
 
 Any AI agent or platform that supports MCP:
 
-- **Manus AI** — Full AI agent for complex workflows
-- **Lovable** — Build apps with AI assistance
-- **Cursor** — AI-powered code editor
-- **Claude Desktop** — Anthropic's MCP integration
-- **Custom agents** — Build your own with the SDK
+- **Manus AI**. Full AI agent for complex workflows.
+- **Lovable**. Build apps with AI assistance.
+- **Cursor**. AI-powered code editor.
+- **Claude Desktop**. Anthropic's MCP integration.
+- **Custom agents**. Build your own with the SDK.
 
 ## The Ecosystem Advantage
 
@@ -239,11 +239,11 @@ When photographers host on Macula, their work becomes part of a growing ecosyste
 ## Getting Started
 
 1. **Connect to our MCP server** at `https://u.macula.link/mcp`
-2. **Explore available tools** — the server will describe what it can do
-3. **Try a prompt** — start with `discover_user_content` or `random_exploration`
-4. **Build your workflow** — chain tools together for complex tasks
+2. **Explore available tools**. The server will describe what it can do.
+3. **Try a prompt**. Start with `discover_user_content` or `random_exploration`.
+4. **Build your workflow**. Chain tools together for complex tasks.
 
-As AI agents become more capable, being able to discover and work with creative content matters more. MCP gives us the interface to make that happen.
+As AI agents get more capable, being able to discover and work with creative content matters more. MCP gives us the interface to make that happen.
 
 We're continuing to expand our toolset based on real usage patterns. If you're building AI-powered content applications, we'd love to hear what you'd like to see.
 
