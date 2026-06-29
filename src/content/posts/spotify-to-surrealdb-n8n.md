@@ -3,7 +3,7 @@ published: true
 title: 'Spotify Account sync to SurrealDB with n8n'
 slug: 'spotify-to-surrealdb-n8n'
 featured: true
-description: 'How I built a workflow to sync my Spotify account to SurrealDB using n8n, and how you can do it too.'
+description: 'I built a Spotify-to-SurrealDB sync with n8n. Heres how it works and why youd want one too.'
 date: 2026-05-06
 tags:
   - Spotify
@@ -37,7 +37,7 @@ I landed on this stack after trying a few other approaches. Here's the thinking 
 
 **n8n over a Python script or cron.** This could have been a Python script on a cron job. I've written those before. What n8n gives you is visual feedback while you're building. You can run one node at a time, inspect the output, and see exactly where something broke. That's invaluable when you're dealing with an API that paginates unpredictably and a database that serializes types differently than you expect. n8n also handles scheduling, retries, and OAuth token refresh out of the box. [Install docs here](https://docs.n8n.io/hosting/installation/docker/).
 
-**Self-hosted n8n specifically.** The SurrealDB integration is a community node ([`n8n-nodes-surrealdb`](https://github.com/nsxdavid/n8n-nodes-surrealdb)) that isn't verified for n8n cloud. If you're on cloud n8n, this workflow won't work as-is — you'd need to adapt it to use HTTP Request nodes with SurrealDB's REST API instead. I'm self-hosting, so the community node was the path of least resistance.
+**Self-hosted n8n specifically.** The SurrealDB integration is a community node ([`n8n-nodes-surrealdb`](https://github.com/nsxdavid/n8n-nodes-surrealdb)) that isn't verified for n8n cloud. If you're on cloud n8n, this workflow won't work as-is. You'd need to adapt it to use HTTP Request nodes with SurrealDB's REST API instead. I'm self-hosting, so the community node was the path of least resistance.
 
 ## The Graph Model
 
@@ -52,7 +52,7 @@ The database has five tables: `track`, `album`, `playlist`, `artist`, `user`, co
 
 ![Database design screenshot showing tables and relation edges](https://u.macula.link/gH6WZ7Y4SruO2InnawnZNg-7?preset=sys_md)
 
-The beauty of this model is that it maps directly to the Spotify API responses. A playlist endpoint returns an array of `{ track: { album: { ... }, artists: [...] } }` — I flatten that into records and edges. Each track gets one UPSERT, each album gets one UPSERT, and the edge between them is a simple relation query. No denormalization, no duplication.
+The nice thing about this model is that it maps directly to the Spotify API responses. A playlist endpoint returns an array of `{ track: { album: { ... }, artists: [...] } }`. I flatten that into records and edges. Each track gets one UPSERT, each album gets one UPSERT, and the edge between them is a simple relation query. No denormalization, no duplication.
 
 ## Four Sync Flows
 
@@ -60,13 +60,13 @@ The workflow has four sub-flows, each triggered on a schedule. They're designed 
 
 **1. Following artists.** Smallest and simplest. Fetch the list of artists I follow, UPSERT each one into the `artist` table, then create the `follows` edge from my user node to each artist.
 
-**2. Playlists.** Fetch all playlists in my library, UPSERT each into the `playlist` table, then create the `has_playlist` and `playlist_owner` edges from my user node to each playlist. Straightforward until a playlist gets deleted — then I need to detect that and mark it inactive. Currently I just let stale records sit there. I should clean those up.
+**2. Playlists.** Fetch all playlists in my library, UPSERT each into the `playlist` table, then create the `has_playlist` and `playlist_owner` edges from my user node to each playlist. Straightforward until a playlist gets deleted, and then I need to detect that and mark it inactive. Currently I just let stale records sit there. I should clean those up.
 
 **3. Liked tracks.** Fetch my saved tracks from the "Liked Songs" endpoint (Spotify calls it the library). For each track, UPSERT the track record, extract the album, UPSERT the album, create the `album_track` edge from album to track, and create the `likes_track` edge from my user node to the track node.
 
 **4. Playlist tracks.** This is the big one. The flow loops over every playlist, then loops over every track in each playlist.
 
-Each playlist sync is a full rebuild. The flow first deletes all existing `playlist_track` edges for the playlist, then re-fetches every track. n8n handles Spotify's pagination automatically — the API returns a `next` URL and n8n follows it until it's done, fetching 100 tracks per page.
+Each playlist sync is a full rebuild. The flow first deletes all existing `playlist_track` edges for the playlist, then re-fetches every track. n8n handles Spotify's pagination automatically. The API returns a `next` URL and n8n follows it until it's done, fetching 100 tracks per page.
 
 For each track, the flow needs to:
 
@@ -76,13 +76,13 @@ For each track, the flow needs to:
 - Create the `album_track` edge connecting the album to the track
 - Create the `playlist_track` edge connecting the playlist to the track
 
-That's up to five database operations per track. For a playlist with 1,200 tracks, that's 6,000 operations. The whole sync processes about 27,000 tracks across all playlists, so the total operation count is well into six figures. This is where UPSERT earns its keep — without it, every operation would need a pre-check for existing records.
+That's up to five database operations per track. For a playlist with 1,200 tracks, that's 6,000 operations. The whole sync processes about 27,000 tracks across all playlists, so the total operation count is well into six figures. This is where UPSERT earns its keep. Without it, every operation would need a pre-check for existing records.
 
 The flow also caches playlist checkpoints. If a playlist hasn't changed since the last sync (based on the `snapshot_id` Spotify returns), it skips that playlist entirely. This cut the average sync time by about 60%.
 
-## Four Things That Broke
+## What Went Wrong
 
-Every integration project has its list of "I cannot believe this is the problem." Here are mine.
+Every integration project has that list of "I can't believe this is the problem." Here are mine.
 
 ### 1. n8n node output mutation
 
@@ -137,7 +137,7 @@ Switch the Surrealist query tab to "Live" mode and results stream in as records 
 
 ## Stats
 
-15 years of music history weighs about 93MB in SurrealDB. That's pure metadata — track names, artist IDs, album references, relation edges. No audio files. Passports for every song, not the bags.
+15 years of music history weighs about 93MB in SurrealDB. That's pure metadata. Track names, artist IDs, album references, relation edges. No audio files. Passports for every song, not the bags.
 
 | Type        | Count  |
 | ----------- | ------ |
@@ -150,7 +150,7 @@ Switch the Surrealist query tab to "Live" mode and results stream in as records 
 
 At the bottom of this post is the helper form where you add two ids. The form will replace them for you. Then you can copy the workflow JSON and paste it in your n8n instance. The workflow is designed to be self-contained, so you can run it as-is after adding your credentials.
 
-- `surrealdb-cred-id` — your SurrealDB credential ID (visible in the n8n URL when editing the credential)
-- `spotify-cred-id` — your Spotify OAuth credential ID (same deal)
+- `surrealdb-cred-id`: your SurrealDB credential ID (visible in the n8n URL when editing the credential)
+- `spotify-cred-id`: your Spotify OAuth credential ID (same deal)
 
-I'd love to see what integrations other people are building with this pattern. [Open a GitHub issue](https://github.com/woss/woss.io/issues) or tag me — what's the next sync you want to build?
+I'd love to see what integrations other people are building with this pattern. [Open a GitHub issue](https://github.com/woss/woss.io/issues) or tag me. What's the next sync you want to build?

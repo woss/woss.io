@@ -2,7 +2,7 @@
 published: true
 title: 'Building opencode-visualizer: A Terminal Dashboard for Your AI Coding Assistant'
 slug: 'opencode-visualizer'
-description: 'A terminal dashboard for OpenCode usage data — sessions, tokens, costs, and models, all rendered in pure ANSI. Built with Deno, SQLite, and zero dependencies.'
+description: 'Terminal dashboard that reads your OpenCode SQLite database and shows sessions, tokens, costs, and models in pure ANSI. No dependencies, no servers, just one binary built with Deno.'
 date: 2026-06-15
 featured: true
 tags:
@@ -17,19 +17,11 @@ tags:
 header_image: 'https://u.macula.link/9BH9LsNYSJ6za1-x5QxLEA-7'
 ---
 
-You use AI coding tools daily. You have thousands of sessions, millions of
-tokens, and a stack of model bills. You know you're spending money, but on what?
-Which projects? Which models? What's your actual cost breakdown?
+You use AI coding tools daily. You've got thousands of sessions, millions of tokens, and a stack of model bills. You know you're spending money. But on what? Which projects drive the most usage? What's your actual cost breakdown?
 
-[OpenCode](https://opencode.ai) stores everything in a SQLite database at
-`~/.local/share/opencode/opencode.db`. Every session, message, token count,
-model used, cost — it's all there. I decided to play with it and see what I
-could build.
+[OpenCode](https://opencode.ai) stores everything in a SQLite database at `~/.local/share/opencode/opencode.db`. Every session, message, token count, model used, cost. It's all there. I decided to play with it and see what I could build.
 
-[opencode-visualizer](https://github.com/woss/opencode-visualizer) is a
-standalone CLI tool that reads that database directly and renders an ANSI
-dashboard in your terminal. One binary, zero dependencies, no servers, no data
-leaves your machine.
+[opencode-visualizer](https://github.com/woss/opencode-visualizer) is a standalone CLI tool that reads that database directly and renders an ANSI dashboard in your terminal. One binary, zero dependencies, no servers. No data leaves your machine.
 
 ## Installation
 
@@ -53,7 +45,7 @@ Homebrew tap:
 
 ## The Stack
 
-**Deno.** Not Node, not Go, not Rust — Deno. The choice came down to one
+**Deno.** Not Node, not Go, not Rust. Deno. The choice came down to one
 feature: `deno compile` produces a single, self-contained binary from TypeScript
 source. No bundler, no packaging, no `node_modules`. The compile step embeds all
 modules and the Deno runtime into a ~7MB binary (after stripping).
@@ -61,7 +53,7 @@ Cross-compilation to Linux ARM64, macOS Intel, and macOS Apple Silicon is a
 single flag.
 
 **SQLite.** Direct read-only access via `@db/sqlite`. No ORM, no query builder.
-The schema is simple — sessions, messages, parts — so raw SQL with aggregate
+The schema is simple (sessions, messages, parts), so raw SQL with aggregate
 functions is the clearest approach. The `int64` flag is essential because
 OpenCode timestamps exceed JavaScript's 32-bit integer range.
 
@@ -69,17 +61,17 @@ OpenCode timestamps exceed JavaScript's 32-bit integer range.
 `Deno.args` parsing and per-command help functions. After 150 lines of
 boilerplate, I nuked it for cliffy's declarative `Command` API. Ten lines per
 subcommand, auto-generated help, typed flag parsing with defaults, `--version`
-for free. The only CLI framework I've used that reduces code instead of adding
-it.
+for free. It's the only CLI framework I've used that reduces code instead of
+adding it.
 
 **Pure ANSI escape codes.** This is where it gets interesting.
 
-## The Charting Library That Wasn't
+## Why I Wrote My Own Chart Renderer
 
 Initial approach: install `termichart`, a Rust-based NAPI-RS terminal charting
 library with Dracula themes and sparkline support. Sounded perfect.
 
-Reality: the bar charts rendered as unreadable half-block Unicode patterns —
+Reality: the bar charts rendered as unreadable half-block Unicode patterns. Just
 `▀▄█` noise that looked like a corrupted JPEG. The sparkline was fine, but the
 bar charts were indecipherable.
 
@@ -98,7 +90,7 @@ export function barColored(value: number, max: number, width: number, color: str
 Filled blocks in color, empty blocks dimmed. That's it. Reads perfectly, renders
 instantly, zero dependencies.
 
-The same approach extends to the dual-colored bars for main vs sub sessions:
+The same approach extends to dual-colored bars for main vs sub sessions:
 
 ```typescript
 export function barDualColored(
@@ -146,7 +138,7 @@ a two-column split panel:
 ```
 
 Section headers in cyan bold, values in bold white, labels dim. Each panel
-section has its own color — green for costs, yellow for models, magenta for
+section has its own color. Green for costs, yellow for models, magenta for
 providers, cyan for activity. The color coding creates visual structure without
 requiring a graphics terminal.
 
@@ -169,13 +161,13 @@ ocv stats -o json                               # Any command → JSON with -o j
 ```
 
 The `--name` flag filters all dashboard panels to specific directories by name.
-Works alongside `--exclude` for precise control over what you see.
+It works alongside `--exclude` for precise control over what you see.
 
 The `--exclude` flag supports both CLI args and `.ocvignore` files
 (gitignore-style patterns at `~/.config/ocv/.ocvignore`). Useful when you have
 sensitive directories in your OpenCode history.
 
-Every command outputs JSON with `-o json` (or `--output json`) — making it
+Every command also outputs JSON with `-o json` (or `--output json`), making it
 pipeable to `jq` for custom analysis.
 
 ## Distribution
@@ -204,7 +196,7 @@ Releases are automated via semantic-release. Push a `feat:` or `fix:` commit to
 
 Zero manual steps from commit to `brew upgrade ocv`.
 
-## Architecture Lessons
+## What I Learned
 
 **No external chart libraries.** Your first instinct is to reach for a charting
 library. For terminal output, write the 50 lines yourself. You'll get exactly
@@ -212,16 +204,16 @@ what you need with zero dependency overhead.
 
 **Deno compile surprised me.** I expected headaches cross-compiling from macOS
 to Linux ARM64. It just worked on the first try. The binary is genuinely
-standalone — no runtime, no CLI, nothing but the file.
+standalone. No runtime, no CLI, nothing but the file.
 
-**SQLite needs no ORM.** I started sketching an entity layer. Wasted time. The
-schema has three tables and every query is a GROUP BY aggregate. Raw SQL with
-parameterized bindings was cleaner and faster to write than any ORM wrapper
-would have been.
+**SQLite needs no ORM.** I started sketching an entity layer. That was a waste
+of time. The schema has three tables and every query is a GROUP BY aggregate.
+Raw SQL with parameterized bindings was cleaner and faster to write than any ORM
+wrapper would have been.
 
 **Homebrew taps require zero maintenance.** A Ruby formula with `bin.install`,
 `system "deno", "compile"` in the build step, and a cron job to update SHA256
-checksums. The tap repo self-maintains via a weekly workflow — I haven't touched
+checksums. The tap repo self-maintains via a weekly workflow. I haven't touched
 it since creation.
 
 ## Similar Projects
@@ -229,40 +221,40 @@ it since creation.
 The OpenCode ecosystem has sprouted several tools for visualizing usage. Each
 has strengths, but they all make trade-offs ocv avoids.
 
-[**opencode-stats**](https://github.com/Cateds/opencode-stats) (Rust/ratatui) —
-richer TUI with a 365-day heatmap and share card generation. Well-crafted, but
-requires `cargo install`, larger binary, interactive TUI overkill for quick
-glances.
+[**opencode-stats**](https://github.com/Cateds/opencode-stats) (Rust/ratatui).
+Richer TUI with a 365-day heatmap and share card generation. Well-crafted, but
+requires `cargo install`, larger binary, and the interactive TUI is overkill for
+quick glances.
 
-[**opencode-usage**](https://github.com/rchardx/opencode-usage) (Python) —
-daily/token reports with optional LLM-powered transcript analysis. LLM analysis
-is useful but sends data to external APIs. Requires Python + pip, slower
-startup.
+[**opencode-usage**](https://github.com/rchardx/opencode-usage) (Python). Daily
+and token reports with optional LLM-powered transcript analysis. The LLM
+analysis is useful but sends data to external APIs. Requires Python + pip,
+slower startup.
 
 [**opencode_analytics**](https://github.com/lemantorus/opencode_analytics)
-(Node.js/React) — web-based React dashboard with charts and TPS calculations.
-Requires local server (`npm start`) + browser.
+(Node.js/React). Web-based React dashboard with charts and TPS calculations.
+Requires a local server (`npm start`) plus a browser.
 
-[**Vis - OpenCode Visualizer**](https://github.com/xenodrive/vis) — web-based,
+[**Vis - OpenCode Visualizer**](https://github.com/xenodrive/vis). Web-based,
 requires OpenCode server with CORS enabled.
 
 [**tokscale**](https://github.com/junhoyeo/tokscale) (Rust + TypeScript, 3.5k
-stars) — most popular: TUI + web + 3D graphs. Tracks OpenCode, Claude Code,
-Codex, Gemini, Cursor. Multi-tool scope adds complexity, `bunx tokscale` pulls
-from npm.
+stars). The most popular option. TUI + web + 3D graphs, tracks OpenCode, Claude
+Code, Codex, Gemini, Cursor. The multi-tool scope adds complexity, and `bunx
+tokscale` pulls from npm.
 
-[**codeburn**](https://github.com/AgentSeal/codeburn) (Node.js) — interactive
-CLI for Claude Code spending. `npm install` required, Claude Code only.
+[**codeburn**](https://github.com/AgentSeal/codeburn) (Node.js). Interactive CLI
+for Claude Code spending. Requires `npm install`, Claude Code only.
 
-[**llmusage**](https://github.com/openrijal/llmusage) (Python) — multi-provider
-CLI tracker, unifies data into its own SQLite. Separate import step required.
+[**llmusage**](https://github.com/openrijal/llmusage) (Python). Multi-provider
+CLI tracker that unifies data into its own SQLite. Needs a separate import step.
 
-ocv's differentiators: pure terminal — no browser, no server, no install step
-beyond a single binary. Direct SQLite access means zero telemetry, zero network.
-One-shot ANSI output that renders instantly and exits. No TUI framework, no
-event loop, no interactive mode. Run it, see your data, done.
+ocv's differentiators: pure terminal output. No browser, no server, no install
+step beyond a single binary. Direct SQLite access means zero telemetry, zero
+network. One-shot ANSI output renders instantly and exits. No TUI framework, no
+event loop, no interactive mode. You run it, see your data, and you're done.
 
-If you want a zero-dependency, privacy-first, terminal-native dashboard — ocv
+If you want a zero-dependency, privacy-first, terminal-native dashboard, ocv
 is the only choice that fits in one binary.
 
 ---

@@ -3,7 +3,7 @@ published: true
 title: 'Type-Safe SurrealDB: Meet the ORM That Ships'
 slug: 'daliorm-announcement'
 featured: true
-description: 'Introducing DaliORM — a type-safe query builder for SurrealDB. Your schema becomes your TypeScript, your queries chain like they should, and compile-time validation catches errors before runtime.'
+description: 'DaliORM is a type-safe query builder for SurrealDB. Your schema drives your TypeScript types, your queries chain naturally, and compile-time validation catches errors before they ever reach runtime.'
 date: 2026-06-17
 tags:
   - SurrealDB
@@ -19,7 +19,7 @@ header_image: 'https://u.macula.link/HR7CSIPkTFOBV8xVNmVUxg-7?preset=sys_lg'
 
 DaliORM is in early alpha. Expect breaking changes and bugs as I iterate toward 1.0. Don't use it in production, but feedback and contributions are welcome.
 
-You've used SurrealDB and you know SurrealQL — raw queries, hand-rolled validation, runtime errors at 2 AM. DaliORM gives you type-safe query building without abstraction overhead. Your schema becomes your TypeScript, your queries chain like they should, and compile-time validation catches errors before runtime. Pure type inference with no code generation and immutable builders that map 1:1 to SurrealQL. Define your schema once, and types, autocomplete, and migrations all derive from it. Migration-first, Drizzle-inspired.
+If you've used SurrealDB, you already know what raw SurrealQL feels like. You write queries by hand, validate results manually, and debug runtime errors at 2 AM. DaliORM gives you type-safe query building without piling on abstraction. Your schema drives your TypeScript types, your queries chain naturally, and compile-time validation catches errors before they ever hit production. Pure type inference with no code generation and immutable builders that map 1:1 to SurrealQL. Define your schema once, and types, autocomplete, and migrations all derive from it. Migration-first, Drizzle-inspired.
 
 ## Why I Built This
 
@@ -42,13 +42,13 @@ const result = await db.query(`SELECT * FROM user WHERE email = $email`, { email
 
 Defining your schema only mentally and in migration files means they inevitably drift. You end up validating the same data in five different places.
 
-There are other TypeScript ORMs for SurrealDB — [Surqlize](https://github.com/surrealdb/surqlize) (official) uses code generation with `t.*` builders, [SurrealORM](https://github.com/SurrealORM/orm) is decorator-based and early alpha, [Cerial](https://github.com/cerial-orm/cerial) is Prisma-like with schema files and code generation, and TypeSurrealDB takes a class decorator approach. This ORM takes a different path: no code generation, just pure TypeScript inference with no build step. Immutable query builders safe for concurrency. Queries map 1:1 to SurrealQL with no hidden abstraction. Schema drives migrations instead of the other way around. And the core is tiny with no heavy dependencies.
+There are other TypeScript ORMs for SurrealDB. [Surqlize](https://github.com/surrealdb/surqlize) (official) uses code generation with `t.*` builders. [SurrealORM](https://github.com/SurrealORM/orm) is decorator-based and early alpha. [Cerial](https://github.com/cerial-orm/cerial) is Prisma-like with schema files and code generation. TypeSurrealDB takes a class decorator approach. This ORM goes a different direction: no code generation, just pure TypeScript inference with no build step. Immutable query builders safe for concurrency. Queries map 1:1 to SurrealQL with no hidden abstraction. Schema drives migrations instead of the other way around. And the core is tiny with no heavy dependencies.
 
 I built it on the official `surrealdb` Node.js client instead of reimplementing the connection layer. WebSocket, HTTP, and embedded modes all work out of the box, and every SDK update benefits it automatically.
 
 ## Defining Schema
 
-Your schema lives in code. It's compile-time validated. Instead of keeping schema definitions in your head or in separate migration files, you define them directly in TypeScript. This gives you type inference everywhere—query builders know your columns, conditions know your types, results know your shape.
+Your schema lives in code. It's compile-time validated. Instead of keeping schema definitions in your head or in separate migration files, you define them directly in TypeScript. This gives you type inference throughout. Query builders know your columns and their types. Conditions validate at compile time. Results carry your data shape automatically.
 
 ```typescript
 import { defineTable } from '@woss/dali-orm/sdk/table';
@@ -94,7 +94,7 @@ export const wrote = defineRelationTable(
 );
 ```
 
-This defines an edge table called "wrote" that connects users (as authors) to articles. The `in` and `out` fields define directionality—users write articles.
+This defines an edge table called "wrote" that connects users (as authors) to articles. The `in` and `out` fields define directionality. Users write articles.
 
 Register your tables in an `OrmSchema` and pass it when connecting:
 
@@ -110,7 +110,7 @@ Now TypeScript knows your schema. Everywhere your code uses it.
 
 ## Building Queries
 
-All builders are immutable. Every method returns a new instance. This might feel different if you're used to mutating query objects, but it matters—you can safely pass queries around without worrying they'll change unexpectedly. Concurrent code stays safe.
+All builders are immutable. Every method returns a new instance. This might feel different if you're used to mutating query objects, but it matters: you can safely pass queries around without worrying they'll change unexpectedly. Concurrent code stays safe.
 
 Query builders need two things: a driver instance (from your connected ORM) and a table definition. Get the driver with `orm.getDriver()`:
 
@@ -151,7 +151,7 @@ const results = await paginated.execute();
 // results is typed as User[]
 ```
 
-The chainable API means you build up complex queries piece by piece. Each method returns a new query builder with the modification applied. The original query stays unchanged—this is the immutability at work.
+The chainable API means you build up complex queries piece by piece. Each method returns a new query builder with the modification applied. The original query stays unchanged. This is the immutability at work.
 
 These are the main methods available on select queries:
 
@@ -196,7 +196,7 @@ await insert(driver, users)
   .execute();
 ```
 
-TypeScript validates that you provide all required fields—miss one and the compiler catches it.
+TypeScript validates that you provide all required fields. Miss one and the compiler catches it.
 
 ### UPDATE
 
@@ -216,7 +216,7 @@ import { delete_ } from '@woss/dali-orm/query';
 await delete_(driver, users).id('user:123').execute();
 ```
 
-Delete works similarly—specify the record ID and execute. The function is named `delete_` (trailing underscore) because `delete` is a reserved word in JavaScript.
+Delete works similarly: specify the record ID and execute. The function is named `delete_` (trailing underscore) because `delete` is a reserved word in JavaScript.
 
 ### RELATE
 
@@ -346,7 +346,7 @@ That means these errors surface at compile time, not runtime:
 
 Schema changes require migrations. The ORM includes a MigrationRunner that keeps your database in sync with your code.
 
-The migration engine takes heavy inspiration from [Drizzle ORM](https://orm.drizzle.team/) (beta)—the best migration system in the TypeScript ecosystem. I aim for that same clarity: simple files, clear direction, and no magic.
+The migration engine takes heavy inspiration from [Drizzle ORM](https://orm.drizzle.team/) (beta). I think it's the best migration system in the TypeScript ecosystem, and I'm aiming for that same clarity. Simple files, clear direction, no magic.
 
 ### Configuration
 
@@ -516,4 +516,4 @@ const results = await select(driver, users).execute();
 // results is { id: string, name: string, email: string }[]
 ```
 
-Query builders compile to SurrealQL with immutability by default and TypeScript inference throughout. Go try it — run the demo.
+Query builders compile to SurrealQL with immutability by default and TypeScript inference throughout. Go try the demo and see for yourself.

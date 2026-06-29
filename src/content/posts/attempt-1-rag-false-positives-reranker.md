@@ -2,7 +2,7 @@
 published: true
 title: 'When Your RAG Returns the Wrong Answer (and Cosine Distance Blamed the Wrong Chunk)'
 slug: 'attempt-to-fix-rag-false-positive-with-cross-encoder-reranker'
-description: 'A production RAG pipeline returned the wrong answer. Not because the data was missing, but because a single cosine distance threshold silently filtered out every relevant chunk and let a false positive through.'
+description: 'My RAG pipeline returned a wrong answer. Not because the data was missing, but because a threshold I hadn\'t tuned silently filtered out every relevant chunk and let a false positive through.'
 date: 2026-06-25
 tags:
   - RAG
