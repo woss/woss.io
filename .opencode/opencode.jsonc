@@ -14,6 +14,14 @@
     "opencode"
   ],
   "mcp": {
+    "ocv": {
+      "type": "local",
+      "command": [
+        "ocv",
+        "mcp"
+      ],
+      "enabled": true
+    },
     "sequential-thinking": {
       "command": [
         "npx",
