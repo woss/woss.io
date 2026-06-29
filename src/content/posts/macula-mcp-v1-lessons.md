@@ -2,7 +2,7 @@
 published: true
 title: 'v1: The MCP Server That Taught Us What Not to Do'
 slug: 'macula-mcp-v1-lessons'
-description: 'Production architecture for a public MCP server — stateless design, Zod validation, defense-in-depth security, rate limiting, and SQL injection prevention in production.'
+description: 'Production architecture for a public MCP server with stateless design, Zod validation, defense-in-depth security, rate limiting, and SQL injection prevention in production.'
 date: 2026-04-25
 tags:
   - macula
@@ -15,17 +15,17 @@ part_of_series: macula-mcp-announcement
 header_image: 'https://u.macula.link/G_6XL5TeQbS0g3SkbxyWDQ-7'
 ---
 
-The Model Context Protocol is becoming the standard way to connect AI agents to external data sources. When we decided to expose our Unified Link service through MCP, we faced an unusual constraint: we needed a public, read-only MCP server that could serve AI agents without authentication while still being production-grade secure.
+Model Context Protocol's becoming the standard way to connect AI agents to external data sources. When we decided to expose our Unified Link service through MCP, we ran into an unusual constraint: we needed a public, read-only MCP server that could serve AI agents without authentication while still being production-grade secure.
 
-We had a public API (`unified-link`) that served metadata about files, users, and keywords. We wanted AI agents to access this data through MCP, but the requirements were specific. No authentication (the data is already public). Read-only only. Production-grade rate limiting, input validation, and SQL injection protection. It needed to scale horizontally. And we wanted minimal dependencies.
+We already had a public API (`unified-link`) that served metadata about files, users, and keywords. We wanted AI agents to access this data through MCP, but the requirements were specific. No authentication (the data's already public). Read-only only. Production-grade rate limiting, input validation, and SQL injection protection. It needed to scale horizontally. And we wanted minimal dependencies.
 
 Here's how we built it.
 
-## Key Design Decisions
+## Our Design Choices
 
 ### Direct SDK, Not Wrappers
 
-We used `@modelcontextprotocol/sdk` directly instead of wrapper libraries. This gave us full control over transport behavior, no unnecessary abstractions, and direct access to MCP specification features.
+We used `@modelcontextprotocol/sdk` directly with no wrapper libraries. That gave us full control over transport behavior, kept abstractions out of the way, and gave us direct access to the MCP spec.
 
 ### Stateless Mode
 
@@ -39,11 +39,11 @@ const transport = new StreamableHTTPServerTransport({
 
 Benefits: no session memory leaks, works with any number of server instances (no sticky sessions), no Redis needed for session storage, restart tolerant, simpler code.
 
-The trade-off is that agents reinitialize after disconnect. For a read-only public service, this is perfectly acceptable.
+The trade-off is that agents reinitialize after a disconnect. For a read-only public service, that's fine.
 
 ### Zod for Validation
 
-We used Zod (already in our codebase) for input validation:
+We went with Zod for input validation. It was already in our codebase, so it was an easy choice:
 
 ```typescript
 export const GetFileInputSchema = z.object({
@@ -57,7 +57,7 @@ export const GetFileInputSchema = z.object({
 
 ### Defense in Depth
 
-Multiple layers of security:
+We built multiple security layers:
 
 | Layer                  | Protection                            |
 | ---------------------- | ------------------------------------- |
@@ -102,7 +102,7 @@ Multiple layers of security:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## The 14 Tools
+## Our 14 Tools
 
 We exposed 14 read-only tools organized by domain:
 
@@ -113,8 +113,8 @@ We exposed 14 read-only tools organized by domain:
 | `get_file`                 | `unifiedId`              | Full metadata (title, description, creator, links, AI info) |
 | `get_file_metadata`        | `unifiedId, a?`          | EXIF/XMP metadata                                           |
 | `get_file_presets`         | `unifiedId`              | Available renditions                                        |
-| `get_file_json_schema`     | —                        | Schema for type-safe code                                   |
-| `get_metadata_json_schema` | —                        | Metadata schema                                             |
+| `get_file_json_schema`     | N/A                      | Schema for type-safe code                                   |
+| `get_metadata_json_schema` | N/A                      | Metadata schema                                             |
 | `list_files_for_ai`        | `allowed, limit?, page?` | Files with AI/data mining allowed                           |
 
 ### Users (3)
@@ -140,7 +140,7 @@ We exposed 14 read-only tools organized by domain:
 | `list_files_by_keyword` | `keyword`                | Files for a keyword |
 | `list_files_by_license` | `license, limit?, page?` | Files by license    |
 
-## The 14 Prompts
+## Our 14 Prompts
 
 We built specialized prompts for common agent workflows:
 
@@ -161,7 +161,7 @@ We built specialized prompts for common agent workflows:
 | `service_info`           | Get service information           |
 | `data_mining_discovery`  | Find AI-friendly content          |
 
-## The Resource
+## One Resource
 
 | Resource       | Description                         |
 | -------------- | ----------------------------------- |
@@ -242,9 +242,9 @@ When `isDev` is true, rate limiting and slow-down are disabled. Makes local test
 
 ## Lessons Learned
 
-### What Worked
+### What Went Right
 
-**Stateless mode** — perfect for public read-only services. **Direct SDK usage** — no abstraction overhead. **Defense in depth** — multiple security layers. **Zod schemas** — single source of truth for validation and types.
+**Stateless mode** was perfect for public read-only services. **Direct SDK usage** meant no abstraction overhead. **Defense in depth** gave us multiple security layers. **Zod schemas** became a single source of truth for validation and types.
 
 ### What We'd Do Differently
 
@@ -258,7 +258,7 @@ When `isDev` is true, rate limiting and slow-down are disabled. Makes local test
 
 Building a public MCP server doesn't require complex authentication or session management. Stateless design, defense in depth, and existing tools (Zod, Prisma, Redis) got us a production-ready MCP server that's simple to maintain and scale.
 
-The key insight: public, read-only MCP servers are fundamentally simpler than authenticated ones. Don't add complexity you don't need.
+Public, read-only MCP servers are much simpler than authenticated ones. That's the main lesson from this build. If you don't need auth, you can leave a lot of baggage behind.
 
 ---
 
