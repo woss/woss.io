@@ -102,7 +102,7 @@ export async function startGeneration(
       classifyResult === 'github' || classifyResult === 'both' || (await needsGithubTools(text, ctxMessages));
     const maculaNeeded =
       classifyResult === 'macula' || classifyResult === 'both' || (await needsMaculaTools(text, ctxMessages));
-    if (queryType !== 'tool' && queryType !== 'meta') {
+    if (queryType !== 'tool') {
       publishLive(chatId, 'status', { step: 'searching' });
       // Search more candidates for type-balanced selection
       const results = searchChunks(embedding.data, maxChunks * 3);
