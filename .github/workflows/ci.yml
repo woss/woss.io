@@ -24,7 +24,5 @@ jobs:
           path: ~/.local/share/pnpm/store
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build lint test
       - run: pnpm check
-      - run: pnpm build
-      - run: pnpm lint
-      - run: pnpm test

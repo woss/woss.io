@@ -42,6 +42,23 @@ Open <http://localhost:5173>.
 
 You'll need Node.js 26.x (see devEngines) and an OpenAI-compatible LLM endpoint. LM Studio, Ollama, or vLLM for local. Any cloud provider works too. Docker is optional but recommended for deployment.
 
+### Turbo commands
+
+Builds and tests are cached via Turborepo. Run individual tasks or let the DAG handle dependencies:
+
+```bash
+# Build (cached)
+pnpm turbo build
+
+# Lint + build + test in parallel (respects task graph)
+pnpm turbo build lint test
+
+# Full CI pipeline
+pnpm turbo build lint test && pnpm check
+```
+
+Cached outputs: `build/`, `.svelte-kit/` (build), `coverage/` (test), `tmp/` (lint). Cache keys hash `src/**`, config files, and `package.json` so stale caches invalidate automatically.
+
 ## Configuration
 
 | Variable                      | Default                    | Description                            |
@@ -164,6 +181,7 @@ The tech side in one shot:
 - **Framework**: SvelteKit 2, Svelte 5 (runes)
 - **Styling**: Tailwind CSS v4, Tailwind Typography, sv5ui
 - **Runtime**: Node.js 26, pnpm
+- **Task Runner**: Turborepo v2 (DAG-based build caching)
 - **Database**: SQLite (better-sqlite3)
 - **Vector Index**: USearch (ANN)
 - **AI SDK**: Vercel AI SDK (streamText, tool calling)
