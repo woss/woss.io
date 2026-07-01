@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+
   resolve: {
     alias: {
       $lib: resolve('./src/lib'),

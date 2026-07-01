@@ -1,0 +1,43 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "remoteCache": {
+    "enabled": true,
+  },
+  "tasks": {
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "src/**",
+        "svelte.config.js",
+        "vite.config.ts",
+        "tsconfig.json",
+        "package.json"
+      ],
+      "outputs": [
+        "build/**",
+        ".svelte-kit/**"
+      ]
+    },
+    "test": {
+      "dependsOn": [
+        "build"
+      ],
+      "outputs": [
+        "coverage/**"
+      ]
+    },
+    "lint": {
+      "outputs": [
+        "tmp/**"
+      ],
+      "inputs": [
+        "src/**"
+      ],
+    },
+    "check": {},
+    "build-index": {},
+    "fmt:check": {}
+  }
+}
