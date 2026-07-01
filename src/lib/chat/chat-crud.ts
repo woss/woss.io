@@ -2,10 +2,13 @@ import { parse } from 'devalue';
 
 /**
  * Create a new chat for the given user.
- * Returns the new chat ID, or null on failure.
+ * Returns the new chat ID, or an error message on failure.
  */
-export async function createChat(userId: string, baseUrl: string = ''): Promise<string | null> {
-  if (!userId) return null;
+export async function createChat(
+  userId: string,
+  baseUrl: string = '',
+): Promise<{ id: string; error?: undefined } | { id?: undefined; error: string }> {
+  if (!userId) return { error: 'No user ID' };
   try {
     const fd = new FormData();
     fd.set('userId', userId);
@@ -13,13 +16,16 @@ export async function createChat(userId: string, baseUrl: string = ''): Promise<
     const res = await fetch(url, { method: 'POST', body: fd, headers: { Accept: 'application/json' } });
     const body = await res.json().catch(() => ({}));
     const actionData = body.data != null ? parse(body.data) : {};
-    if (body.type !== 'failure' && actionData.id) {
-      return actionData.id as string;
+    if (body.type === 'failure') {
+      return { error: (actionData.error as string) || 'Failed to create chat' };
+    }
+    if (actionData.id) {
+      return { id: actionData.id as string };
     }
   } catch {
     /* ignore */
   }
-  return null;
+  return { error: 'Failed to create chat' };
 }
 
 /**
