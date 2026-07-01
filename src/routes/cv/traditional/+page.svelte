@@ -14,8 +14,6 @@
         jobRole: string;
         skills: string[];
       }>;
-      skills: string[];
-      hotSkills: Array<{ skill: string; count: number }>;
     };
   } = $props();
 </script>
@@ -52,17 +50,6 @@
       management platforms. Creator of Macula DAM and woss.io.
     </p>
     <p class="summary secondary">Forever learn and educate along the way. Always question the status-quo.</p>
-
-    <!-- ═══════ Skills ═══════ -->
-    <h2 class="section-heading">Skills</h2>
-    <div class="skills">
-      {#each data.hotSkills as hs (hs.skill)}
-        <span class="skill">
-          <span class="skill-name">{hs.skill}</span>
-          <span class="skill-count">{hs.count}</span>
-        </span>
-      {/each}
-    </div>
 
     <!-- ═══════ Experience ═══════ -->
     <section>

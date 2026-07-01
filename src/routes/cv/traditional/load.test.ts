@@ -34,15 +34,13 @@ function makeEntry(overrides: Partial<ReturnType<typeof mockGetExperience>[0]> =
 // ── Happy path ────────────────────────────────────────────────────────
 
 describe('+page.server.ts load()', () => {
-  it('returns { experience, skills } shape with one entry', () => {
+  it('returns { experience } shape with one entry', () => {
     mockGetExperience.mockReturnValue([makeEntry()]);
 
     const result = load();
 
     expect(result).toHaveProperty('experience');
-    expect(result).toHaveProperty('skills');
     expect(Array.isArray(result.experience)).toBe(true);
-    expect(Array.isArray(result.skills)).toBe(true);
     expect(result.experience).toHaveLength(1);
   });
 
@@ -135,54 +133,13 @@ describe('+page.server.ts load()', () => {
     expect(result.experience).toHaveLength(1);
   });
 
-  // ── Skills aggregation ─────────────────────────────────────────────
-
-  it('aggregates unique skills across all entries sorted alphabetically', () => {
-    mockGetExperience.mockReturnValue([
-      makeEntry({ slug: 'a', skills: ['TypeScript', 'Rust'] }),
-      makeEntry({ slug: 'b', skills: ['Kubernetes', 'TypeScript'] }),
-      makeEntry({ slug: 'c', skills: ['Rust', 'Go'] }),
-    ]);
-
-    const result = load();
-    expect(result.skills).toEqual(['Go', 'Kubernetes', 'Rust', 'TypeScript']);
-  });
-
-  it('handles entries with empty skills array', () => {
-    mockGetExperience.mockReturnValue([
-      makeEntry({ slug: 'a', skills: ['Rust'] }),
-      makeEntry({ slug: 'b', skills: [] }),
-    ]);
-
-    const result = load();
-    expect(result.skills).toEqual(['Rust']);
-  });
-
-  it('handles all entries having empty skills', () => {
-    mockGetExperience.mockReturnValue([makeEntry({ slug: 'a', skills: [] }), makeEntry({ slug: 'b', skills: [] })]);
-
-    const result = load();
-    expect(result.skills).toEqual([]);
-  });
-
-  it('removes duplicate skills within a single entry', () => {
-    mockGetExperience.mockReturnValue([
-      makeEntry({ slug: 'a', skills: ['TypeScript', 'TypeScript', 'Rust'] }),
-      makeEntry({ slug: 'b', skills: ['Rust', 'Rust'] }),
-    ]);
-
-    const result = load();
-    expect(result.skills).toEqual(['Rust', 'TypeScript']);
-  });
-
   // ── Edge cases ─────────────────────────────────────────────────────
 
-  it('returns empty arrays when no entries', () => {
+  it('returns empty experience array when no entries', () => {
     mockGetExperience.mockReturnValue([]);
 
     const result = load();
     expect(result.experience).toEqual([]);
-    expect(result.skills).toEqual([]);
   });
 
   it('calls getExperience exactly once per load', () => {
@@ -192,14 +149,12 @@ describe('+page.server.ts load()', () => {
     expect(mockGetExperience).toHaveBeenCalledWith();
   });
 
-  it('aggregates skills correctly with many entries having overlapping skills', () => {
+  it('aggregates experience correctly with many entries having overlapping skills', () => {
     const entries = ['a', 'b', 'c', 'd', 'e'].map((slug) => makeEntry({ slug, skills: [slug, 'common'] }));
     mockGetExperience.mockReturnValue(entries);
 
     const result = load();
-    // unique: a, b, c, d, e, common → alphabetical
-    expect(result.skills).toEqual(['a', 'b', 'c', 'common', 'd', 'e']);
-    expect(result.skills).toHaveLength(6);
+    expect(result.experience).toHaveLength(5);
   });
 
   // ── Adversarial ────────────────────────────────────────────────────
@@ -212,6 +167,5 @@ describe('+page.server.ts load()', () => {
 
     const result = load();
     expect(result.experience).toEqual([]);
-    expect(result.skills).toEqual([]);
   });
 });

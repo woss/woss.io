@@ -13,6 +13,10 @@ jobs:
   ci:
     name: Build & Lint & TypeCheck & Test
     runs-on: ubuntu-latest
+    env:
+      TURBO_API: ${{ secrets.TURBO_API }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
