@@ -18,7 +18,6 @@ skills:
   - microservices
   - leadership
   - system security
-  - CI/CD
   - strategy
   - hiring
 ---

@@ -20,12 +20,14 @@
 
     const question = page.url.searchParams.get('q') ?? '';
 
-    createChatApi(userId).then((id) => {
-      if (id) {
-        const path = question ? resolve(`/chat/${id}?q=${encodeURIComponent(question)}`) : resolve(`/chat/${id}`);
+    createChatApi(userId).then((result) => {
+      if (result.id) {
+        const path = question
+          ? resolve(`/chat/${result.id}?q=${encodeURIComponent(question)}`)
+          : resolve(`/chat/${result.id}`);
         goto(path);
       } else {
-        error = 'Failed to create chat';
+        error = result.error ?? null;
       }
     });
   });

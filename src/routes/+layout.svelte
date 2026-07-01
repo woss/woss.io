@@ -214,3 +214,11 @@
 {#if showCookieConsent}
   <CookieConsent onaccept={handleAcceptConsent} ondecline={handleDeclineConsent} />
 {/if}
+
+<style>
+  @media print {
+    nav {
+      display: none !important;
+    }
+  }
+</style>
