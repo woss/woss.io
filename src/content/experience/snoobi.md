@@ -11,13 +11,10 @@ startDate: '2011-04'
 endDate: '2012-09'
 duration: '04/2011 - 09/2012'
 skills:
-  - mysql
-  - database design
-  - api design
-  - data modeling
+  - database modeling and design
+  - API design
   - infrastructure
-  - backend development
-  - frontend development
+  - fullstack development
   - system administration
   - ERP systems
   - web analytics

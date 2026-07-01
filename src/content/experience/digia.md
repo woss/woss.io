@@ -7,15 +7,11 @@ endDate: '2019-03'
 duration: '03/2018 - 03/2019'
 skills:
   - magento
-  - nodejs
   - typescript
-  - backend development
-  - frontend development
-  - magento plugins
-  - user-experience
-  - mysql
-  - database design
-  - api design
+  - fullstack development
+  - UI/UX
+  - database modeling and design
+  - API design
 ---
 
 ## Job role

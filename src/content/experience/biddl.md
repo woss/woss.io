@@ -12,8 +12,7 @@ duration: '09/2015 - 02/2017'
 skills:
   - cordova
   - phonegap
-  - javascript
-  - pixijs
+  - typescript
   - python
   - public key cryptography
 ---

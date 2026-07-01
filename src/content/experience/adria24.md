@@ -6,12 +6,10 @@ startDate: '2010-06'
 endDate: '2010-12'
 duration: '06/2010 - 12/2010'
 skills:
-  - javascript
-  - database design
-  - api design
-  - infrastructure
-  - backend development
-  - frontend development
+  - database modeling and design
+  - API design
+  - devops
+  - fullstack development
   - system administration
 ---
 

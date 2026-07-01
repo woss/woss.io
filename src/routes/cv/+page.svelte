@@ -31,11 +31,21 @@
 
 <div class="bg-surface min-h-screen">
   <div class="max-w-2xl mx-auto flex flex-col items-center text-center px-6 py-12">
-    <!-- ═══════ THE AI-NATIVE CV badge ═══════ -->
-    <div class="inline-flex items-center border border-outline-variant rounded-full px-3 py-1 mb-6">
-      <span class="text-[0.6rem] font-heading font-bold text-on-surface-variant uppercase tracking-[0.08em]"
-        >THE AI-NATIVE CV</span
+    <!-- ═══════ CV View Options ═══════ -->
+    <div class="flex gap-2 mb-6">
+      <span class="inline-flex items-center border border-outline-variant rounded-full px-3 py-1">
+        <span class="text-[0.6rem] font-heading font-bold text-on-surface-variant uppercase tracking-[0.08em]"
+          >AI-NATIVE CV</span
+        >
+      </span>
+      <a
+        href={resolve('/cv/traditional')}
+        class="inline-flex items-center border border-primary rounded-full px-3 py-1 no-underline transition-all duration-200 hover:bg-primary/10"
       >
+        <span class="text-[0.6rem] font-heading font-bold text-primary uppercase tracking-[0.08em]"
+          >TRADITIONAL CV →</span
+        >
+      </a>
     </div>
 
     <!-- ═══════ Name ═══════ -->
@@ -90,15 +100,6 @@
       <a href="https://woss.io" class="text-sm text-primary underline font-body">woss.io</a>
     </div>
 
-    <!-- ═══════ Traditional CV link ═══════ -->
-    <!-- eslint-disable svelte/no-navigation-without-resolve -->
-    <a
-      href={resolve('/cv/traditional')}
-      class="text-xs text-on-surface-variant underline underline-offset-2 hover:text-primary transition-colors duration-200 font-body mb-8"
-    >
-      View Traditional CV
-    </a>
-    <!-- eslint-enable svelte/no-navigation-without-resolve -->
 
     <!-- ═══════ CTA ═══════ -->
     <p class="font-heading text-base text-primary font-bold mb-1">Stop reading. Start asking.</p>

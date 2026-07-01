@@ -86,9 +86,16 @@ export function initDatabase(db: import('better-sqlite3').Database): void {
       skills TEXT,
       description TEXT,
       published INTEGER DEFAULT 1,
-      updated_at TEXT
+      updated_at TEXT,
+      job_role TEXT
     )
   `);
+  // Safe migration for existing databases
+  try {
+    db.exec('ALTER TABLE page_experience ADD COLUMN job_role TEXT');
+  } catch {
+    /* column already exists */
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS llm_cache (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

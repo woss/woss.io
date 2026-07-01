@@ -7,8 +7,8 @@ endDate: '2017-12'
 duration: '09/2017 - 12/2017'
 skills:
   - firebase
-  - material design
-  - realtime chat
+  - realtime communication
+  - devops
 ---
 
 ## Job role

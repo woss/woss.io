@@ -8,7 +8,7 @@
   import { resolve } from '$app/paths';
   import Icon from '$lib/icons/Icon.svelte';
 
-  let avatarUrl = $derived(appendQueryParams('https://u.macula.link/@woss/avatar', page.data.queryParams));
+  let avatarUrl = $derived(appendQueryParams('https://u.macula.link/kPT78FuvSm2Y_3BQHPApYg-7?preset=sys_md', page.data.queryParams));
 
   interface LinkItem {
     url: string;

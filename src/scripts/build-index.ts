@@ -164,6 +164,15 @@ export function extractToc(content: string): { id: string; text: string; level: 
  * Recursively walk a directory and yield all markdown file paths.
  * @param dir The directory to walk.
  */
+/**
+ * Extract the text under the `## Job role` heading from markdown content.
+ * Returns everything between that heading and the next `##` heading (or end of string), trimmed.
+ */
+export function extractJobRole(content: string): string {
+  const match = content.match(/^##\s+Job\s*role\s*\n([\s\S]*?)(?=\n##|\n*$)/im);
+  return match ? match[1].trim() : '';
+}
+
 export function* walkMdFiles(dir: string): Generator<string> {
   if (!existsSync(dir)) return;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -536,8 +545,9 @@ async function buildIndex(): Promise<void> {
           continue;
         }
       } else {
+        const jobRole = content ? extractJobRole(content) : '';
         db.prepare(
-          `INSERT OR REPLACE INTO page_experience (slug, hash, content, company, role, start_date, end_date, duration, skills, description, published, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+          `INSERT OR REPLACE INTO page_experience (slug, hash, content, company, role, start_date, end_date, duration, skills, description, published, updated_at, job_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
         ).run(
           entry.slug,
           entry.hash,
@@ -550,6 +560,7 @@ async function buildIndex(): Promise<void> {
           JSON.stringify(data.skills ?? []),
           data.description ?? '',
           data.published !== false ? 1 : 0,
+          jobRole || null,
         );
       }
       const item: ContentItem = {

@@ -10,23 +10,13 @@ startDate: '2014-01'
 endDate: '2016-05'
 duration: '01/2014 - 05/2016'
 skills:
-  - yii
-  - symfony
-  - mysql
-  - html
-  - css
-  - javascript
-  - jquery
-  - database design
-  - api design
-  - data modeling
+  - database modeling and design
+  - API design
   - infrastructure
-  - backend development
-  - frontend development
+  - fullstack development
   - system administration
   - devops
   - docker
-  - nodejs
   - platform infrastructure
   - typescript
 ---

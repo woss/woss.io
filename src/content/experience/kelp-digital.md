@@ -15,27 +15,19 @@ endDate: null
 duration: '01/2018 - current'
 skills:
   - typescript
-  - serverless
   - graphql
   - lua
   - ipfs
   - sveltekit
-  - tailwind
   - lightroom plugin development
-  - sharp
-  - exiftool
-  - platform development
-  - data modeling and design
-  - software architecture
-  - content rights management
-  - content monetization
+  - software/platform development
+  - database modeling and design
   - event-driven architecture
   - microservices
-  - postgreSQL
-  - questDB
-  - surrealDB
-  - ai plugins development
-
+  - questDB/surrealDB/postgreSQL
+  - knowledge graph
+  - AI plugins development
+  - CI/CD
 websites:
   - name: Kelp website
     url: https://kelp.digital

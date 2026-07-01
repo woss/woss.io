@@ -12,27 +12,21 @@ endDate: '2024-01'
 duration: '01/2019 - 01/2024'
 skills:
   - typescript
-  - nodejs
-  - docker
+  - devops
   - rust
   - sveltekit
-  - mongodb
-  - postgreSQL
-  - rxdb
+  - mongodb/postgreSQL/rxdb
   - kubernetes
   - public key cryptography
-  - consensus mechanisms
   - blockchain development
   - IPFS
   - software architecture
   - platform development
-  - grant writing
   - protocol design
   - SDK development
   - distributed systems
   - browser extensions
-  - infrastructure
-
+  - CI/CD
 repositories:
   - name: Main Anagolay repository
     url: https://github.com/anagolay
