@@ -6,13 +6,11 @@ startDate: '2008-02'
 endDate: '2009-07'
 duration: '02/2008 - 07/2009'
 skills:
-  - css
   - javascript
   - infrastructure
-  - backend development
-  - frontend development
-  - api design
-  - data modeling
+  - fullstack development
+  - API design
+  - database modeling and design
 ---
 
 ## Job role

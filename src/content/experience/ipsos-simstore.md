@@ -12,24 +12,19 @@ endDate: null
 duration: '08/2023 - current'
 skills:
   - aws
-  - terraform
-  - terragrunt
-  - tofu
+  - terraform/openTofu/terragrunt
   - cloud infrastructure
   - devops
-  - docker
   - kubernetes
-  - nodejs
   - typescript
   - python
-  - knative
   - distributed systems
   - knative mesh
   - event-driven architecture
   - data modeling and design
-  - software architecture
-  - ai plugins development
-  - platform architecture
+  - software/platform architecture
+  - AI plugins development
+  - CI/CD
 ---
 
 ## Job role

@@ -834,6 +834,7 @@ function getExperience(slug?: string): {
   duration: string;
   skills: string[];
   description: string;
+  jobRole: string;
   published: boolean;
 }[] {
   const db = getDb();
@@ -841,14 +842,14 @@ function getExperience(slug?: string): {
   if (slug) {
     rows = queryRows<Record<string, unknown>>(
       db.prepare(
-        'SELECT slug, content, company, role, start_date, end_date, duration, skills, description, published FROM page_experience WHERE slug = ?',
+        'SELECT slug, content, company, role, start_date, end_date, duration, skills, description, published, job_role FROM page_experience WHERE slug = ?',
       ),
       slug,
     );
   } else {
     rows = queryRows<Record<string, unknown>>(
       db.prepare(
-        'SELECT slug, content, company, role, start_date, end_date, duration, skills, description, published FROM page_experience',
+        'SELECT slug, content, company, role, start_date, end_date, duration, skills, description, published, job_role FROM page_experience',
       ),
     );
   }
@@ -862,6 +863,7 @@ function getExperience(slug?: string): {
     duration: String(r.duration ?? ''),
     skills: JSON.parse(String(r.skills ?? '[]')),
     description: String(r.description ?? ''),
+    jobRole: r.job_role ? String(r.job_role) : '',
     published: r.published !== 0,
   }));
 }

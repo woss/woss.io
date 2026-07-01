@@ -6,10 +6,7 @@ startDate: '2017-02'
 endDate: '2017-05'
 duration: '02/2017 - 05/2017'
 skills:
-  - nodejs
   - typescript
-  - d3
-  - pure css
 ---
 
 ## Job role

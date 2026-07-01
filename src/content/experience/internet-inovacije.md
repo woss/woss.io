@@ -6,13 +6,11 @@ startDate: '2010-10'
 endDate: '2011-04'
 duration: '10/2010 - 04/2011'
 skills:
-  - javascript
-  - database design
-  - api design
-  - data modeling
-  - infrastructure
-  - backend development
-  - system administration
+  - typescript
+  - database modeling and design
+  - API design
+  - devops
+  - fullstack development
 ---
 
 ## Job role

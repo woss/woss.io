@@ -39,7 +39,7 @@
 
   /* ─── Constants ─── */
 
-  let ORIGINAL_FAV_HREF = $derived(appendQueryParams('https://u.macula.link/@woss/avatar', page.data.queryParams));
+  let ORIGINAL_FAV_HREF = $derived(appendQueryParams('https://u.macula.link/kPT78FuvSm2Y_3BQHPApYg-7?preset=sys_md', page.data.queryParams));
   const LOADING_FAV_SVG = encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
  <circle cx="16" cy="16" r="15" fill="#1a1a2e"/>

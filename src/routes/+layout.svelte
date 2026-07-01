@@ -20,7 +20,7 @@
   import CookieConsent from '$lib/components/CookieConsent.svelte';
   import { getTrackingConsent, isConsentUndecided, setTrackingConsent as persistConsent } from '$lib/stores/tracking-consent';
 
-  let avatarUrl = $derived(appendQueryParams('https://u.macula.link/@woss/avatar', page.data.queryParams));
+  let avatarUrl = $derived(appendQueryParams('https://u.macula.link/kPT78FuvSm2Y_3BQHPApYg-7?preset=sys_md', page.data.queryParams));
 
   let { children } = $props();
 
@@ -116,7 +116,7 @@
           href={resolve('/')}
           class="font-heading text-xl font-bold text-primary no-underline tracking-[-0.02em] hover:text-white transition-colors duration-150"
         >
-          <img src={avatarUrl} alt="woss.io logo" width="32" height="32" class="size-8" />
+          <img src={avatarUrl} alt="woss.io logo" width="32" height="32" class="size-8 rounded-full object-cover" />
         </a>
 
         <div class="hidden md:flex items-center gap-8">

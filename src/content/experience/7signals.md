@@ -22,24 +22,13 @@ startDate: 2015-08
 endDate: 2022-01
 duration: 08/2015 - 01/2022
 skills:
-  - multi-client engagement
-  - project management
   - software development
   - devops
-  - remote work
-  - aws
-  - saas
-  - postgreSQL
-  - mysql
-  - cross-team collaboration
-  - client acquisition
-  - svelte
   - sveltekit
-  - nodejs
   - typescript
-  - software architecture
-  - platform development
+  - software/platform architecture
   - data modeling and design
+  - CI/CD
 ---
 
 ## Job role
