@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import GithubSlugger from 'github-slugger';
@@ -337,10 +337,24 @@ async function buildIndex(): Promise<void> {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
   const dbPath = 'data/woss.db';
-  if (!existsSync(dbPath)) {
+  if (existsSync(dbPath)) {
+    // Docker: stale journal/WAL/SHM files from prior container kills cause
+    // 'attempt to write a readonly database'. Delete them before opening.
+    for (const ext of ['-journal', '-wal', '-shm']) {
+      const p = dbPath + ext;
+      if (existsSync(p)) {
+        try {
+          rmSync(p);
+          log.debug`Cleaned stale ${dbPath}${ext}`;
+        } catch {
+          /* best effort */
+        }
+      }
+    }
+  } else {
     log.info`Database not found. Initializing schema...`;
     const tmp = new Database(dbPath);
-    tmp.exec('PRAGMA journal_mode = WAL');
+    tmp.exec('PRAGMA journal_mode = TRUNCATE');
     tmp.exec('PRAGMA foreign_keys = ON');
     initDatabase(tmp);
     tmp.close();
@@ -360,7 +374,9 @@ async function buildIndex(): Promise<void> {
   // Free BGE model memory (~1.3GB) before chunk embedding phase
   await releaseExtractor();
 
-  // Retry getDb with backoff — transient IOERR on new DB after reset
+  // Retry getDb with backoff — transient IOERR on new DB after reset.
+  // If "readonly" error (SQLITE_READONLY), delete DB and retry once —
+  // search index is rebuildable from markdown; chat data is secondary.
   const maxDbInitRetries = 3;
   let db: ReturnType<typeof getDb>;
   for (let dbInitAttempt = 1; ; dbInitAttempt++) {
@@ -368,10 +384,27 @@ async function buildIndex(): Promise<void> {
       db = getDb();
       break;
     } catch (err) {
-      if (dbInitAttempt >= maxDbInitRetries || !(err instanceof Error && err.message.includes('IOERR_SHORT_READ'))) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isReadonly = msg.includes('readonly');
+      const isIoerrShortRead = msg.includes('IOERR_SHORT_READ');
+      if (dbInitAttempt >= maxDbInitRetries || !(isReadonly || isIoerrShortRead)) {
         throw err;
       }
-      log.debug`getDb attempt ${dbInitAttempt} failed (IOERR_SHORT_READ), retrying...`;
+      if (isReadonly) {
+        log.warn`Database readonly — deleting and rebuilding (attempt ${dbInitAttempt}/${maxDbInitRetries})`;
+        for (const ext of ['', '-journal', '-wal', '-shm']) {
+          const p = dbPath + ext;
+          if (existsSync(p)) {
+            try {
+              rmSync(p);
+            } catch {
+              /* best effort */
+            }
+          }
+        }
+      } else {
+        log.debug`getDb attempt ${dbInitAttempt} failed (IOERR_SHORT_READ), retrying...`;
+      }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
