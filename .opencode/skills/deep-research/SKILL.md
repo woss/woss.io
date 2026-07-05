@@ -102,7 +102,12 @@ Dispatch up to `max_researchers` `the active swarm's sme agent` calls with
 `batch_id`, then continue architect-owned retrieval quality work that does not
 depend on worker output: tighten the evidence ledger, check source authority,
 prepare reviewer shard structure, and identify unresolved gaps. Do not write final
-claims from running lanes. Each sme dispatch must
+claims from running lanes. Dispatch promptly — do not accumulate extensive planning
+prose before the call, or output truncation may swallow the tool call itself. Keep each
+lane `prompt` compact: send shared context ONCE via the `common_prompt` field, or have
+lanes read it from a file by absolute path, instead of inlining the same large blob into
+every lane prompt — oversized inline prompts produce malformed or truncated tool-call
+JSON. Each sme dispatch must
 include:
 - `DOMAIN`: the subtopic
 - `TASK`: "Synthesize an evidence-grounded answer for this subtopic. Cite each
@@ -113,15 +118,30 @@ include:
 - `OUTPUT`: claims with evidence refs, contradictions noted, confidence (0–1)
 - `SKILLS: none`
 
-The sme synthesizes only from the provided evidence — it does not fetch. Before
-Step 5, call `collect_lane_results` with `wait: true` for every open synthesis
-batch. Collect all completed worker responses into a candidate findings set, each
-finding tagged with its subtopic, evidence refs, and the worker's confidence.
-Treat missing, stale, cancelled, or failed lanes as explicit coverage gaps. If
-`dispatch_lanes_async` is unavailable, use blocking parallel dispatch and record
-that async advisory lanes were unavailable.
+The sme synthesizes only from the provided evidence — it does not fetch. While
+synthesis lanes run, poll with `collect_lane_results` without `wait` (or
+`wait: false`) to process completed worker responses as they settle while
+continuing independent architect work between polls. Before Step 5, call
+`collect_lane_results` with `wait: true` for every open synthesis batch only if
+lanes are still pending and no independent work remains. Do not advance to Step 5
+until every synthesis lane is settled. Collect all completed worker responses into
+a candidate findings set, each finding tagged with its subtopic, evidence refs,
+and the worker's confidence. Treat missing, stale, cancelled, or failed lanes as
+explicit coverage gaps. If `dispatch_lanes_async` is unavailable, use
+blocking `dispatch_lanes` as the first fallback and record that async advisory lanes were
+unavailable. This changes only when the architect waits, not whether every
+synthesis lane must settle before Step 5. Do not substitute Task-tool dispatch
+unless lane tools are unavailable; when they are unavailable, Task is the final fallback
+and must be verified as equivalent by agent type, prompt, scope, and
+isolation.
 
 ## Step 5 — Dual-Reviewer Claim Verification
+
+When a lane result includes `output_ref`, treat `output` as a preview and call
+`retrieve_lane_output` before extracting claims, summarizing a subtopic, or marking
+the subtopic clean. If the result is `output_degraded`, `transcript_incomplete`, or
+truncated without a usable ref, mark the affected subtopic UNVERIFIED or
+re-dispatch a narrower lane; do not treat preview absence as evidence absence.
 
 Split the candidate findings into 2 shards. Dispatch 2 parallel
 `the active swarm's reviewer agent` calls. Each reviewer receives its shard plus

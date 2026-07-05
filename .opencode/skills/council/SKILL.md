@@ -92,7 +92,11 @@ RESEARCH CONTEXT
    continue only non-dependent architect work: prepare the synthesis outline,
    normalize the RESEARCH CONTEXT citations, and draft disagreement categories.
    Do not call `convene_general_council` or present conclusions from running
-   lanes. Each dispatch message must
+   lanes. Dispatch promptly — do not accumulate extensive planning prose before the
+   call, or output truncation may swallow the tool call itself. Keep each lane `prompt`
+   compact: send shared context ONCE via the `common_prompt` field, or have lanes read
+   it from a file by absolute path, instead of inlining the same large blob into every
+   lane prompt. Each dispatch message must
    include:
    - The question
    - Round number: 1
@@ -103,13 +107,27 @@ RESEARCH CONTEXT
 
 Do NOT share other agents' responses at this stage.
 
-4. Call `collect_lane_results` with `wait: true` for the Round 1 batch and collect
-   all three JSON responses. If `dispatch_lanes_async` is unavailable, use
-   blocking parallel dispatch and record that async advisory lanes were
-   unavailable. The `round1Responses` array will contain
-   entries with `memberId` of `council_generalist`, `council_skeptic`, and
-   `council_domain_expert` and `role` of `generalist`, `skeptic`, and
-   `domain_expert` respectively. These come from the agents' JSON output; no
+4. While council lanes are running, poll with `collect_lane_results` (without
+   `wait` or `wait: false`) to check progress and process any settled member
+   responses as they complete — extract the JSON, verify `output_ref`, and
+   pre-validate structure — while continuing independent architect work
+   (synthesis outline, citation normalization, disagreement categories). Only
+   use `wait: true` if lanes are still pending and no more independent work
+   remains. All three lanes must be settled before proceeding to synthesis.
+   If `dispatch_lanes_async` is unavailable, use blocking `dispatch_lanes`
+   as the first fallback and record that async advisory lanes were unavailable.
+   This changes only when the architect waits, not whether all council lanes
+   must settle. Do not substitute Task-tool dispatch unless lane tools are
+   unavailable; when they are unavailable, Task is the final fallback and must be
+   verified as equivalent by agent type, prompt, scope, and isolation. The
+   `round1Responses` array will contain entries with `memberId` of
+   `council_generalist`, `council_skeptic`, and `council_domain_expert` and
+   `role` of `generalist`, `skeptic`, and `domain_expert` respectively. If
+   any lane result has `output_ref`, call `retrieve_lane_output` and parse
+   the full artifact rather than the preview. If a lane is degraded,
+   incomplete, truncated without a usable ref, missing, stale, cancelled, or
+   failed, treat the council round as blocked or incomplete; do not synthesize
+   from partial member JSON. These come from the agents' JSON output; no
    manual construction is needed.
 
 #### Synthesis and Deliberation (when council.general.deliberate is true; default true)

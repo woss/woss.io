@@ -137,6 +137,7 @@ Get-Content "$env:TEMP\test_out.txt" | Select-Object -Last 50
 - `Select-String -Last N` — invalid parameter, use `Select-Object -Last N`
 - `2>&1 2>&1` — duplicate redirection, causes parse error; use `2>&1` once
 - `&&` — not supported in PowerShell 5.1; use `; if ($?) { cmd2 }` instead
+- `bun test --exec bash` — fails on Windows hosts with ENOENT (bash is not available in standard PowerShell). Use `bun test` directly or a PowerShell-based loop instead.
 - After `bun install --frozen-lockfile --force`, non-elevated Windows shells can hit `EPERM` while reading refreshed `node_modules` entries. Treat that as a host permission/access issue: rerun the same focused Bun command with approved/elevated access before diagnosing it as a code or test failure.
 
 ---
@@ -280,3 +281,12 @@ bun --smol test tests/unit/agents/some-file.test.ts --timeout 30000
 | Token budget test failure | Prompt grew past hardcoded threshold | Treat as soft regression; update threshold |
 | CONSTRAINT assertion fails after refactor | Test checks for removed format template | Update assertion to match current prompt |
 | `package-check` CI failure | `package-check` validates the npm tarball (`npm pack` + tarball contents) — a source/build/package-manifest problem, not generated-file drift. `dist/` is generated and NOT committed — do not stage it; run `bun run build` locally only when you need the bundle. There is no longer a committed-dist drift check. |
+
+## Tree-sitter / WASM test timeouts
+
+Tests that exercise tree-sitter (any test calling `extractFileSymbols` or loading a `web-tree-sitter` grammar) may take several seconds on **first WASM module load**. Depending on the code path, tree-sitter is reached via the dynamic symbol-graph import or the externalized runtime import; either way, the first `Parser.init` / grammar load in a process is slow.
+
+- Use `--timeout 60000` (not 30000) for test files that load tree-sitter grammars.
+- If the `test_engineer` agent gets stuck (no output for extended time), run the test file directly via bash with a longer timeout (`--timeout 120000`) to determine whether it's a WASM first-load delay or a genuine code failure.
+- **Classify the timeout** before returning the test_engineer to the coder — a WASM-load timeout is infrastructure, not a code bug.
+- Each test process loads WASM independently (no cross-process cache), so every file's first grammar load is slow.
