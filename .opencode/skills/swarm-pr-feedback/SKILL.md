@@ -23,6 +23,13 @@ Carry forward the original review finding IDs, classifications, reviewer/critic
 provenance, and any operational blockers instead of renumbering them as new
 discoveries.
 
+Feedback closure is not the end of the PR lifecycle: when PR monitoring is
+enabled (`pr_monitor.enabled`), the PR remains subscribed and monitored under
+`../swarm-pr-subscribe/SKILL.md` until it is merged or closed. Events that
+arrive after closure (a new bot round, a CI change, fresh review activity) are
+triaged through that skill and route back into this discipline when they need
+fixes.
+
 ## Multi-Round Bot Reviews (Iterative Pattern)
 
 The repository's bot reviewer (`hermes-pr-review` / Qwen3.6 + Gemma-4 dual-model)
@@ -134,8 +141,48 @@ tree:
   filesystem (`Read`/`Glob`/`Grep`), and fixes must land on the PR branch — without a
   checkout you would verify and patch the base branch's code instead. Record the
   `base_ref..head_ref` range for diff-scoped inspection.
-- If no PR reference was provided (a pasted-feedback session on the current branch),
-  confirm the current branch is the intended PR branch before editing.
+ - If no PR reference was provided (a pasted-feedback session on the current branch),
+   confirm the current branch is the intended PR branch before editing.
+
+When a verification lane result includes `output_ref`, treat `output` as a
+preview and call `retrieve_lane_output` before using it to classify, resolve,
+disprove, or group feedback items. If the result is `output_degraded`,
+`transcript_incomplete`, or truncated without a usable ref, keep the affected
+ledger items as `NEEDS_MORE_EVIDENCE` or re-dispatch a narrower read-only lane.
+
+## Pre-flight: Dirty Worktree Handling
+
+Before staging any files for the PR commit, check the working tree state:
+
+**The problem:** `git add -A` stages every uncommitted change in the working tree,
+including pre-existing changes from other branches or prior work. This was hit twice
+in one session during PR #1472 review, producing a 59-file commit instead of the
+intended 2-file targeted fix.
+
+**The check:** Run `git status --porcelain` first. If output is non-empty, identify
+which files are PR-related vs pre-existing uncommitted changes.
+
+**The rule:** Stage files explicitly by path when the working tree contains files
+unrelated to the PR. For example:
+
+```bash
+git add src/foo.ts tests/foo.test.ts
+```
+
+Never use `git add -A` when the working tree has pre-existing changes from other
+branches or prior work sessions.
+
+*Reference: Caught during PR #1472 Round 1 closure.*
+
+## Pre-flight: Scope Discipline
+
+`declare_scope({ taskId, files })` enforces that the delegated coder agent may only modify the declared files. The enforcement requires an active `.swarm/plan.json` — calling `declare_scope` in a feedback-closure run (which does not go through `save_plan`) rejects with "No plan found."
+
+**When to use `declare_scope` (preferred):** any feedback round that touches 2+ files, OR any feedback round where the file scope is not 100% obvious from the prompt. Before delegating, save a minimal plan via `save_plan` with a single phase containing the feedback-closure tasks, then call `declare_scope` per task with the exact file list.
+
+**Carve-out for direct Task delegation:** 1-file, single-function changes where the file path appears verbatim in the coder's prompt may use direct `Task(subagent_type="paid_coder", ...)` delegation without `declare_scope`. This is a narrow exception; the orchestrator is responsible for verifying the scope is unambiguous.
+
+**Anti-pattern:** do not use `Task` delegation for multi-file feedback fixes just to skip `save_plan` — the loss of scope discipline is not worth the saved ceremony.
 
 ## Intake Surfaces
 
@@ -151,26 +198,42 @@ Build a complete feedback ledger before editing. Include every available source:
 - PR body checkboxes, test-plan claims, linked issues, and acceptance criteria,
 - commit history and bot/app commits on the PR branch.
 
-If a source is unavailable, record that limitation. Do not treat missing access as
-evidence that no feedback exists.
+If a source is unavailable, retry with alternative access paths. If unavailable after retry, the source is a coverage gap that must be reported to the user — do not silently "record that limitation" and proceed as if the source doesn't matter.
 
 ### Async advisory verification lanes
 
 After the complete feedback ledger exists and before editing, use
 `dispatch_lanes_async` when available for independent read-only verification lanes:
 comment classification, CI/log root-cause inspection, test impact mapping,
-release/docs claim checks, and stale-branch/conflict analysis. Record each
-returned `batch_id`, then continue only ledger-safe architect work: normalize
-feedback IDs, gather deterministic PR metadata, prepare reproduction commands,
-and plan likely fix groups. Do not edit, close items, or mark feedback resolved
-from running lanes.
+release/docs claim checks, and stale-branch/conflict analysis. Partition the
+ledger so each `FB-###` item is owned by exactly one verification lane and the
+union of lanes covers the entire ledger — no feedback item may be left
+unassigned to a lane; state each lane's owned `FB-###` range in its prompt. Scale
+the lane count to the ledger size: a 1–3 item round may use a single combined
+lane, while a large multi-round intake may warrant one lane per category above.
+Cap each `dispatch_lanes_async` batch at 8 lanes (`MAX_LANES`); if the ledger
+needs more than 8 verification lanes, dispatch in sequential batches and settle
+each batch's COVERAGE GATE before the next — do not over-spawn lanes for a
+trivial round. Record each returned `batch_id`, then continue only ledger-safe
+architect work: normalize feedback IDs, gather deterministic PR metadata, prepare
+reproduction commands, and plan likely fix groups. Do not edit, close items, or
+mark feedback resolved from running lanes.
 
 Before the Verification step can mark any item `RESOLVED`, `DISPROVED`,
-`PRE_EXISTING`, `NEEDS_MORE_EVIDENCE`, or `NEEDS_USER_DECISION`, call
-`collect_lane_results` with `wait: true` for every open verification batch.
-Missing, stale, cancelled, or failed lanes remain explicit ledger limitations.
-If `dispatch_lanes_async` is unavailable, use blocking verification and record
-that async advisory lanes were unavailable.
+`PRE_EXISTING`, `NEEDS_MORE_EVIDENCE`, or `NEEDS_USER_DECISION`, every open
+verification batch must be fully settled. Poll with `collect_lane_results` (wait
+omitted or `false`) to process settled lanes incrementally — clustering confirmed
+items and pre-reading files for settled findings while ledger-safe work remains —
+then issue a final `collect_lane_results` with `wait: true` per batch once
+independent work is exhausted, to confirm every lane is settled.
+Missing, stale, cancelled, or failed lanes are coverage gaps that must be closed
+before marking any item RESOLVED/DISPROVED/PRE_EXISTING. Apply the COVERAGE GATE:
+retry failed lanes (max 2), deploy a verified equivalent alternative (same agent
+type, same prompt, same scope, same isolation, with Task-tool dispatch as the
+final fallback when lane tools do not work), or stop and surface the lane failure
+to the user as BLOCKED.
+Do not proceed with "blocking verification and record that async advisory lanes
+were unavailable" — record-and-continue is not coverage closure.
 
 ### CI matrix cascade check (do this before fixing)
 

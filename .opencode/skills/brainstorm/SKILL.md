@@ -52,7 +52,8 @@ If `council.general.enabled` is true in the resolved opencode-swarm config AND a
 - Exit with a design outline the user can skim in under two minutes.
 
 **Phase 5: SPEC WRITE + SELF-REVIEW (architect + reviewer).**
-    - Generate `.swarm/spec.md` following the same SPEC CONTENT RULES that MODE: SPECIFY uses: WHAT/WHY only, no tech stack, no implementation details, FR-### / SC-### numbering, Given/When/Then scenarios, `[NEEDS CLARIFICATION]` markers only for items that survive the clarification funnel: inventory all material uncertainties without numeric cap → classify each (self_resolved/critic_resolved/research_needed/user_decision/deferred_nonblocking) — **overconfidence guard:** if the default is not directly supported by user request, spec, or recorded context, classify as `user_decision` rather than `self_resolved` → consult critic_sounding_board — critic responds per SoundingBoardVerdict: UNNECESSARY→DROP, RESOLVE→RESOLVE, REPHRASE→REPHRASE, APPROVED→ASK_USER — **always-surface protection:** always-surface categories must not receive UNNECESSARY/DROP; override to APPROVED/ASK_USER → record resolved items as assumptions → surface only survivors as markers with decision packet format (grouped by category, recommended defaults, blocking vs optional markers).
+    - Generate `.swarm/spec.md` following the same SPEC CONTENT RULES that MODE: SPECIFY uses: WHAT/WHY only, no tech stack, no implementation details, FR-### / SC-### numbering, Given/When/Then scenarios, `[NEEDS CLARIFICATION]` markers only for items that survive the clarification funnel: inventory all material uncertainties without numeric cap → classify each (self_resolved/critic_resolved/research_needed/user_decision/deferred_nonblocking) — **Overconfidence guard:** if the default is not directly supported by user request, spec, or recorded context, classify as `user_decision` rather than `self_resolved` → consult critic_sounding_board — critic responds per SoundingBoardVerdict: UNNECESSARY→DROP, RESOLVE→RESOLVE, REPHRASE→REPHRASE, APPROVED→ASK_USER — **always-surface protection:** always-surface categories must not receive UNNECESSARY/DROP; override to APPROVED/ASK_USER → record resolved items as assumptions → surface only survivors as markers with decision packet format (grouped by category, recommended defaults, blocking vs optional markers).
+    - **Important:** If research is ongoing, monitor the timeout configured in `.swarm/config.json` under `research_needed_timeout_ms` (default: 300000ms / 5 minutes). If research does not complete before the timeout expires, automatically reclassify the item to `user_decision` with a note that research was incomplete, then surface it to the user. This prevents the clarification funnel from stalling while waiting for external research.
 - Cross-reference design sections by name where relevant context helps (but keep HOW out of the spec).
 - Delegate to `the active swarm's reviewer agent` for an independent review of the draft spec. Reviewer must flag: requirements that encode HOW, untestable requirements, missing edge cases, silent assumptions.
 - Apply reviewer feedback. If reviewer rejects, iterate once and re-review. After two rounds, surface remaining disagreements to the user.
@@ -60,6 +61,14 @@ If `council.general.enabled` is true in the resolved opencode-swarm config AND a
 - Exit when reviewer signs off (or user explicitly accepts remaining disagreements).
 
 **Phase 6: QA GATE SELECTION, PARALLEL CODERS, AND COMMIT FREQUENCY (architect, dialogue only).**
+Auto-loop exception: when BRAINSTORM is running inside MODE: LOOP with
+`autonomy=auto`, do not ask this preference question. Write the balanced-speed
+default `## Pending QA Gate Selection` instead (reviewer, test_engineer,
+sme_enabled, critic_pre_plan, sast_enabled, drift_check ON; council_mode,
+hallucination_guard, mutation_test, phase_council, final_council OFF). Do not
+write `## Pending Parallelization Config` here because task scopes are not known
+until PLAN; MODE: PLAN will choose safe parallelism automatically. Keep commit
+frequency at phase-level only.
 Now ask the user which QA gates to enable for this plan, how many parallel coders to use, and the commit frequency -- do not select on their behalf. Present all three items together as one unified exchange.
 
 Present the eleven gates with their defaults (DEFAULT_QA_GATES), parallel coder count, and commit frequency as a single user-facing section. Offer the user a one-shot choice: accept defaults, or customize. The eleven gates are:
@@ -76,7 +85,8 @@ Present the eleven gates with their defaults (DEFAULT_QA_GATES), parallel coder 
 - final_council (default: OFF) -- when enabled, after all phases complete the architect dispatches the full 5-member council (critic, reviewer, sme, test_engineer, explorer) -- NOT the General Council -- at project scope, collects `CouncilMemberVerdict` objects, and calls `write_final_council_evidence`. This does not require `council.general.enabled`.
 
 Additionally, present these two sub-items as part of the same exchange:
-- Parallel coders (default: 1, range: 1-4) -- how many coders should run in parallel. Parallel coders each run in an isolated git worktree (separate working dir + branch) and merge back automatically, so they never overwrite each other's files -- safe and faster, but only for tasks whose file scopes do NOT overlap. The per-task file scopes that determine a safe parallel count are not known until the plan is finalized, so default to 1 (serial) here; the precise recommendation is made at plan time once the tasks and their scopes exist.
+- Parallel coders (default: 1, range: 1-6) -- how many coders should run in parallel. Parallel coders each run in an isolated git worktree (separate working dir + branch) and merge back automatically, so they never overwrite each other's files -- safe and faster, but only for tasks whose file scopes do NOT overlap. The per-task file scopes that determine a safe parallel count are not known until the plan is finalized, so default to 1 (serial) here; the precise recommendation is made at plan time once the tasks and their scopes exist.
+  > COMMON MISCONCEPTION: worktree isolation is baseline for standard parallel coders, governed by the parallel execution profile plus top-level `worktree.policy`. It is not provided by Lean Turbo or Epic. Do not recommend Lean Turbo or Epic to obtain worktree isolation; recommend them only for what they add beyond baseline (Lean Turbo: lane planning, file locks, phase reviewer, integrated diff; Epic: co-change awareness and auto-decide). Worktrees also do not make overlapping scopes safe: dependency readiness, file-disjoint scopes, and merge-back ownership are still required.
 - Commit frequency (default: phase-level only) -- optional per-task checkpoint commit after each task completion.
 - auto_proceed (boolean, default: false) -- when true, auto-advance to the next phase without asking "Ready for Phase N+1?"; runtime toggle via /swarm auto-proceed on|off.
 
@@ -116,6 +126,8 @@ GATE SELECTION IS MANDATORY — these thoughts are WRONG and must be ignored:
     → WRONG: the architect does not configure gates. The user configures gates. Always ask.
 
 MANDATORY PAUSE: Do NOT write the spec summary (step 7). Do NOT suggest next steps.
+Exception: MODE: LOOP with `autonomy=auto` uses the balanced-speed defaults
+above and does not pause for this preference exchange.
 You are BLOCKED until ALL THREE of these conditions are met:
   (1) The unified gate/coders/commit selection section has been presented to the user in a single message
   (2) The user has responded (accept defaults OR customized list for all three items)

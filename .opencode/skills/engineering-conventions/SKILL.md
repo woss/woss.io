@@ -56,6 +56,35 @@ Every PR that touches a relevant area must include an `## Invariant audit` secti
 
 If you cannot prove a touched invariant from source and test output, **do not push**.
 
+## Init-path-safe imports (invariant 1 deep-dive)
+
+The most expensive invariant-1 violations come from **transitive import chains** that silently load heavy modules (WASM, tree-sitter) at plugin init time. A single `import { X } from '../../lang'` in a tool-time module can transitively load `runtime.ts` → `web-tree-sitter` (heavy WASM), spiking init latency well past the repro-704 T1 deadline (observed during issue #1471 development).
+
+### The lang barrel trap
+
+`src/lang/index.ts` re-exports from `./runtime`, which statically imports `web-tree-sitter`. Importing **anything** from the barrel (`from '../../lang'`) transitively loads WASM at module-eval time.
+
+**Wrong:** `import { LANGUAGE_REGISTRY } from '../../lang'` — loads runtime → web-tree-sitter.
+**Right:** `import { LANGUAGE_REGISTRY } from '../../lang/profiles'` — loads only profiles (string data, no WASM).
+
+### Type-only vs value imports
+
+- `import type { Query } from 'web-tree-sitter'` — **safe** (erased at compile time, no module load).
+- `import { Query } from 'web-tree-sitter'` — **unsafe** on the init path (loads the WASM module).
+- For value dependencies on heavy modules in init-reachable code, use dynamic `import()` inside an async function (deferred to first call, not module load).
+
+### The `--external` build flag
+
+Dynamic `import('web-tree-sitter')` only defers loading at runtime if `--external web-tree-sitter` is set in the bun build config. Without it, bun bundles web-tree-sitter inline and the dynamic import resolves from the bundle (no deferral). Check `package.json` build scripts for the flag.
+
+### Verification checklist
+
+For any import-chain change touching `src/lang/`, `runtime`, or `web-tree-sitter`:
+1. Trace the transitive chain from `src/index.ts` to verify no heavy module loads at init.
+2. Rebuild dist: `bun run build` (stale dist gives false regressions).
+3. Run `node scripts/repro-704.mjs` — T1 must be under 400ms.
+4. Run `bun --smol test tests/unit/lang/symbol-graph-init-purity.test.ts` — init-path purity tests must pass.
+
 ## Tool version parity (local vs CI)
 
 **Tool versions must match CI.** When `package.json` pins a tool version (e.g., `@biomejs/biome@2.3.14`, `@biomejs/biome@^2`, or any other versioned dev dependency), invoke it **with the pinned version** during local validation. Unversioned `bunx biome` resolves to a different version than the CI gate uses, and a CI-blocking failure can be invisible to local pre-commit validation.
@@ -67,3 +96,14 @@ Examples:
 The `commit-pr` skill Tier 1 - quality section pins the biome command to the package.json version; this is the canonical pattern for any tool where local and CI versions could diverge. Apply the same discipline to ESLint, Prettier, TypeScript, and any other versioned dev dependency.
 
 **Why this matters:** PR #1503 (telemetry rotation fix) had a biome 2.3.14 `organizeImports` failure on the `./telemetry` import block that was invisible to local `bunx biome` (which resolved to 0.3.3 with no equivalent rule). The reviewer caught it from CI logs, not local validation. Pin tool versions to close the local/CI parity gap.
+
+## Skill mirror contract
+
+The cross-tree skill mirror contract is the authoritative registry at `src/config/skill-mirrors.ts`. If your PR modifies `.opencode/skills/<X>/SKILL.md` or `.claude/skills/<X>/SKILL.md`, consult that file to determine the contract kind for skill `<X>`:
+
+- **`identical`:** `.opencode` and `.claude` SKILL.md must be byte-identical (the `canonical` field records which side wins when they drift). Update both trees byte-for-byte in the same commit. Verify with `bun run drift:check`. PR #1512 (lane-dispatch) introduced drift in council/deep-dive by only updating `.opencode` — a contract violation.
+- **`divergent`:** both must exist but content intentionally differs per runtime. Examples: `engineering-conventions` is divergent (different frontmatter, different conventions per Claude Code vs OpenCode); `writing-tests` is divergent pending maintainer confirmation (#1497).
+- **`opencode-only`:** `.opencode` exists; no `.claude` mirror expected. Examples: `loop` (would shadow Claude Code's built-in `/loop`), `running-tests` (OpenCode-runtime guidance).
+- **Adapter shim pattern:** for architect MODE skills like `swarm-pr-review` and `swarm-pr-feedback`, the `.claude` and `.agents` files are thin adapter shims that delegate to the canonical `.opencode` file via `expectedCanonicalRef`. When updating these, the canonical content goes in `.opencode`; the adapter shim typically needs no change unless the cross-tree delegation interface changes.
+
+**If your PR modifies a `.opencode/skills/<X>/SKILL.md` file:** check `src/config/skill-mirrors.ts` for the contract, then run `bun run drift:check` locally before pushing. Mirror drift is currently a soft-warn (`DRIFT_CHECK_ENFORCE=1` would make it hard-fail). The drift-check CI job surfaces drift as an issue comment, not a blocking check — but a drift between canonical and mirror means Claude Code agents reading the mirror get stale instructions.
