@@ -3,7 +3,7 @@ import { Index } from 'usearch';
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { SEARCH_INDEX_CONFIG } from '../search-config.js';
 import { CAT, createLogger } from './logger.js';
-import { initDatabase, DATA_DIR, DB_PATH, DB_WAL_PATH, DB_SHM_PATH, VECTOR_INDEX_PATH } from './schema.js';
+import { initDatabase, DATA_DIR, DB_PATH, VECTOR_INDEX_PATH } from './schema.js';
 import { randomUUID } from '../utils/random-uuid.js';
 import { getCurrentTraceContext } from './trace-context.js';
 import { isbot } from 'isbot';
@@ -116,18 +116,15 @@ function getDb(): Database.Database {
     mkdirSync(DATA_DIR, { recursive: true });
   }
 
-  // Delete stale WAL/SHM journal files when DB is missing — prevents SQLITE_IOERR_SHORT_READ
-  // on new database creation after a hard reset that left journal files behind.
-  if (!existsSync(DB_PATH)) {
+  // Delete stale journal/WAL/SHM files before opening — Docker containers killed mid-write
+  // leave 0-byte journal files that cause 'attempt to write a readonly database'.
+  for (const p of [DB_PATH + '-journal', DB_PATH + '-wal', DB_PATH + '-shm']) {
     try {
-      if (existsSync(DB_WAL_PATH)) unlinkSync(DB_WAL_PATH);
+      if (existsSync(p)) {
+        unlinkSync(p);
+      }
     } catch (e) {
-      log.warn`Failed to clean up WAL file: ${e}`;
-    }
-    try {
-      if (existsSync(DB_SHM_PATH)) unlinkSync(DB_SHM_PATH);
-    } catch (e) {
-      log.warn`Failed to clean up SHM file: ${e}`;
+      log.warn`Failed to clean up stale file: ${e}`;
     }
   }
 
