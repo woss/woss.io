@@ -39,6 +39,8 @@ As a platform engineer, my focus is developer enablement: CI/CD pipelines, monit
 
 I lead AI adoption effort in tech department — defining guidelines, guardrails, and toolchains (agents, plugins, documentation) for safe and effective AI use. This was internal evangelism: building buy-in, demonstrating value through prototypes, and creating the governance that enables adoption without risk.
 
+I was on-call rotation, monitoring and responding to incidents.
+
 ## Personal development
 
 This role marks the most significant personal and professional growth of my career. I transitioned from individual contributor solving discrete infrastructure problems, to platform architect designing the systems that multiply team output, to organizational catalyst shaping how an entire engineering organization works with technology. Learning to lead through trust rather than authority, to influence without a reporting line, and to drive change through advocacy and evidence rather than mandates — these are the capabilities that distinguish senior technical leadership and I developed them here.
