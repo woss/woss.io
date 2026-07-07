@@ -41,7 +41,9 @@ I'm Daniel Maricic. Let me tell you about Kelp.digital — it's the purest expre
 
 Macula is a centralized platform evolved from my earlier blockchain work on Anagolay Network. I designed it as an event-driven platform with REST and GraphQL APIs, dual IPFS/S3 storage, and custom image processing pipeline built on Sharp and ExifTool. The analytics subsystem uses QuestDB for real-time metrics and SurrealDB for knowledge graph queries.
 
-I wrote 44,000 lines of production TypeScript personally, covering the full stack: Svelte frontend, serverless backend, Lightroom plugin, and a custom MCP server — the latter directly extends the Claude AI ecosystem, enabling AI agents to interact with Macula's content rights data. Every line reflects deliberate engineering.
+In the Macula tech stack I implemented SSO based on better-auth as a default login mechanism with MFA and OAuth2 support. Macula has Stripe implementation with free and paid plans with correct setup and webhooks for client updates and recurring payments.
+
+I wrote 44,000 lines of production TypeScript personally (no AI involvement at all), covering the full stack: Svelte frontend, serverless backend, Lightroom plugin, SSO, Stripe integration and a custom MCP server — the latter directly extends the Claude AI ecosystem, enabling AI agents to interact with Macula's content rights data. Every line reflects deliberate engineering.
 
 Beyond engineering, I wrote successful grant proposals for the European Commission's Next Generation Internet program — a process that required articulating technical vision to non-technical stakeholders, managing milestone reporting, and building relationships with EU program officers. I managed a distributed team of 7 across remote locations, mentored contributors, and made strategic decisions about product direction, team composition, and resource allocation. The AI plugins and implementation work positioned the platform at the intersection of content rights and AI — an emerging ecosystem I helped define.
 
