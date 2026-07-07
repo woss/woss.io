@@ -1,5 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { getMessages, getToolCallsForMessages } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { CAT, createLogger } from '$lib/server/logger';
 
 const log = createLogger(CAT.chat);
@@ -21,10 +21,10 @@ export async function GET(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    const storedMessages = getMessages(chatId, 50, 0);
+    const storedMessages = await db.messages.getMessages(chatId, 50, 0);
     // Batch fetch tool calls for all messages
     const messageIds = storedMessages.map((m) => m.id);
-    const toolCallsByMessage = getToolCallsForMessages(messageIds);
+    const toolCallsByMessage = await db.toolCalls.getToolCallsForMessages(messageIds);
     const messages = storedMessages.map((m) => ({
       ...m,
       sources: m.sources

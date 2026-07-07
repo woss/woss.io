@@ -1,4 +1,4 @@
-import { getChatEventsSince, isChatLocked } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { subscribe } from '$lib/server/chat-events';
 import type { RequestEvent } from '@sveltejs/kit';
 import { CAT, createLogger } from '$lib/server/logger';
@@ -31,55 +31,59 @@ export async function GET(event: RequestEvent): Promise<Response> {
   const stream = new ReadableStream({
     start(controller) {
       // Replay persisted events since lastEventId
-      try {
-        const events = getChatEventsSince(chatId, lastEventId).filter((evt) => {
-          // Don't replay irrecoverable errors if chat is no longer locked
-          if (
-            evt.type === 'error' &&
-            typeof evt.data === 'object' &&
-            evt.data !== null &&
-            'irrecoverable' in evt.data &&
-            evt.data.irrecoverable === true
-          ) {
-            if (!isChatLocked(chatId)) return false;
-          }
-          return true;
-        });
-        for (const evt of events) {
-          writeSSE(controller, evt.type, evt.data, evt.id);
-        }
-      } catch (err) {
-        log.error`Failed to replay events: ${err}`;
-        writeSSE(controller, 'error', { message: 'Failed to load events' });
-        controller.close();
-        return;
-      }
-
-      // Subscribe to live events
-      const unsub = subscribe(chatId, (evt) => {
+      (async () => {
         try {
-          if (evt.id > 0) {
-            // Persisted event — include event id for reconnect tracking
-            writeSSE(controller, evt.type, evt.data, evt.id);
-          } else {
-            // Live event (token, status) — no id
-            writeSSE(controller, evt.type, evt.data);
+          const events = await db.events.getChatEventsSince(chatId, lastEventId);
+          const filtered: Array<(typeof events)[number]> = [];
+          for (const evt of events) {
+            // Don't replay irrecoverable errors if chat is no longer locked
+            if (
+              evt.type === 'error' &&
+              typeof evt.data === 'object' &&
+              evt.data !== null &&
+              'irrecoverable' in evt.data &&
+              evt.data.irrecoverable === true
+            ) {
+              if (!(await db.chats.isChatLocked(chatId))) continue;
+            }
+            filtered.push(evt);
           }
-        } catch (e) {
-          log.warn`SSE write failed, unsubscribing from chat ${chatId}: ${e}`;
-          // Stream closed, unsubscribe
-          unsub();
+          for (const evt of filtered) {
+            writeSSE(controller, evt.type, evt.data, evt.id);
+          }
+        } catch (err) {
+          log.error`Failed to replay events: ${err}`;
+          writeSSE(controller, 'error', { message: 'Failed to load events' });
+          controller.close();
+          return;
         }
-      });
 
-      // Cleanup on client disconnect
-      event.request.signal.addEventListener(
-        'abort',
-        () => {
-          unsub();
-        },
-        { once: true },
-      );
+        // Subscribe to live events
+        const unsub = subscribe(chatId, (evt) => {
+          try {
+            if (evt.id > 0) {
+              // Persisted event — include event id for reconnect tracking
+              writeSSE(controller, evt.type, evt.data, evt.id);
+            } else {
+              // Live event (token, status) — no id
+              writeSSE(controller, evt.type, evt.data);
+            }
+          } catch (e) {
+            log.warn`SSE write failed, unsubscribing from chat ${chatId}: ${e}`;
+            // Stream closed, unsubscribe
+            unsub();
+          }
+        });
+
+        // Cleanup on client disconnect
+        event.request.signal.addEventListener(
+          'abort',
+          () => {
+            unsub();
+          },
+          { once: true },
+        );
+      })();
     },
   });
 

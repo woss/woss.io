@@ -1,4 +1,4 @@
-import { addMessage, getChat, getChatMessageCount, getOrCreateUserAgent, isChatLocked } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { isAvailable } from '$lib/server/openai-provider';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { config as clientConfig } from '$lib/config';
@@ -72,7 +72,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
   }
 
   if (body.chatId) {
-    const msgCount = getChatMessageCount(body.chatId);
+    const msgCount = await db.chats.getChatMessageCount(body.chatId);
     if (msgCount >= clientConfig.public.maxMessages) {
       return new Response(
         JSON.stringify({ error: `Chat has reached maximum of ${clientConfig.public.maxMessages} messages` }),
@@ -85,7 +85,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
   }
 
   const ip = getClientIP(event);
-  const rateCheck = checkRateLimit(ip);
+  const rateCheck = await checkRateLimit(ip);
   if (!rateCheck.allowed) {
     const retryAfter = Math.ceil((rateCheck.resetAt - Date.now()) / 1000);
     return new Response(JSON.stringify({ error: 'Rate limit exceeded', resetAt: rateCheck.resetAt }), {
@@ -98,7 +98,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
   }
 
   const userAgentId = event.request.headers.get('user-agent')
-    ? getOrCreateUserAgent(event.request.headers.get('user-agent')!, ip)
+    ? await db.userAgents.getOrCreateUserAgent(event.request.headers.get('user-agent')!, ip)
     : undefined;
 
   if (!(await isAvailable())) {
@@ -109,7 +109,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
   }
 
   // Reject messages to locked chats
-  if (body.chatId && isChatLocked(body.chatId)) {
+  if (body.chatId && (await db.chats.isChatLocked(body.chatId))) {
     return new Response(JSON.stringify({ error: 'This chat has been locked', locked: true }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
@@ -118,7 +118,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
 
   // Enforce ownership for existing chats
   if (body.chatId) {
-    const chat = getChat(body.chatId);
+    const chat = await db.chats.getChat(body.chatId);
     if (!dev && chat && chat.userId !== body.userId) {
       return new Response(JSON.stringify({ error: 'Not authorized' }), {
         status: 403,
@@ -131,8 +131,8 @@ export async function POST(event: RequestEvent): Promise<Response> {
   const msgTraceId = generateTraceId();
 
   // Save user message inside the trace context so addMessage stores this traceId
-  const userMsgId = withTrace(msgTraceId, generateSpanId(), () =>
-    addMessage({ userId: body.userId, role: 'user', content: text, chatId: body.chatId, userAgentId }),
+  const userMsgId = await withTrace(msgTraceId, generateSpanId(), async () =>
+    db.messages.addMessage({ userId: body.userId, role: 'user', content: text, chatId: body.chatId, userAgentId }),
   );
 
   // Start background generation (non-blocking, no await)

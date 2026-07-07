@@ -1,12 +1,12 @@
 import { error } from '@sveltejs/kit';
 import { renderMarkdown } from '$lib/server/markdown';
-import { getExperience } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import type { ExperienceEntry } from '$content/index';
 
 export async function load({ params }: { params: Record<string, string> }) {
   const { slug } = params;
 
-  const entries = getExperience();
+  const entries = await db.content.getExperience();
   const currentRaw = entries.find((e) => e.slug === slug);
   if (!currentRaw) {
     throw error(404, 'Experience not found');

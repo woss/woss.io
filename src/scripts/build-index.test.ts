@@ -17,17 +17,39 @@ vi.mock('../lib/server/logger.js', () => ({
   })),
 }));
 
-vi.mock('../lib/server/db.js', () => ({
-  getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      all: vi.fn(() => []),
-      run: vi.fn(),
-      iterate: vi.fn(function* () {}),
-    })),
-    transaction: vi.fn((fn: (rows: unknown[]) => void) => fn),
-  })),
-  closeDb: vi.fn(),
+vi.mock('../lib/server/db/surreal', () => ({
+  initSurreal: vi.fn().mockResolvedValue(undefined),
+  closeSurreal: vi.fn().mockResolvedValue(undefined),
+  getSurreal: vi.fn(() => ({})),
 }));
+
+vi.mock('../lib/server/db/surreal-service', () => {
+  // Mock is self-contained — vitest hoists factories so no outer variable reachable
+  const _mockDb = {
+    init: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    content: {
+      getStoredHashes: vi.fn().mockResolvedValue([]),
+      upsertPost: vi.fn().mockResolvedValue(undefined),
+      upsertExperience: vi.fn().mockResolvedValue(undefined),
+      deletePost: vi.fn().mockResolvedValue(undefined),
+      deleteExperience: vi.fn().mockResolvedValue(undefined),
+      getSlugToIdMap: vi.fn().mockResolvedValue([]),
+      updatePartOfSeries: vi.fn().mockResolvedValue(undefined),
+    },
+    vector: {
+      upsertChunks: vi.fn().mockResolvedValue(undefined),
+      deleteChunksBySlug: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+  return {
+    SurrealDatabaseService: class {
+      constructor() {
+        return _mockDb;
+      }
+    },
+  };
+});
 
 vi.mock('../lib/server/embed.js', () => ({
   embedTexts: vi.fn().mockResolvedValue([{ data: Array(1024).fill(0.1) }, { data: Array(1024).fill(0.2) }]),

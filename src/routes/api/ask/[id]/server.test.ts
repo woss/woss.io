@@ -4,8 +4,14 @@ import type { RequestEvent } from '@sveltejs/kit';
 // ── Module mocks ─────────────────────────────────────────────────────────
 
 vi.mock('$lib/server/db', () => ({
-  getChatEventsSince: vi.fn(() => []),
-  isChatLocked: vi.fn(() => false),
+  db: {
+    events: {
+      getChatEventsSince: vi.fn(() => []),
+    },
+    chats: {
+      isChatLocked: vi.fn(() => false),
+    },
+  },
 }));
 
 vi.mock('$lib/server/chat-events', () => ({
@@ -26,7 +32,7 @@ vi.mock('$lib/server/logger', () => ({
 
 // ── Imports (after mocks are set up) ─────────────────────────────────────
 
-import { getChatEventsSince, isChatLocked } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { subscribe } from '$lib/server/chat-events';
 import { GET } from './+server';
 
@@ -54,6 +60,9 @@ function buildEvent(overrides: { chatId?: string; lastEventId?: string | null })
 describe('GET /api/ask/[id]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset db mocks to prevent mockResolvedValue/mockRejectedValue leakage
+    vi.mocked(db.events.getChatEventsSince).mockReset();
+    vi.mocked(db.chats.isChatLocked).mockReset();
   });
 
   describe('validation', () => {
@@ -94,41 +103,34 @@ describe('GET /api/ask/[id]', () => {
     it('passes parsed Last-Event-ID to getChatEventsSince', async () => {
       const event = buildEvent({ chatId: 'chat-1', lastEventId: '5' });
       await GET(event);
-      expect(getChatEventsSince).toHaveBeenCalledWith('chat-1', 5);
+      expect(db.events.getChatEventsSince).toHaveBeenCalledWith('chat-1', 5);
     });
 
     it('defaults lastEventId to 0 when header is absent', async () => {
       const event = buildEvent({ chatId: 'chat-1', lastEventId: null });
       await GET(event);
-      expect(getChatEventsSince).toHaveBeenCalledWith('chat-1', 0);
+      expect(db.events.getChatEventsSince).toHaveBeenCalledWith('chat-1', 0);
     });
 
     it('defaults lastEventId to 0 when header is not a valid number', async () => {
       const event = buildEvent({ chatId: 'chat-1', lastEventId: 'abc' });
       await GET(event);
-      expect(getChatEventsSince).toHaveBeenCalledWith('chat-1', 0);
+      expect(db.events.getChatEventsSince).toHaveBeenCalledWith('chat-1', 0);
     });
   });
 
   describe('event replay', () => {
     it('replays persisted events since lastEventId', async () => {
       const events = [
-        { id: 3, chatId: 'chat-1', type: 'message', data: { content: 'hello' } },
-        { id: 4, chatId: 'chat-1', type: 'done', data: null },
+        { id: 3, chatId: 'chat-1', type: 'message', data: { content: 'hello' }, createdAt: '2025-01-01T00:00:00.000Z' },
+        { id: 4, chatId: 'chat-1', type: 'done', data: null, createdAt: '2025-01-01T00:00:01.000Z' },
       ];
-      vi.mocked(getChatEventsSince).mockReturnValueOnce(
-        events as Array<{
-          id: number;
-          chatId: string;
-          type: string;
-          data: Record<string, unknown> | null;
-          createdAt: string;
-        }>,
-      );
+
+      vi.mocked(db.events.getChatEventsSince).mockResolvedValue(events);
 
       const event = buildEvent({ chatId: 'chat-1' });
       await GET(event);
-      expect(getChatEventsSince).toHaveBeenCalledWith('chat-1', 0);
+      expect(db.events.getChatEventsSince).toHaveBeenCalledWith('chat-1', 0);
     });
 
     it('filters out irrecoverable error events when chat is no longer locked', async () => {
@@ -137,23 +139,16 @@ describe('GET /api/ask/[id]', () => {
         chatId: 'chat-1',
         type: 'error',
         data: { irrecoverable: true, message: 'bad' },
+        createdAt: '2025-01-01T00:00:00.000Z',
       };
-      vi.mocked(getChatEventsSince).mockReturnValueOnce([
-        irrecoverableEvent as {
-          id: number;
-          chatId: string;
-          type: string;
-          data: { irrecoverable?: boolean; message?: string } | null;
-          createdAt: string;
-        },
-      ]);
-      vi.mocked(isChatLocked).mockReturnValueOnce(false);
+      vi.mocked(db.events.getChatEventsSince).mockResolvedValue([irrecoverableEvent]);
+      vi.mocked(db.chats.isChatLocked).mockResolvedValue(false);
 
       const event = buildEvent({ chatId: 'chat-1' });
       await GET(event);
       // The irrecoverable event should be filtered out — can't read stream body
       // easily here, but we verify the flow doesn't crash
-      expect(isChatLocked).toHaveBeenCalledWith('chat-1');
+      expect(db.chats.isChatLocked).toHaveBeenCalledWith('chat-1');
     });
 
     it('preserves irrecoverable error events when chat is still locked', async () => {
@@ -162,21 +157,14 @@ describe('GET /api/ask/[id]', () => {
         chatId: 'chat-1',
         type: 'error',
         data: { irrecoverable: true, message: 'bad' },
+        createdAt: '2025-01-01T00:00:00.000Z',
       };
-      vi.mocked(getChatEventsSince).mockReturnValueOnce([
-        irrecoverableEvent as {
-          id: number;
-          chatId: string;
-          type: string;
-          data: { irrecoverable?: boolean; message?: string } | null;
-          createdAt: string;
-        },
-      ]);
-      vi.mocked(isChatLocked).mockReturnValueOnce(true);
+      vi.mocked(db.events.getChatEventsSince).mockResolvedValue([irrecoverableEvent]);
+      vi.mocked(db.chats.isChatLocked).mockResolvedValue(true);
 
       const event = buildEvent({ chatId: 'chat-1' });
       await GET(event);
-      expect(isChatLocked).toHaveBeenCalledWith('chat-1');
+      expect(db.chats.isChatLocked).toHaveBeenCalledWith('chat-1');
     });
 
     it('preserves non-irrecoverable error events', async () => {
@@ -185,27 +173,18 @@ describe('GET /api/ask/[id]', () => {
         chatId: 'chat-1',
         type: 'error',
         data: { message: 'recoverable error' },
+        createdAt: '2025-01-01T00:00:00.000Z',
       };
-      vi.mocked(getChatEventsSince).mockReturnValueOnce([
-        errorEvent as {
-          id: number;
-          chatId: string;
-          type: string;
-          data: { message?: string } | null;
-          createdAt: string;
-        },
-      ]);
+      vi.mocked(db.events.getChatEventsSince).mockResolvedValue([errorEvent]);
 
       const event = buildEvent({ chatId: 'chat-1' });
       await GET(event);
       // Filter should pass this event through (no irrecoverable flag)
-      expect(isChatLocked).not.toHaveBeenCalled();
+      expect(db.chats.isChatLocked).not.toHaveBeenCalled();
     });
 
     it('handles errors during event replay gracefully', async () => {
-      vi.mocked(getChatEventsSince).mockImplementationOnce(() => {
-        throw new Error('DB connection error');
-      });
+      vi.mocked(db.events.getChatEventsSince).mockRejectedValue(new Error('DB connection error'));
 
       const event = buildEvent({ chatId: 'chat-1' });
       const res = await GET(event);

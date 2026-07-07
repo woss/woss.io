@@ -6,7 +6,7 @@
   import { matchSlashCommand } from '$lib/chat/slash-commands';
   import { parse } from 'devalue';
   import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
-  import { USER_ID_KEY, getUserId } from '$lib/chat/constants';
+  import { DISMISSED_TOURS_KEY, USER_ID_KEY, getUserId } from '$lib/chat/constants';
   import Seo from '$lib/components/Seo.svelte';
 
   import ChatSidebar from '$lib/components/ChatSidebar.svelte';
@@ -77,13 +77,27 @@
     }
   });
 
-  // Fetch dismissed tours once userId is set
+  // Fetch dismissed tours once userId is set — read localStorage first for persist across navigation
   $effect(() => {
     if (!browser || !userId) return;
+    // Read local state first so dismiss survives navigation even if server POST fails.
+    // Use local variable (not dismissedFeatures) to avoid reactive tracking → infinite loop
+    let initialFeatures: string[] = [];
+    try {
+      const local = localStorage.getItem(DISMISSED_TOURS_KEY);
+      if (local) {
+        initialFeatures = JSON.parse(local);
+        activeTour = TOUR_DEFINITIONS.find((t) => !initialFeatures.includes(t.featureId));
+      }
+    } catch {}
+    // Sync from server (may have dismissed from another device)
     fetch(`/api/tours?userId=${encodeURIComponent(userId)}`)
       .then((r) => r.json())
       .then((data) => {
-        dismissedFeatures = data.dismissed ?? [];
+        const serverDismissed: string[] = data.dismissed ?? [];
+        // Merge local + server dismissals (union via Set)
+        dismissedFeatures = [...new Set([...initialFeatures, ...serverDismissed])];
+        localStorage.setItem(DISMISSED_TOURS_KEY, JSON.stringify(dismissedFeatures));
         activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
       })
       .catch(() => {});
@@ -166,6 +180,8 @@
       body: JSON.stringify({ userId, featureIds: [activeTour.featureId] }),
     }).catch(() => {});
     dismissedFeatures = [...dismissedFeatures, activeTour.featureId];
+    // Persist locally so dismiss survives navigation even if server POST fails
+    localStorage.setItem(DISMISSED_TOURS_KEY, JSON.stringify(dismissedFeatures));
     activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
   }
 </script>

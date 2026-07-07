@@ -5,11 +5,13 @@ trustPolicyExclude:
   - '@types/node@25.9.2'
 allowBuilds:
   better-sqlite3: true
+  bufferutil: true
   esbuild: true
   onnxruntime-node: true
   protobufjs: true
   sharp: true
   usearch: true
+  utf-8-validate: true
 onlyBuiltDependencies:
   - better-sqlite3
   - onnxruntime-node

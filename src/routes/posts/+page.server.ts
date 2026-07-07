@@ -1,8 +1,8 @@
-import { getPosts } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import type { BlogPost } from '$content/index';
 
 export async function load() {
-  const records = getPosts();
+  const records = await db.content.getPosts();
 
   const posts: BlogPost[] = records
     .map((r) => {

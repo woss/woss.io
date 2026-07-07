@@ -1,17 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import type { PageServerLoad, Actions } from './$types';
-import {
-  getMessages,
-  getChatMessageCount,
-  lockChat,
-  isChatLocked,
-  addMessage,
-  getOrCreateUserAgent,
-  deleteChat,
-  getChat,
-  getToolCallsForMessages,
-} from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { config as clientConfig } from '$lib/config';
 import { callWebhook } from '$lib/server/webhooks';
 import { checkRateLimit } from '$lib/server/rate-limiter';
@@ -19,7 +9,6 @@ import { isAvailable } from '$lib/server/openai-provider';
 import { startGeneration, abortGeneration } from '$lib/server/generate';
 import { generateTraceId, generateSpanId, withTrace } from '$lib/server/trace-context';
 import { CAT, createLogger } from '$lib/server/logger';
-import { setReaction, deleteReaction, softDeleteMessage } from '$lib/server/db';
 import { lookupCountry } from '$lib/server/geo';
 import { sanitizeText } from '$lib/server/sanitize';
 
@@ -49,9 +38,9 @@ export const actions: Actions = {
 
       if (!userId || typeof userId !== 'string') return fail(400, { error: 'userId required' });
 
-      const msgCount = getChatMessageCount(chatId);
+      const msgCount = await db.chats.getChatMessageCount(chatId);
       if (msgCount >= clientConfig.public.maxMessages) {
-        lockChat(chatId);
+        await db.chats.lockChat(chatId);
         return fail(400, {
           error: `Chat has reached maximum of ${clientConfig.public.maxMessages} messages`,
           locked: true,
@@ -59,25 +48,27 @@ export const actions: Actions = {
       }
 
       const ip = getClientIP(event);
-      const rateCheck = checkRateLimit(ip);
+      const rateCheck = await checkRateLimit(ip);
       if (!rateCheck.allowed) return fail(429, { error: 'Rate limit exceeded', resetAt: rateCheck.resetAt });
 
       const userAgentId = event.request.headers.get('user-agent')
-        ? getOrCreateUserAgent(event.request.headers.get('user-agent')!, ip)
+        ? await db.userAgents.getOrCreateUserAgent(event.request.headers.get('user-agent')!, ip)
         : undefined;
       if (!(await isAvailable())) return fail(503, { error: 'AI service is not available' });
 
-      if (isChatLocked(chatId)) return fail(400, { error: 'This chat has been locked', locked: true });
+      if (await db.chats.isChatLocked(chatId)) return fail(400, { error: 'This chat has been locked', locked: true });
 
-      const chat = getChat(chatId);
+      const chat = await db.chats.getChat(chatId);
       if (!chat) return fail(404, { error: 'Chat not found' });
       if (!dev && chat.userId !== userId) return fail(403, { error: 'Not authorized' });
 
       // Generate message traceId for this exchange
       const msgTraceId = generateTraceId();
 
-      const userMsgId = withTrace(msgTraceId, generateSpanId(), () =>
-        addMessage({ userId, role: 'user', content: text, chatId, userAgentId }),
+      const userMsgId = await withTrace(
+        msgTraceId,
+        generateSpanId(),
+        async () => await db.messages.addMessage({ userId, role: 'user', content: text, chatId, userAgentId }),
       );
 
       startGeneration(text, chatId, userId, maxChunks, userAgentId, userMsgId, msgTraceId);
@@ -97,11 +88,11 @@ export const actions: Actions = {
       if (!chatId) return fail(400, { error: 'chatId required' });
       if (!userId) return fail(400, { error: 'userId required' });
 
-      const chat = getChat(chatId);
+      const chat = await db.chats.getChat(chatId);
       if (!chat) return fail(404, { error: 'Chat not found' });
       if (!dev && chat.userId !== userId) return fail(403, { error: 'Not authorized' });
 
-      deleteChat(chatId);
+      await db.chats.deleteChat(chatId);
       await callWebhook({ type: 'chatDeleted', chatId });
 
       return { success: true, chatId };
@@ -126,11 +117,11 @@ export const actions: Actions = {
       if (role !== 'user' && role !== 'assistant') return fail(400, { error: 'role must be user or assistant' });
       if (!content) return fail(400, { error: 'content required' });
 
-      const chat = getChat(chatId);
+      const chat = await db.chats.getChat(chatId);
       if (!chat) return fail(404, { error: 'Chat not found' });
       if (!dev && chat.userId !== userId) return fail(403, { error: 'Not authorized' });
 
-      addMessage({ userId, role: role as 'user' | 'assistant', content, chatId });
+      await db.messages.addMessage({ userId, role: role as 'user' | 'assistant', content, chatId });
 
       return { success: true };
     } catch (e) {
@@ -157,7 +148,7 @@ export const actions: Actions = {
 
     if (mode === 'remove') {
       try {
-        deleteReaction(messageId, userId);
+        await db.reactions.deleteReaction(messageId, userId);
         const ua = event.request.headers.get('user-agent') ?? 'unknown';
         const ip = getClientIP(event);
         const country = lookupCountry(ip);
@@ -181,7 +172,7 @@ export const actions: Actions = {
     }
 
     try {
-      setReaction(messageId, userId, reactionType, reason || undefined);
+      await db.reactions.setReaction(messageId, userId, reactionType, reason || undefined);
       const ua = event.request.headers.get('user-agent') ?? 'unknown';
       const ip = getClientIP(event);
       const country = lookupCountry(ip);
@@ -221,8 +212,8 @@ export const actions: Actions = {
     const log = createLogger(CAT.chat);
 
     try {
-      setReaction(messageId, userId, 'down', reason.trim());
-      softDeleteMessage(messageId);
+      await db.reactions.setReaction(messageId, userId, 'down', reason.trim());
+      await db.messages.softDeleteMessage(messageId);
 
       const ua = event.request.headers.get('user-agent') ?? 'unknown';
       const ip = getClientIP(event);
@@ -264,7 +255,7 @@ export const load: PageServerLoad = async ({ params }) => {
     log.warn('Chat page load with missing chatId');
     error(400, 'chatId required');
   }
-  const chat = getChat(chatId);
+  const chat = await db.chats.getChat(chatId);
   if (!chat) {
     log.warn('Chat not found on page load', { chatId });
     error(404, 'This chat is no longer available.');
@@ -272,10 +263,10 @@ export const load: PageServerLoad = async ({ params }) => {
 
   try {
     log.info('Chat page loaded', { chatId });
-    const storedMessages = getMessages(chatId, 50, 0);
+    const storedMessages = await db.messages.getMessages(chatId, 50, 0);
     // Batch fetch tool calls for all messages
     const messageIds = storedMessages.map((m) => m.id);
-    const toolCallsByMessage = getToolCallsForMessages(messageIds);
+    const toolCallsByMessage = await db.toolCalls.getToolCallsForMessages(messageIds);
     const messages = storedMessages.map((m) => ({
       id: m.id,
       role: m.role === 'system' ? 'assistant' : m.role === 'user' ? 'user' : 'assistant',
@@ -295,7 +286,7 @@ export const load: PageServerLoad = async ({ params }) => {
       queryType: m.queryType || undefined,
       timestamp: new Date(m.createdAt).getTime() || Date.now(),
       createdAt: m.createdAt,
-      modelId: m.modelId || 0,
+      modelId: m.modelId || '',
       tokensIn: m.tokensIn || 0,
       tokensOut: m.tokensOut || 0,
       durationMs: m.durationMs || 0,

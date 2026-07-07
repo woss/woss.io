@@ -74,8 +74,8 @@ async function sendMessage(text: string): Promise<void> {
   }
 
   isLoading = true;
-  const id = await createChatApi(userId);
-  if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(trimmed)}`));
+  const result = await createChatApi(userId);
+  if (result.id) goto(resolve(`/chat/${result.id}?q=${encodeURIComponent(trimmed)}`));
   isLoading = false;
 }
 
@@ -83,14 +83,14 @@ async function sendMessage(text: string): Promise<void> {
 
  async function createChat(): Promise<void> {
  if (!canCreateChat) return;
- const id = await createChatApi(userId);
- if (id) goto(resolve(`/chat/${id}`));
+  const result = await createChatApi(userId);
+  if (result.id) goto(resolve(`/chat/${result.id}`));
  }
 
  async function askQuestion(question: string): Promise<void> {
- if (!canCreateChat) return;
- const id = await createChatApi(userId);
- if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(question)}`));
+  if (!canCreateChat) return;
+  const result = await createChatApi(userId);
+  if (result.id) goto(resolve(`/chat/${result.id}?q=${encodeURIComponent(question)}`));
  }
 
  function confirmDeleteChat(chatId: string): void {
@@ -147,7 +147,7 @@ async function sendMessage(text: string): Promise<void> {
 			toast.error(`Maximum ${config.public.maxChats} chats reached`);
 			return;
 		}
-		createChatApi(userId).then(id => { if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(t)}`)); });
+		createChatApi(userId).then(result => { if (result.id) goto(resolve(`/chat/${result.id}?q=${encodeURIComponent(t)}`)); });
 	}}
 	/>
 

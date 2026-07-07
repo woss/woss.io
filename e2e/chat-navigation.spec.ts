@@ -9,7 +9,7 @@ function generateMockMessages(chatId: string, count: number = 20) {
     content: string;
     createdAt: string;
     sources: string | null;
-    modelId: number;
+    modelId: string;
     tokensIn: number;
     tokensOut: number;
     durationMs: number;
@@ -23,7 +23,7 @@ function generateMockMessages(chatId: string, count: number = 20) {
         content: `This is user message number ${Math.floor(i / 2) + 1} with plenty of text to make each bubble reasonably large. The quick brown fox jumps over the lazy dog.`,
         createdAt: new Date(Date.now() - (count - i) * 60000).toISOString(),
         sources: null,
-        modelId: 0,
+        modelId: '',
         tokensIn: 0,
         tokensOut: 0,
         durationMs: 0,
@@ -36,7 +36,7 @@ function generateMockMessages(chatId: string, count: number = 20) {
         content: `Here is a detailed assistant response to message number ${Math.floor(i / 2) + 1}. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.`,
         createdAt: new Date(Date.now() - (count - i) * 60000 + 1000).toISOString(),
         sources: JSON.stringify([{ title: 'Example Source', score: 0.95, url: '/example' }]),
-        modelId: 1,
+        modelId: '1',
         tokensIn: 50,
         tokensOut: 200,
         durationMs: 5000,

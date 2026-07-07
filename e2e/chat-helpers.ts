@@ -38,7 +38,9 @@ export async function createChat(page: Page): Promise<string> {
   const body = await response.json();
 
   if (body.type === 'failure') {
-    throw new Error(`Chat creation failed: ${body.data?.error || 'unknown error'}`);
+    // body.data is a devalue-serialized string from SvelteKit form action
+    const failureData = body.data != null ? parse(body.data) : {};
+    throw new Error(`Chat creation failed: ${failureData.error || 'unknown error'}`);
   }
 
   // body.data is a devalue-serialized string from SvelteKit form action

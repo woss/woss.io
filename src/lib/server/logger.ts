@@ -176,6 +176,3 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
 export function createLogger(category: Category): Logger {
   return getLogger(category);
 }
-
-// Re-export getLogger for direct use
-export { getLogger };

@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
-vi.mock('$lib/server/db', () => ({
-  searchChunks: vi.fn(),
-}));
+vi.mock('$lib/server/db', () => {
+  const mockSearchChunks = vi.fn();
+  return {
+    db: {
+      vector: { searchChunks: mockSearchChunks },
+    },
+    searchChunks: mockSearchChunks,
+  };
+});
 
 vi.mock('$lib/server/embed', () => ({
   embedText: vi.fn(),
@@ -99,7 +105,7 @@ const mockSearchResult = (overrides: Partial<MockSearchResult> = {}): MockSearch
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
+  vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
   vi.mocked(isAvailable).mockResolvedValue(true);
   vi.mocked(embedText).mockResolvedValue({ data: [0.1, 0.2, 0.3], dimensions: 3 });
   vi.mocked(searchChunks).mockReturnValue([mockSearchResult()]);
@@ -140,7 +146,7 @@ describe('GET /api/search', () => {
   describe('rate limiting', () => {
     it('returns 429 when rate limit exceeded', async () => {
       const now = Date.now();
-      vi.mocked(checkRateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt: now + 60_000 });
+      vi.mocked(checkRateLimit).mockResolvedValue({ allowed: false, remaining: 0, resetAt: now + 60_000 });
 
       const res = await GET(buildEvent({ q: 'test' }));
       expect(res.status).toBe(429);

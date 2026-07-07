@@ -2,12 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
-vi.mock('$lib/server/db', () => ({
-  setReaction: vi.fn(),
-  deleteReaction: vi.fn(),
-  softDeleteMessage: vi.fn(),
-  getChat: vi.fn(),
-}));
+vi.mock('$lib/server/db', () => {
+  const mockSetReaction = vi.fn();
+  const mockDeleteReaction = vi.fn();
+  const mockSoftDeleteMessage = vi.fn();
+  const mockGetChat = vi.fn();
+  return {
+    db: {
+      reactions: { setReaction: mockSetReaction, deleteReaction: mockDeleteReaction },
+      messages: { softDeleteMessage: mockSoftDeleteMessage },
+      chats: { getChat: mockGetChat },
+    },
+    setReaction: mockSetReaction,
+    deleteReaction: mockDeleteReaction,
+    softDeleteMessage: mockSoftDeleteMessage,
+    getChat: mockGetChat,
+  };
+});
 
 vi.mock('$lib/server/webhooks', () => ({
   callWebhook: vi.fn().mockResolvedValue(undefined),

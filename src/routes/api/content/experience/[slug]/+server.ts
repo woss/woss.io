@@ -1,10 +1,10 @@
-import { getExperience } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 
 export async function GET(event: RequestEvent): Promise<Response> {
   const slug = event.params.slug;
-  const entries = getExperience(slug);
+  const entries = await db.content.getExperience(slug);
   const entry = entries[0];
 
   if (!entry) throw error(404, 'Experience not found');

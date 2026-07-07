@@ -14,17 +14,17 @@ vi.mock('$lib/server/chat-events', () => ({
   publishPersistent: vi.fn(),
 }));
 
-vi.mock('$lib/server/db', () => ({
-  ensureModel: vi.fn().mockReturnValue(42),
-  getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      run: vi.fn(),
-      all: vi.fn(() => []),
-      get: vi.fn(),
-      iterate: vi.fn(function* () {}),
-    })),
-    transaction: vi.fn((fn: (rows: unknown[]) => void) => fn),
-  })),
+vi.mock('$lib/server/db/index', () => ({
+  db: {
+    toolCalls: {
+      insertToolCall: vi.fn().mockResolvedValue(undefined),
+      setToolCallResult: vi.fn().mockResolvedValue(undefined),
+    },
+    models: {
+      ensureModel: vi.fn().mockResolvedValue('42'),
+      getModelById: vi.fn().mockResolvedValue(undefined),
+    },
+  },
 }));
 
 vi.mock('$lib/server/llm-cache', () => ({

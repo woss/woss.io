@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getDb } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import type { RequestEvent } from '@sveltejs/kit';
 
 export async function GET(event: RequestEvent) {
@@ -8,7 +8,10 @@ export async function GET(event: RequestEvent) {
     return new Response('Not found', { status: 404 });
   }
   try {
-    getDb().prepare('SELECT 1').get();
+    const healthy = await db.healthCheck();
+    if (!healthy) {
+      return json({ status: 'error', db: 'SurrealDB health check failed' }, { status: 503 });
+    }
     return json({ status: 'ok', db: 'ok' });
   } catch (err) {
     return json({ status: 'error', db: String(err) }, { status: 503 });

@@ -1,4 +1,4 @@
-import { getChat, renameChat } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { config } from '$lib/server/config';
 import {
   getRelevanceCheckUserPrompt,
@@ -26,10 +26,10 @@ const log = createLogger(CAT.chat);
  * Auto-rename "New Chat" to the user's first message (truncated to 40 chars).
  * Best-effort — failures are logged but never surface to the user.
  */
-export function tryRenameChat(chatId: string, text: string): void {
+export async function tryRenameChat(chatId: string, text: string): Promise<void> {
   try {
-    const chat = getChat(chatId);
-    if (chat && chat.title === 'New Chat') renameChat(chatId, text.slice(0, 40));
+    const chat = await db.chats.getChat(chatId);
+    if (chat && chat.title === 'New Chat') await db.chats.renameChat(chatId, text.slice(0, 40));
   } catch (err) {
     log.error`auto-rename failed: ${err}`;
   }

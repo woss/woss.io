@@ -1,4 +1,4 @@
-import { searchChunks } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { embedText } from '$lib/server/embed';
 import { isAvailable } from '$lib/server/openai-provider';
 import { checkRateLimit } from '$lib/server/rate-limiter';
@@ -47,7 +47,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
 
   // Guard: rate limit
   const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
-  const limit = checkRateLimit(ip);
+  const limit = await checkRateLimit(ip);
   if (!limit.allowed) {
     const retryAfter = Math.ceil((limit.resetAt - Date.now()) / 1000);
     return new Response(
@@ -98,7 +98,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
 
   // Embed query and search vector database
   const embedding = await embedText(sanitized);
-  const dbResults = searchChunks(embedding.data, 216, typeFilter);
+  const dbResults = await db.vector.searchChunks(embedding.data, 216, typeFilter);
 
   // Filter by similarity threshold, strip internal fields
   const results: ResultResponse[] = dbResults

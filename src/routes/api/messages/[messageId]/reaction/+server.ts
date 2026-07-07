@@ -1,5 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { setReaction, deleteReaction, getReaction } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { CAT, createLogger } from '$lib/server/logger';
 import { callWebhook } from '$lib/server/webhooks';
@@ -40,7 +40,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    const reaction = getReaction(messageId, userId);
+    const reaction = await db.reactions.getReaction(messageId, userId);
     return new Response(JSON.stringify({ reaction }), {
       status: 200,
       headers: JSON_HEADERS,
@@ -57,7 +57,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
 // POST /api/messages/[messageId]/reaction — set or update a reaction
 export async function POST(event: RequestEvent): Promise<Response> {
   const ip = getClientIP(event);
-  const rateCheck = checkRateLimit(ip);
+  const rateCheck = await checkRateLimit(ip);
   if (!rateCheck.allowed) {
     return new Response(JSON.stringify({ error: 'Too many requests' }), {
       status: 429,
@@ -98,7 +98,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
       });
     }
 
-    setReaction(messageId, body.userId, body.reactionType, body.reason);
+    await db.reactions.setReaction(messageId, body.userId, body.reactionType, body.reason);
 
     const ua = event.request.headers.get('user-agent') ?? 'unknown';
     const ip = getClientIP(event);
@@ -133,7 +133,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
 // DELETE /api/messages/[messageId]/reaction — remove a reaction
 export async function DELETE(event: RequestEvent): Promise<Response> {
   const ip = getClientIP(event);
-  const rateCheck = checkRateLimit(ip);
+  const rateCheck = await checkRateLimit(ip);
   if (!rateCheck.allowed) {
     return new Response(JSON.stringify({ error: 'Too many requests' }), {
       status: 429,
@@ -162,7 +162,7 @@ export async function DELETE(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    deleteReaction(messageId, userId);
+    await db.reactions.deleteReaction(messageId, userId);
 
     const ua = event.request.headers.get('user-agent') ?? 'unknown';
     const ip = getClientIP(event);

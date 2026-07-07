@@ -44,6 +44,12 @@ export function getToolSystemPrompt(options?: { github?: boolean; macula?: boole
   const macula = options?.macula ?? true;
   const maculaNickname = config().maculaNickname;
   const parts: string[] = [
+    'TOOL DISCIPLINE — CRITICAL (prevents degenerate loops):',
+    '  1. NO NARRATION: Never say "Let me...", "I\'ll...", "I should...", "I need to..." before calling a tool. Just call the tool directly. Do not narrate intent — execute.',
+    '  2. BATCH PARALLEL: When you need multiple independent tool calls (searching different keywords, checking multiple directories, fetching multiple files), fire them ALL in a single response. Do NOT sequence them one-at-a-time across rounds.',
+    '  3. EXECUTE THEN ANSWER: Call all tools first. Get all data. THEN write your complete answer. Never write "Let me search..." text mid-execution.',
+    '  4. COMPACT SYNTHESIS: After tools return, produce one answer that synthesizes everything. Do not iterate — one gather phase, one answer phase.',
+    '',
     'CRITICAL — USE EXACT VALUES: When displaying tool results, use the exact numbers, names, and data from the tool output. Do not approximate, round, estimate, or invent values. If a repo has 1 star, display "1" — not "≈ 12" or "~1" or "a few". Never add qualifiers like "≈", "~", "about", "around", "nearly" to tool result data. Exactness is mandatory.',
     'IMPORTANT: After you have gathered all the information you need (not after every individual tool call), produce a complete answer synthesizing what you found. Never end your response without producing text.',
     "IMPORTANT: If a tool call returns an error, re-read the tool's description and retry once with corrected arguments. If it fails again, report the error and move on — do not retry indefinitely.",

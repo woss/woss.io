@@ -3,7 +3,7 @@ import { callWebhook } from '$lib/server/webhooks';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { lookupCountry } from '$lib/server/geo';
 import { CAT, createLogger } from '$lib/server/logger';
-import { setReaction, softDeleteMessage } from '$lib/server/db';
+import { db } from '$lib/server/db';
 
 const log = createLogger(CAT.chat);
 
@@ -19,7 +19,7 @@ const JSON_HEADERS = {
 // POST /api/messages/[messageId]/report — report a message
 export async function POST(event: RequestEvent): Promise<Response> {
   const ip = getClientIP(event);
-  const rateCheck = checkRateLimit(ip);
+  const rateCheck = await checkRateLimit(ip);
   if (!rateCheck.allowed) {
     return new Response(JSON.stringify({ error: 'Too many requests' }), {
       status: 429,
@@ -56,8 +56,8 @@ export async function POST(event: RequestEvent): Promise<Response> {
       });
     }
 
-    setReaction(messageId, body.userId, 'down', body.reason);
-    softDeleteMessage(messageId);
+    await db.reactions.setReaction(messageId, body.userId, 'down', body.reason);
+    await db.messages.softDeleteMessage(messageId);
 
     const ua = event.request.headers.get('user-agent') ?? 'unknown';
     const ip = getClientIP(event);

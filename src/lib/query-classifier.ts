@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { CAT, createLogger } from '$lib/server/logger';
+import { db } from '$lib/server/db';
 
 const log = createLogger(CAT.llm);
 
@@ -18,18 +16,20 @@ interface CentroidsData {
 }
 
 // ---------------------------------------------------------------------------
-// Centroid loading — reads at module init, caches forever
+// Centroid loading — lazy-loads from SurrealDB, caches forever
 // ---------------------------------------------------------------------------
 
 let _centroids: CentroidsData | null = null;
 
-function loadCentroids(): CentroidsData {
+async function loadCentroids(): Promise<CentroidsData> {
   if (_centroids) return _centroids;
 
-  const centroidPath = join(process.cwd(), 'data', 'centroid.json');
-  const raw = readFileSync(centroidPath, 'utf-8');
-  const parsed = JSON.parse(raw);
-  _centroids = parsed.centroids as CentroidsData;
+  const records = await db.centroids.getAllCentroids();
+  _centroids = {
+    tool: records.find((r) => r.class === 'tool')?.vector ?? [],
+    rag: records.find((r) => r.class === 'rag')?.vector ?? [],
+    meta: records.find((r) => r.class === 'meta')?.vector ?? [],
+  };
   return _centroids;
 }
 
@@ -64,8 +64,8 @@ const THRESHOLD = 0.09; // tunable — gap needed to choose one class over anoth
  * @param embedding — 1024-dim BGE embedding vector from embedText()
  * @returns 'tool' if query leans toward tool (GitHub/PR/issues), 'rag' if toward experience, 'hybrid' if ambiguous
  */
-export function classifyQuery(embedding: number[]): QueryClass {
-  const centroids = loadCentroids();
+export async function classifyQuery(embedding: number[]): Promise<QueryClass> {
+  const centroids = await loadCentroids();
 
   const toolSim = cosineSimilarity(embedding, centroids.tool);
   const ragSim = cosineSimilarity(embedding, centroids.rag);

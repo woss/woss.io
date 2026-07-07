@@ -1,4 +1,4 @@
-import { insertChatEvent } from './db.ts';
+import { db } from '$lib/server/db';
 import { CAT, createLogger } from '$lib/server/logger';
 
 const log = createLogger(CAT.chat);
@@ -45,8 +45,10 @@ export function publishLive(chatId: string, type: string, data: unknown): void {
  * Publish an event and persist to DB.
  * Returns the event ID from DB.
  */
-export function publishPersistent(chatId: string, type: string, data: unknown): number {
-  const id = insertChatEvent(chatId, type, data);
+export async function publishPersistent(chatId: string, type: string, data: unknown): Promise<number> {
+  log.debug('[publishPersistent] insertChatEvent starting', { chatId, type });
+  const id = await db.events.insertChatEvent(chatId, type, data);
+  log.debug('[publishPersistent] insertChatEvent completed', { chatId, type, id });
   const event: ChatEventPayload = { id, chatId, type, data };
   subscribers.get(chatId)?.forEach((cb) => {
     try {

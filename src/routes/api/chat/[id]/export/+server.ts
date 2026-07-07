@@ -1,4 +1,4 @@
-import { getChat, getMessages, getToolCallsForMessages } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import { CAT, createLogger } from '$lib/server/logger';
@@ -14,12 +14,12 @@ export const GET: RequestHandler = async ({ params, url }) => {
     throw error(400, 'Invalid format. Use ?format=md or ?format=json');
   }
 
-  const chat = getChat(id);
+  const chat = await db.chats.getChat(id);
   if (!chat) throw error(404, 'Chat not found');
 
-  const storedMessages = getMessages(id, 500, 0);
+  const storedMessages = await db.messages.getMessages(id, 500, 0);
   const messageIds = storedMessages.map((m) => m.id);
-  const toolCallsByMessage = getToolCallsForMessages(messageIds);
+  const toolCallsByMessage = await db.toolCalls.getToolCallsForMessages(messageIds);
 
   const messages = storedMessages.map((m) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

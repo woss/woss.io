@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 
 export const CONTACT_DISMISSED_KEY = 'contact_dismissed_chats';
+export const DISMISSED_TOURS_KEY = 'dismissed_tours';
 export const USER_ID_KEY = 'woss:user-id';
 const OLD_USER_ID_KEY = 'woss-io_user-id';
 

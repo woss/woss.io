@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
-vi.mock('$lib/server/db', () => ({
-  insertContactIntent: vi.fn(),
-}));
+vi.mock('$lib/server/db', () => {
+  const mockInsertContactIntent = vi.fn();
+  return {
+    db: {
+      contactIntents: { insertContactIntent: mockInsertContactIntent },
+    },
+    insertContactIntent: mockInsertContactIntent,
+  };
+});
 
 vi.mock('$lib/server/rate-limiter', () => ({
   checkRateLimit: vi.fn(),
@@ -64,7 +70,7 @@ function buildEvent(overrides: {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
+  vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
 });
 
 describe('POST /api/leads/contact-intent', () => {
@@ -164,7 +170,7 @@ describe('POST /api/leads/contact-intent', () => {
     });
 
     it('returns 429 when general rate limit exceeded', async () => {
-      vi.mocked(checkRateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt: Date.now() + 60_000 });
+      vi.mocked(checkRateLimit).mockResolvedValue({ allowed: false, remaining: 0, resetAt: Date.now() + 60_000 });
 
       const event = buildEvent({ origin: 'https://woss.io', ip: 'rate-general-test', body: validBody });
       const res = await POST(event);

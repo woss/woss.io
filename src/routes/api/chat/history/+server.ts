@@ -1,5 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { getMessages, getMessagesByUserId } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { CAT, createLogger } from '$lib/server/logger';
 
 const log = createLogger(CAT.chat);
@@ -22,7 +22,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
   // Prefer chatId if both provided
   if (chatId) {
     try {
-      const messages = getMessages(chatId, 50, 0);
+      const messages = await db.messages.getMessages(chatId, 50, 0);
       return new Response(JSON.stringify({ messages }), {
         status: 200,
         headers: JSON_HEADERS,
@@ -45,7 +45,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    const messages = getMessagesByUserId(userId, 50, 0);
+    const messages = await db.messages.getMessagesByUserId(userId, 50, 0);
     return new Response(JSON.stringify({ messages }), {
       status: 200,
       headers: JSON_HEADERS,

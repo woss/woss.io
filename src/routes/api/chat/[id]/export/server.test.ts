@@ -3,9 +3,17 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
 vi.mock('$lib/server/db', () => ({
-  getChat: vi.fn(),
-  getMessages: vi.fn(),
-  getToolCallsForMessages: vi.fn(),
+  db: {
+    chats: {
+      getChat: vi.fn(),
+    },
+    messages: {
+      getMessages: vi.fn(),
+    },
+    toolCalls: {
+      getToolCallsForMessages: vi.fn(),
+    },
+  },
 }));
 
 vi.mock('$lib/server/logger', () => ({
@@ -20,7 +28,8 @@ vi.mock('$lib/server/logger', () => ({
   }),
 }));
 
-import { getChat, getMessages, getToolCallsForMessages } from '$lib/server/db';
+import { db } from '$lib/server/db';
+import type { Chat, StoredMessage } from '$lib/server/db';
 import { GET } from './+server';
 
 type MockMessage = {
@@ -39,7 +48,7 @@ type MockMessage = {
   userId: string;
   chatId: string;
   reasoning: string;
-  modelId: number;
+  modelId: string;
   maxTokens: number;
 };
 
@@ -59,7 +68,7 @@ const mockMessage: MockMessage = {
   userId: 'user-1',
   chatId: 'chat-1',
   reasoning: '',
-  modelId: 0,
+  modelId: '',
   maxTokens: 0,
 };
 
@@ -69,7 +78,7 @@ const mockChat = {
   createdAt: '2025-01-15T10:00:00.000Z',
   messageCount: 1,
   userId: 'user-1',
-};
+} as Chat;
 
 function buildEvent(params: Record<string, string>, searchParams?: Record<string, string>): RequestEvent {
   const url = new URL('http://localhost');
@@ -98,9 +107,9 @@ function buildEvent(params: Record<string, string>, searchParams?: Record<string
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getChat).mockReturnValue(mockChat);
-  vi.mocked(getMessages).mockReturnValue([mockMessage]);
-  vi.mocked(getToolCallsForMessages).mockReturnValue({});
+  vi.mocked(db.chats.getChat).mockResolvedValue(mockChat);
+  vi.mocked(db.messages.getMessages).mockResolvedValue([mockMessage as StoredMessage]);
+  vi.mocked(db.toolCalls.getToolCallsForMessages).mockResolvedValue({});
 });
 
 describe('GET /api/chat/[id]/export', () => {
@@ -128,7 +137,7 @@ describe('GET /api/chat/[id]/export', () => {
     });
 
     it('returns 404 when chat not found', async () => {
-      vi.mocked(getChat).mockReturnValue(undefined);
+      vi.mocked(db.chats.getChat).mockResolvedValue(undefined);
       try {
         await GET(buildEvent({ id: 'nonexistent' }));
         expect.unreachable('Should have thrown');
@@ -165,8 +174,8 @@ describe('GET /api/chat/[id]/export', () => {
       const msgWithSources = {
         ...mockMessage,
         sources: JSON.stringify([{ title: 'Source 1', url: 'https://example.com', score: 0.95 }]),
-      };
-      vi.mocked(getMessages).mockReturnValue([msgWithSources]);
+      } as StoredMessage;
+      vi.mocked(db.messages.getMessages).mockResolvedValue([msgWithSources]);
 
       const res = await GET(buildEvent({ id: 'chat-1' }));
       const body = JSON.parse(await res.text());
@@ -177,8 +186,8 @@ describe('GET /api/chat/[id]/export', () => {
       const msgWithBadSources = {
         ...mockMessage,
         sources: '{invalid json}',
-      };
-      vi.mocked(getMessages).mockReturnValue([msgWithBadSources]);
+      } as StoredMessage;
+      vi.mocked(db.messages.getMessages).mockResolvedValue([msgWithBadSources]);
 
       const res = await GET(buildEvent({ id: 'chat-1' }));
       const body = JSON.parse(await res.text());
@@ -186,7 +195,7 @@ describe('GET /api/chat/[id]/export', () => {
     });
 
     it('includes tool calls in messages', async () => {
-      vi.mocked(getToolCallsForMessages).mockReturnValue({
+      vi.mocked(db.toolCalls.getToolCallsForMessages).mockResolvedValue({
         'msg-1': [
           {
             id: 'tc-1',
@@ -206,8 +215,8 @@ describe('GET /api/chat/[id]/export', () => {
     });
 
     it('maps system role to assistant in export', async () => {
-      const systemMsg = { ...mockMessage, role: 'system', id: 'msg-2' };
-      vi.mocked(getMessages).mockReturnValue([mockMessage, systemMsg as MockMessage]);
+      const systemMsg = { ...mockMessage, role: 'system', id: 'msg-2' } as StoredMessage;
+      vi.mocked(db.messages.getMessages).mockResolvedValue([mockMessage as StoredMessage, systemMsg]);
 
       const res = await GET(buildEvent({ id: 'chat-1' }));
       const body = JSON.parse(await res.text());
@@ -230,8 +239,8 @@ describe('GET /api/chat/[id]/export', () => {
     });
 
     it('includes user and assistant messages in markdown', async () => {
-      const assistantMsg = { ...mockMessage, role: 'assistant', id: 'msg-2', content: 'Hi there!' };
-      vi.mocked(getMessages).mockReturnValue([mockMessage, assistantMsg as MockMessage]);
+      const assistantMsg = { ...mockMessage, role: 'assistant', id: 'msg-2', content: 'Hi there!' } as StoredMessage;
+      vi.mocked(db.messages.getMessages).mockResolvedValue([mockMessage as StoredMessage, assistantMsg]);
 
       const res = await GET(buildEvent({ id: 'chat-1' }, { format: 'md' }));
       const text = await res.text();
@@ -246,8 +255,8 @@ describe('GET /api/chat/[id]/export', () => {
       const msgWithSources = {
         ...mockMessage,
         sources: JSON.stringify([{ title: 'Docs Page', url: 'https://docs.example.com', score: 0.92 }]),
-      };
-      vi.mocked(getMessages).mockReturnValue([msgWithSources]);
+      } as StoredMessage;
+      vi.mocked(db.messages.getMessages).mockResolvedValue([msgWithSources]);
 
       const res = await GET(buildEvent({ id: 'chat-1' }, { format: 'md' }));
       const text = await res.text();
@@ -257,7 +266,7 @@ describe('GET /api/chat/[id]/export', () => {
     });
 
     it('includes tool calls section in markdown', async () => {
-      vi.mocked(getToolCallsForMessages).mockReturnValue({
+      vi.mocked(db.toolCalls.getToolCallsForMessages).mockResolvedValue({
         'msg-1': [
           {
             id: 'tc-1',
@@ -288,7 +297,7 @@ describe('GET /api/chat/[id]/export', () => {
 
   describe('slugify', () => {
     it('slugifies chat title for filename', async () => {
-      vi.mocked(getChat).mockReturnValue({ ...mockChat, title: 'My Cool Chat!!!' });
+      vi.mocked(db.chats.getChat).mockResolvedValue({ ...mockChat, title: 'My Cool Chat!!!' });
 
       const res = await GET(buildEvent({ id: 'chat-1' }));
       const disposition = res.headers.get('Content-Disposition') ?? '';
@@ -296,7 +305,7 @@ describe('GET /api/chat/[id]/export', () => {
     });
 
     it('handles special characters in title', async () => {
-      vi.mocked(getChat).mockReturnValue({ ...mockChat, title: 'Q&A: "Testing" Things #2025' });
+      vi.mocked(db.chats.getChat).mockResolvedValue({ ...mockChat, title: 'Q&A: "Testing" Things #2025' });
 
       const res = await GET(buildEvent({ id: 'chat-1' }));
       const disposition = res.headers.get('Content-Disposition') ?? '';

@@ -1,11 +1,4 @@
-import {
-  addMessage,
-  getChatMessageCount,
-  getMessages,
-  lockChat,
-  incrementOffTopicCount,
-  type StoredMessage,
-} from '$lib/server/db';
+import { db, type StoredMessage } from '$lib/server/db/index';
 import { embedText } from '$lib/server/embed';
 import { checkCache } from '$lib/server/llm-cache';
 import { publishLive, publishPersistent } from '$lib/server/chat-events';
@@ -58,7 +51,7 @@ export async function handleEarlyGates(
     }
 > {
   // should get max messages from config. unification
-  const ctxMessages = getMessages(chatId, 50);
+  const ctxMessages = await db.messages.getMessages(chatId, 50);
   const history = ctxMessages.map((m) => ({ role: m.role, content: m.content }));
 
   // For short ambiguous messages, call classifyToolNeeds once and share the result
@@ -88,11 +81,11 @@ export async function handleEarlyGates(
       publishLive(chatId, 'status', { step: 'checking_relevance' });
       const relevant = await isRelevant(text, history, abortController.signal);
       if (!relevant) {
-        const count = incrementOffTopicCount(chatId);
+        const count = await db.chats.incrementOffTopicCount(chatId);
         log.info`Off-topic question strike ${count}/3 for chat ${chatId}`;
         if (count >= 3) {
-          lockChat(chatId);
-          const errMsgId = addMessage({
+          await db.chats.lockChat(chatId);
+          const errMsgId = await db.messages.addMessage({
             userId,
             role: 'assistant',
             content: '',
@@ -101,10 +94,11 @@ export async function handleEarlyGates(
             error: "I can only answer questions about Daniel Maricic's professional portfolio and experience.",
             userAgentId,
           });
+          const totalMessages = await db.chats.getChatMessageCount(chatId);
           await callWebhook({
             type: 'chatLocked',
             chatId,
-            reason: `off-topic question (${count}/3). Chat has ${ctxMessages.length} messages, ${getChatMessageCount(chatId)} total messages. Last message: "${text.slice(0, 100)}" with id ${errMsgId}`,
+            reason: `off-topic question (${count}/3). Chat has ${ctxMessages.length} messages, ${totalMessages} total messages. Last message: "${text.slice(0, 100)}" with id ${errMsgId}`,
           });
           publishPersistent(chatId, 'error', {
             message: "I can only answer questions about Daniel Maricic's professional portfolio and experience.",
@@ -113,7 +107,7 @@ export async function handleEarlyGates(
           });
         } else {
           const remaining = 3 - count;
-          const errMsgId = addMessage({
+          const errMsgId = await db.messages.addMessage({
             userId,
             role: 'assistant',
             content: '',
@@ -139,7 +133,7 @@ export async function handleEarlyGates(
     publishLive(chatId, 'status', { step: 'generating' });
     try {
       const politeResponse = await generatePoliteResponse(text, abortController.signal);
-      const msgId = addMessage({
+      const msgId = await db.messages.addMessage({
         userId,
         role: 'assistant',
         content: politeResponse,
@@ -156,7 +150,14 @@ export async function handleEarlyGates(
     } catch (e) {
       log.warn`Polite response generation failed, using fallback: ${e}`;
       const fallback = "You're welcome! I'm glad I could help. Feel free to ask more about Daniel's work.";
-      const msgId = addMessage({ userId, role: 'assistant', content: fallback, sources: '', chatId, userAgentId });
+      const msgId = await db.messages.addMessage({
+        userId,
+        role: 'assistant',
+        content: fallback,
+        sources: '',
+        chatId,
+        userAgentId,
+      });
       publishPersistent(chatId, 'done', {
         answer: fallback,
         sources: [],
@@ -175,7 +176,7 @@ export async function handleEarlyGates(
     embedding = await embedText(text);
   } catch (e) {
     log.warn`Failed to embed query text: ${e}`;
-    const errMsgId = addMessage({
+    const errMsgId = await db.messages.addMessage({
       userId,
       role: 'assistant',
       content: '',
@@ -208,7 +209,7 @@ export async function handleEarlyGates(
   let cached: { answer: string; sources: string; toolCalls?: { name: string; serverId: string }[] } | null = null;
   if (config().llmCache.enabled) {
     publishLive(chatId, 'status', { step: 'checking_cache' });
-    cached = checkCache(cacheEmbeddingData);
+    cached = await checkCache(cacheEmbeddingData);
   }
   if (cached) {
     log.info`📦 cache HIT for "${text.slice(0, 100)}"`;
@@ -225,7 +226,7 @@ export async function handleEarlyGates(
       publishLive(chatId, 'tool_call_end', { id, name: tc.name });
     }
 
-    const msgId = addMessage({
+    const msgId = await db.messages.addMessage({
       userId,
       role: 'assistant',
       content: cached.answer,

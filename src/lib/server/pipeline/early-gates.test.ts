@@ -4,13 +4,19 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // Mock ALL external dependencies BEFORE imports
 // ---------------------------------------------------------------------------
 
-vi.mock('$lib/server/db', () => ({
-  addMessage: vi.fn(() => 'msg-id'),
-  getChatMessageCount: vi.fn(() => 5),
-  getMessages: vi.fn(() => []),
-  lockChat: vi.fn(),
-  getOffTopicCount: vi.fn(() => 0),
-  incrementOffTopicCount: vi.fn(() => 1),
+vi.mock('$lib/server/db/index', () => ({
+  db: {
+    messages: {
+      addMessage: vi.fn(() => 'msg-id'),
+      getMessages: vi.fn(() => []),
+    },
+    chats: {
+      getChatMessageCount: vi.fn(() => 5),
+      lockChat: vi.fn(),
+      getOffTopicCount: vi.fn(() => 0),
+      incrementOffTopicCount: vi.fn(() => 1),
+    },
+  },
 }));
 
 vi.mock('$lib/server/embed', () => ({
@@ -82,8 +88,8 @@ vi.mock('./tool-classifier', () => ({
 // ---------------------------------------------------------------------------
 
 import { handleEarlyGates } from './early-gates';
-import type { StoredMessage } from '$lib/server/db';
-import { getMessages, addMessage, lockChat, incrementOffTopicCount } from '$lib/server/db';
+import { db } from '$lib/server/db/index';
+import type { StoredMessage } from '$lib/server/db/index';
 import { embedText } from '$lib/server/embed';
 import { checkCache } from '$lib/server/llm-cache';
 import { publishLive, publishPersistent } from '$lib/server/chat-events';
@@ -104,13 +110,13 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('rejects off-topic question with attempts left (< 3 strikes)', async () => {
-    vi.mocked(getMessages).mockReturnValue([
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
       { role: 'user', content: 'Previous question' },
     ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(false);
-    vi.mocked(incrementOffTopicCount).mockReturnValue(1);
+    vi.mocked(db.chats.incrementOffTopicCount).mockResolvedValue(1);
 
     const result = await handleEarlyGates(
       'What is the weather?',
@@ -123,20 +129,20 @@ describe('handleEarlyGates', () => {
 
     expect(result).toEqual({ handled: true });
     expect(isRelevant).toHaveBeenCalled();
-    expect(incrementOffTopicCount).toHaveBeenCalledWith('chat-1');
-    expect(addMessage).toHaveBeenCalled();
+    expect(db.chats.incrementOffTopicCount).toHaveBeenCalledWith('chat-1');
+    expect(db.messages.addMessage).toHaveBeenCalled();
     expect(publishPersistent).toHaveBeenCalledWith('chat-1', 'error', expect.objectContaining({ attemptsLeft: 2 }));
-    expect(lockChat).not.toHaveBeenCalled();
+    expect(db.chats.lockChat).not.toHaveBeenCalled();
   });
 
   it('locks chat after 3 off-topic strikes', async () => {
-    vi.mocked(getMessages).mockReturnValue([
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
       { role: 'user', content: 'Previous question' },
     ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(false);
-    vi.mocked(incrementOffTopicCount).mockReturnValue(3);
+    vi.mocked(db.chats.incrementOffTopicCount).mockResolvedValue(3);
 
     const result = await handleEarlyGates(
       'Tell me about sports',
@@ -148,7 +154,7 @@ describe('handleEarlyGates', () => {
     );
 
     expect(result).toEqual({ handled: true });
-    expect(lockChat).toHaveBeenCalledWith('chat-2');
+    expect(db.chats.lockChat).toHaveBeenCalledWith('chat-2');
     expect(callWebhook).toHaveBeenCalledWith(expect.objectContaining({ type: 'chatLocked' }));
     expect(publishPersistent).toHaveBeenCalledWith('chat-2', 'error', expect.objectContaining({ irrecoverable: true }));
   });
@@ -158,7 +164,9 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('skips relevance check when tool intent detected via keywords', async () => {
-    vi.mocked(getMessages).mockReturnValue([{ role: 'user', content: 'Show repos' }] as unknown as StoredMessage[]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
+      { role: 'user', content: 'Show repos' },
+    ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(true);
     // Ensure we don't reach the isRelevant call
     vi.mocked(isRelevant).mockRejectedValue(new Error('should not be called'));
@@ -179,7 +187,9 @@ describe('handleEarlyGates', () => {
   });
 
   it('skips relevance check for /summarize commands', async () => {
-    vi.mocked(getMessages).mockReturnValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
+      { role: 'user', content: 'Old question' },
+    ] as unknown as StoredMessage[]);
     vi.mocked(isRelevant).mockRejectedValue(new Error('should not be called'));
     vi.mocked(embedText).mockResolvedValue({ data: [0.5, 0.6], dimensions: 2 });
 
@@ -201,7 +211,7 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns polite response for thank-you messages', async () => {
-    vi.mocked(getMessages).mockReturnValue([]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([]);
     vi.mocked(generatePoliteResponse).mockResolvedValue('You are welcome!');
 
     const result = await handleEarlyGates(
@@ -215,7 +225,7 @@ describe('handleEarlyGates', () => {
 
     expect(result).toEqual({ handled: true });
     expect(generatePoliteResponse).toHaveBeenCalledWith('thank you!', expect.any(AbortSignal));
-    expect(addMessage).toHaveBeenCalledWith(
+    expect(db.messages.addMessage).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'assistant', content: 'You are welcome!' }),
     );
     expect(publishPersistent).toHaveBeenCalledWith(
@@ -226,13 +236,13 @@ describe('handleEarlyGates', () => {
   });
 
   it('uses fallback when polite response generation fails', async () => {
-    vi.mocked(getMessages).mockReturnValue([]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([]);
     vi.mocked(generatePoliteResponse).mockRejectedValue(new Error('LLM error'));
 
     const result = await handleEarlyGates('thanks', 'chat-6', 'user-1', new AbortController(), undefined, Date.now());
 
     expect(result).toEqual({ handled: true });
-    expect(addMessage).toHaveBeenCalledWith(
+    expect(db.messages.addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         role: 'assistant',
         content: expect.stringContaining('welcome'),
@@ -245,7 +255,9 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns handled: true when embedding fails', async () => {
-    vi.mocked(getMessages).mockReturnValue([{ role: 'user', content: 'A question' }] as unknown as StoredMessage[]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
+      { role: 'user', content: 'A question' },
+    ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(true);
@@ -261,7 +273,9 @@ describe('handleEarlyGates', () => {
     );
 
     expect(result).toEqual({ handled: true });
-    expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ error: 'Failed to generate embedding' }));
+    expect(db.messages.addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'Failed to generate embedding' }),
+    );
     expect(publishPersistent).toHaveBeenCalledWith(
       'chat-7',
       'error',
@@ -274,12 +288,14 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns cached answer on cache hit when cache enabled', async () => {
-    vi.mocked(getMessages).mockReturnValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
+      { role: 'user', content: 'Old question' },
+    ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(true);
     vi.mocked(embedText).mockResolvedValue({ data: [0.1, 0.2, 0.3], dimensions: 3 });
-    vi.mocked(checkCache).mockReturnValueOnce({
+    vi.mocked(checkCache).mockResolvedValueOnce({
       answer: 'Cached answer',
       sources: '[{"title":"Source"}]',
       toolCalls: [],
@@ -295,7 +311,7 @@ describe('handleEarlyGates', () => {
     );
 
     expect(result).toEqual({ handled: true });
-    expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'Cached answer' }));
+    expect(db.messages.addMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'Cached answer' }));
     expect(publishPersistent).toHaveBeenCalledWith(
       'chat-8',
       'done',
@@ -305,12 +321,14 @@ describe('handleEarlyGates', () => {
   });
 
   it('emits tool call events on cache hit when cached data has tool calls', async () => {
-    vi.mocked(getMessages).mockReturnValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
+      { role: 'user', content: 'Old question' },
+    ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(true);
     vi.mocked(embedText).mockResolvedValue({ data: [0.1, 0.2, 0.3], dimensions: 3 });
-    vi.mocked(checkCache).mockReturnValueOnce({
+    vi.mocked(checkCache).mockResolvedValueOnce({
       answer: 'Cached with tools',
       sources: '[]',
       toolCalls: [
@@ -359,7 +377,7 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns embedding, messages, and history when all gates pass', async () => {
-    vi.mocked(getMessages).mockReturnValue([
+    vi.mocked(db.messages.getMessages).mockResolvedValue([
       { role: 'user', content: 'Previous question', sources: '' },
       { role: 'assistant', content: 'Previous answer', sources: '' },
     ] as unknown as StoredMessage[]);

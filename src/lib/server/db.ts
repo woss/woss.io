@@ -71,7 +71,7 @@ interface StoredMessage {
   irrecoverable?: boolean;
   userAgentId?: number;
   createdAt: string;
-  modelId: number;
+  modelId: string;
   tokensIn: number;
   tokensOut: number;
   durationMs: number;
@@ -521,7 +521,7 @@ export interface AddMessageParams {
   sources?: string;
   reasoning?: string;
   chatId?: string;
-  modelId?: number;
+  modelId?: string;
   tokensIn?: number;
   tokensOut?: number;
   durationMs?: number;
@@ -618,7 +618,7 @@ function parseStoredMessage(row: Record<string, unknown>): StoredMessage {
     error: row.error ? String(row.error) : undefined,
     irrecoverable: Boolean(row.irrecoverable ?? false),
     createdAt: String(row.created_at),
-    modelId: Number(row.model_id ?? 0),
+    modelId: String(row.model_id ?? ''),
     tokensIn: Number(row.tokens_in ?? 0),
     tokensOut: Number(row.tokens_out ?? 0),
     durationMs: Number(row.duration_ms ?? 0),
@@ -987,3 +987,6 @@ export {
   incrementOffTopicCount,
 };
 export type { StoredChunk, SearchResult, StoredMessage, Chat };
+
+// Re-export SurrealDB service singleton for new consumers
+export { db } from './db/index';

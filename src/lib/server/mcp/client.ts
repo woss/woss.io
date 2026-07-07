@@ -85,6 +85,17 @@ class McpClient {
     }
   }
 
+  async retryPendingListTools(): Promise<number> {
+    if (config().mcp.servers.length === 0) return 0;
+    try {
+      await this.initialize();
+      return getManager().retryPendingListTools();
+    } catch (err) {
+      log.warn`ERROR: retryPendingListTools failed: ${err}`;
+      return 0;
+    }
+  }
+
   async callTool(name: string, args?: Record<string, unknown>): Promise<McpToolCallResult> {
     if (config().mcp.servers.length === 0) return { content: [] };
     try {

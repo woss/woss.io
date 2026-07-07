@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
-import { getPosts, getExperience } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { renderOgImage } from '$lib/server/og/render';
 
 export const GET = async ({ params }: { params: { slug: string } }) => {
   const slug = params.slug;
 
-  const posts = getPosts();
+  const posts = await db.content.getPosts();
   const entry = posts.find((p) => p.slug === slug);
   if (entry) {
     const title = entry.title || '';
@@ -21,7 +21,7 @@ export const GET = async ({ params }: { params: { slug: string } }) => {
     });
   }
 
-  const experiences = getExperience();
+  const experiences = await db.content.getExperience();
   const expEntry = experiences.find((e) => e.slug === slug);
   if (expEntry) {
     const title = expEntry.company ? `${expEntry.company} — ${expEntry.role}` : expEntry.slug;

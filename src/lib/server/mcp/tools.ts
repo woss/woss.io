@@ -88,14 +88,18 @@ export async function getMcpToolDefs(): Promise<McpToolDef[]> {
   const hasMaculaTools = mapped.some((t) => t.serverId === 'macula');
   const maculaConfigured = config().mcp.servers.some((s) => s.id === 'macula');
   if (maculaConfigured && !hasMaculaTools && !_reconnectPromise) {
-    log.warn`Macula configured but no tools loaded — queuing background reconnect`;
+    log.warn`Macula configured but no tools loaded — queuing background listTools retry`;
     _reconnectPromise = (async () => {
       await new Promise((r) => setTimeout(r, 3000));
-      log.info`Macula: reconnect attempt starting...`;
-      await mcp.reconnectTools();
-      // Invalidate caches so next request refetches with Macula tools
-      _mcpToolDefsCache = null;
-      log.warn`Macula: reconnect completed — tools may now be available`;
+      log.info`Macula: retrying listTools...`;
+      const loaded = await mcp.retryPendingListTools();
+      if (loaded > 0) {
+        // Invalidate caches so next request refetches with Macula tools
+        _mcpToolDefsCache = null;
+        log.info`Macula: retry succeeded — ${loaded} tools loaded`;
+      } else {
+        log.warn`Macula: retry failed — will try again on next request`;
+      }
     })();
     _reconnectPromise.finally(() => {
       _reconnectPromise = null;

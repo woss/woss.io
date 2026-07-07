@@ -115,11 +115,14 @@ class NoopValidator implements jsonSchemaValidator {
 
 /** @group Manager */
 
+const LIST_TOOLS_TIMEOUT = 180_000; // default 3min for slow MCP servers (e.g. Macula)
+
 export class McpManager {
   private connections = new Map<string, McpConnection>();
   private toolIndex = new Map<string, string>(); // resolvedName → serverId
   private toolDefs: McpToolDefinition[] = [];
   private initialized = false;
+  private pendingListTools = new Set<string>(); // servers whose listTools failed
 
   constructor(private configs: readonly McpServerConfig[]) {}
 
@@ -205,7 +208,7 @@ export class McpManager {
         await tracer.startActiveSpan('mcp.listTools', { attributes: { serverId } }, async (toolSpan) => {
           try {
             const cfg = this.configs.find((c) => c.id === serverId);
-            const result = await client.listTools({}, cfg?.timeout ? { timeout: cfg.timeout } : {});
+            const result = await client.listTools({}, { timeout: cfg?.timeout ?? LIST_TOOLS_TIMEOUT });
 
             for (const tool of result.tools) {
               all.push({
@@ -230,9 +233,10 @@ export class McpManager {
       }),
     );
 
-    // Remove failed servers
+    // Don't delete connections — keep them alive for retry
     for (const sid of failedServers) {
-      this.connections.delete(sid);
+      this.pendingListTools.add(sid);
+      log.warn`refreshToolIndex: ${sid} listTools failed — keeping connection for retry`;
     }
 
     // Build tool index with collision resolution
@@ -247,9 +251,58 @@ export class McpManager {
     log.info`refreshToolIndex: ${this.toolDefs.length} tools from ${this.connections.size} servers in ${Date.now() - start}ms`;
   }
 
+  /* ── Pending listTools retry ───────────────────────────────────── */
+
+  /**
+   * Retry listTools for servers that previously failed.
+   * If any server succeeds, rebuilds the full tool index.
+   * Call this from background retry logic when tools are missing.
+   */
+  async retryPendingListTools(): Promise<number> {
+    if (this.pendingListTools.size === 0) return 0;
+    const retryStart = Date.now();
+    const toRetry = Array.from(this.pendingListTools);
+    const stillFailing: string[] = [];
+
+    await Promise.all(
+      toRetry.map(async (serverId) => {
+        const conn = this.connections.get(serverId);
+        if (!conn) {
+          this.pendingListTools.delete(serverId);
+          return;
+        }
+        const cfg = this.configs.find((c) => c.id === serverId);
+        try {
+          const result = await conn.client.listTools({}, { timeout: cfg?.timeout ?? LIST_TOOLS_TIMEOUT });
+          this.pendingListTools.delete(serverId);
+          log.info`retryPendingListTools: ${serverId} — ${result.tools.length} tools loaded (was pending)`;
+        } catch (err) {
+          stillFailing.push(serverId);
+          log.warn`retryPendingListTools: ${serverId} failed again — ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }),
+    );
+
+    if (stillFailing.length > 0) {
+      log.warn`retryPendingListTools: ${stillFailing.join(', ')} still failing after ${Date.now() - retryStart}ms`;
+    }
+
+    // Rebuild full index if any pending server succeeded
+    if (toRetry.length > stillFailing.length) {
+      await this.refreshToolIndex();
+    }
+
+    return toRetry.length - stillFailing.length;
+  }
+
   /* ── Tool Listing ─────────────────────────────────────────────── */
 
   listAllTools(): McpToolDefinition[] {
+    if (this.toolDefs.length === 0 && this.pendingListTools.size > 0) {
+      this.retryPendingListTools().catch((err) => {
+        log.warn`listAllTools triggered retry: ${err instanceof Error ? err.message : String(err)}`;
+      });
+    }
     return this.toolDefs;
   }
 
