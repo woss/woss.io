@@ -1709,6 +1709,48 @@ describe('SurrealDatabaseService', () => {
 
         await expect(userAgents.getOrCreateUserAgent('Mozilla/5.0')).rejects.toThrow('ERR');
       });
+
+      it('deletes corrupted NaN record and creates fresh agent', async () => {
+        // SELECT returns a corrupted record with NaN id
+        // DELETE of the corrupted record (best-effort)
+        // CREATE returns fresh record — db.query() wraps each statement result
+        // in one element, so a CREATE RETURN yields [{id: '999'}] not [[{id}]]
+        mockQuery
+          .mockResolvedValueOnce(
+            okResult([{ id: 'user_agents:NaN', ua: 'Mozilla/5.0', deviceType: 'desktop', ip: null, createdAt: NOW }]),
+          )
+          .mockResolvedValueOnce(okResult([]))
+          .mockResolvedValueOnce([{ id: '999' }]);
+
+        const agentId = await userAgents.getOrCreateUserAgent('Mozilla/5.0');
+
+        // Must NOT return NaN — the guard should fall through and create a fresh record
+        expect(agentId).toBe(999);
+        expect(Number.isFinite(agentId)).toBe(true);
+        // Verify the DELETE was attempted (best-effort cleanup of corrupted record)
+        const queryCalls = mockQuery.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(queryCalls.some((sql: string) => sql.includes('DELETE'))).toBe(true);
+        // Verify a CREATE was issued
+        expect(queryCalls.some((sql: string) => sql.includes('CREATE'))).toBe(true);
+      });
+
+      it('deletes corrupted 0-id record and creates fresh agent', async () => {
+        // 0 is also non-positive and should trigger the guard
+        mockQuery
+          .mockResolvedValueOnce(
+            okResult([{ id: 'user_agents:0', ua: 'TestBot/1.0', deviceType: 'bot', ip: null, createdAt: NOW }]),
+          )
+          .mockResolvedValueOnce(okResult([]))
+          .mockResolvedValueOnce([{ id: '555' }]);
+
+        const agentId = await userAgents.getOrCreateUserAgent('TestBot/1.0');
+
+        expect(agentId).toBe(555);
+        expect(Number.isFinite(agentId)).toBe(true);
+        const queryCalls = mockQuery.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(queryCalls.some((sql: string) => sql.includes('DELETE'))).toBe(true);
+        expect(queryCalls.some((sql: string) => sql.includes('CREATE'))).toBe(true);
+      });
     });
 
     // -----------------------------------------------------------------------

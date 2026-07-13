@@ -73,6 +73,21 @@ async function queryDb<T = unknown>(db: Surreal, sql: string, vars?: Record<stri
 }
 
 /**
+ * Recursively convert RecordId instances in an object to strings
+ * so they survive SurrealDB CBOR serialization.
+ */
+function serializeRecordIds(obj: unknown): unknown {
+  if (obj instanceof RecordId) return obj.toString();
+  if (Array.isArray(obj)) return obj.map(serializeRecordIds);
+  if (obj && typeof obj === 'object' && obj.constructor === Object) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) out[k] = serializeRecordIds(v);
+    return out;
+  }
+  return obj;
+}
+
+/**
  * Create a record using raw SurrealQL to work around surrealdb.js v2
  * `.create().content()` hanging on this SurrealDB instance.
  *
@@ -90,8 +105,8 @@ async function createRecord<T = Record<string, unknown>>(
   const compactData = compact(data as Record<string, unknown>);
   const sql =
     id != null
-      ? `CREATE type::thing($table, $id) CONTENT $data RETURN AFTER`
-      : `CREATE type::thing($table) CONTENT $data RETURN AFTER`;
+      ? `CREATE type::record($table, $id) CONTENT $data RETURN AFTER`
+      : `CREATE type::record($table) CONTENT $data RETURN AFTER`;
   const vars: Record<string, unknown> = { table, data: compactData };
   if (id != null) vars.id = String(id);
   return queryDb<T>(db, sql, vars);
@@ -216,20 +231,28 @@ class UserRepo implements IUserRepo {
     const updates = compact({ email, name });
     if (Object.keys(updates).length === 0) {
       // UPSERT: create user if absent, no-op if already exists
-      await db.update(new RecordId('users', userId)).merge({});
+      await queryDb(db, `UPSERT type::record('users', $id)`, { id: userId });
       return;
     }
-    await db.update(new RecordId('users', userId)).merge(updates);
+    await queryDb(
+      db,
+      `UPSERT type::record('users', $id) SET ${Object.keys(updates)
+        .map((k) => `${k} = $${k}`)
+        .join(', ')}`,
+      { id: userId, ...updates },
+    );
   }
 
   async getOrCreateUser(userId: string, email?: string, name?: string): Promise<UserRecord> {
     const db = this.db();
-    const result = await db.update(new RecordId('users', userId)).merge({
+    await queryDb(db, `UPSERT type::record('users', $id) SET email = $email, name = $name`, {
+      id: userId,
       email: email ?? null,
       name: name ?? null,
     });
-    if (!result) throw new Error('getOrCreateUser returned no rows');
-    const raw = result as Record<string, unknown>;
+    const row = await db.select(new RecordId('users', userId));
+    if (!row) throw new Error('getOrCreateUser returned no rows');
+    const raw = row as Record<string, unknown>;
     raw.id = stripPrefix(raw.id);
     return toUserRecord(raw);
   }
@@ -261,14 +284,16 @@ class ChatRepo implements IChatRepo {
 
   async ensureChat(chatId: string, userId: string): Promise<void> {
     const db = this.db();
-    await db.update(new RecordId('chats', chatId)).merge({
-      user_id: new RecordId('users', userId),
+    await queryDb(db, `UPSERT type::record('chats', $chatId) SET user_id = type::record('users', $userId)`, {
+      chatId,
+      userId,
     });
   }
 
   async createChat(userId: string, title?: string, userAgentId?: number): Promise<string> {
     const db = this.db();
     const chatId = randomUUID();
+    console.log('creating chat', { userId, title, userAgentId, chatId });
     await createRecord(
       db,
       'chats',
@@ -1029,23 +1054,34 @@ class UserAgentRepo implements IUserAgentRepo {
     const trimmed = ua.slice(0, 500);
 
     // Check if user agent already exists
-    const existingRows = await db.select(new Table('user_agents')).where(eq('ua', trimmed)).limit(1);
+    const existingRows = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT meta::id(id) AS id, ua, device_type AS deviceType, ip, created_at AS createdAt FROM user_agents WHERE ua = $ua LIMIT 1`,
+      { ua: trimmed },
+    );
     if (existingRows.length > 0) {
-      // Update ip if provided and currently null
-      if (ip) {
-        await queryDb(db, `UPDATE type::record('user_agents', $agentId) SET ip = $ip WHERE ip IS NONE`, {
-          agentId: stripPrefix(existingRows[0].id),
-          ip,
-        });
+      const agentId = Number(stripPrefix(existingRows[0].id));
+      if (Number.isFinite(agentId) && agentId > 0) {
+        // Valid existing record — update ip if needed
+        if (ip) {
+          await queryDb(db, `UPDATE type::record('user_agents', $agentId) SET ip = $ip WHERE ip IS NONE`, {
+            agentId: stripPrefix(existingRows[0].id),
+            ip,
+          });
+        }
+        return agentId;
       }
-      return Number(stripPrefix(existingRows[0].id));
+      // Corrupted record (NaN/0/negative) — delete it and recreate below
+      await queryDb(db, `DELETE type::record('user_agents', $id)`, {
+        id: stripPrefix(existingRows[0].id),
+      }).catch(() => {}); // best-effort cleanup
     }
 
     // Create new user agent
     // Derive deviceType from ua
     const deviceType = uaParser(trimmed);
     const agentId = Date.now() * 1000 + (this.agentSeq++ % 1000);
-    const result = await createRecord(
+    await createRecord(
       db,
       'user_agents',
       {
@@ -1056,7 +1092,7 @@ class UserAgentRepo implements IUserAgentRepo {
       },
       agentId,
     );
-    return Number(result.id);
+    return agentId;
   }
 
   async getUserAgents(): Promise<UserAgentRecord[]> {
