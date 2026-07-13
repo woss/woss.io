@@ -8,7 +8,7 @@ import { Button, Icon } from 'sv5ui';
 import ChatInput from '$lib/components/ChatInput.svelte';
 import { toast } from 'svelte-sonner';
 import { SUGGESTED_QUESTIONS } from '$lib/chat/suggested-questions';
-import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
+import { enhance } from '$app/forms';
  import type { Chat } from '$lib/chat/types';
  import { config } from '$lib/config';
  import { getUserId } from '$lib/chat/constants';
@@ -24,6 +24,10 @@ const MAX_CHARS = 500;
 let messageText = $state('');
 let isLoading = $state(false);
 let inputEl = $state<HTMLElement | null>(null);
+let createFormEl: HTMLFormElement;
+let deleteFormEl: HTMLFormElement;
+let deleteTargetChatId = $state('');
+let pendingQuery = $state('');
 
 // Load userId from localStorage
  $effect(() => {
@@ -73,24 +77,22 @@ async function sendMessage(text: string): Promise<void> {
     return;
   }
 
-  isLoading = true;
-  const result = await createChatApi(userId);
-  if (result.id) goto(resolve(`/chat/${result.id}?q=${encodeURIComponent(trimmed)}`));
-  isLoading = false;
+  pendingQuery = trimmed;
+  createFormEl.requestSubmit();
 }
 
  let canCreateChat = $derived(chats.length < config.public.maxChats);
 
  async function createChat(): Promise<void> {
  if (!canCreateChat) return;
-  const result = await createChatApi(userId);
-  if (result.id) goto(resolve(`/chat/${result.id}`));
+  pendingQuery = '';
+  createFormEl.requestSubmit();
  }
 
  async function askQuestion(question: string): Promise<void> {
   if (!canCreateChat) return;
-  const result = await createChatApi(userId);
-  if (result.id) goto(resolve(`/chat/${result.id}?q=${encodeURIComponent(question)}`));
+  pendingQuery = question;
+  createFormEl.requestSubmit();
  }
 
  function confirmDeleteChat(chatId: string): void {
@@ -101,11 +103,8 @@ async function sendMessage(text: string): Promise<void> {
  if (deleting) return;
  deleting = true;
  showDeleteConfirm = null;
- const ok = await deleteChatApi(userId, chatId);
- if (ok) {
- chats = chats.filter((c) => c.id !== chatId);
- }
- deleting = false;
+ deleteTargetChatId = chatId;
+ deleteFormEl.requestSubmit();
  }
 </script>
 
@@ -147,7 +146,8 @@ async function sendMessage(text: string): Promise<void> {
 			toast.error(`Maximum ${config.public.maxChats} chats reached`);
 			return;
 		}
-		createChatApi(userId).then(result => { if (result.id) goto(resolve(`/chat/${result.id}?q=${encodeURIComponent(t)}`)); });
+		pendingQuery = t;
+		createFormEl.requestSubmit();
 	}}
 	/>
 
@@ -190,4 +190,32 @@ async function sendMessage(text: string): Promise<void> {
     </div>
   </div>
 {/if}
+
+<form method="POST" action="?/create" bind:this={createFormEl} use:enhance={() => {
+    return async ({ result }) => {
+      if (result.type === 'success' && result.data) {
+        const chatId = String(result.data.id);
+        const q = pendingQuery;
+        pendingQuery = '';
+        chats = [{ id: chatId, userId, title: 'New Chat', createdAt: new Date().toISOString(), messageCount: 0 }, ...chats];
+        goto(resolve(`/chat/${chatId}${q ? `?q=${encodeURIComponent(q)}` : ''}`));
+      }
+    };
+  }}
+>
+  <input type="hidden" name="userId" value={userId} />
+</form>
+<form method="POST" action="?/delete" bind:this={deleteFormEl} use:enhance={() => {
+    return async ({ result }) => {
+      if (result.type === 'success' && result.data) {
+        const chatId = String(result.data.chatId);
+        chats = chats.filter((c) => c.id !== chatId);
+      }
+      deleting = false;
+    };
+  }}
+>
+  <input type="hidden" name="userId" value={userId} />
+  <input type="hidden" name="chatId" value={deleteTargetChatId} />
+</form>
 </div>

@@ -3,7 +3,7 @@
  *
  * Covers:
  *   – SurrealDatabaseService (init, close, transaction)
- *   – UserRepo   (ensureUser, getOrCreateUser, getUser, getUserByGithubId, updateUser)
+ *   – UserRepo   (ensureUser, getOrCreateUser, getUser, updateUser)
  *   – ChatRepo   (ensureChat, getChat, getChatSummaryForApi)
  *   – MessageRepo (addMessage, getMessages, softDeleteMessage)
  *   – All 12 stub repos (each method throws NOT_YET_IMPLEMENTED)
@@ -34,7 +34,6 @@ const {
     id: 'users:u1',
     email: null,
     name: null,
-    github_id: null,
     created_at: '2025-01-01T00:00:00.000Z',
   });
   const content = vi.fn().mockResolvedValue([{ id: '99' }]);
@@ -158,7 +157,7 @@ describe('SurrealDatabaseService', () => {
       return thenable;
     });
     mockMerge.mockReset();
-    mockMerge.mockResolvedValue({ id: 'users:u1', email: null, name: null, githubId: null, createdAt: NOW });
+    mockMerge.mockResolvedValue({ id: 'users:u1', email: null, name: null, createdAt: NOW });
     mockContent.mockReset();
     mockContent.mockResolvedValue([{ id: '99' }]);
     mockUpdate.mockReset();
@@ -273,7 +272,7 @@ describe('SurrealDatabaseService', () => {
         mockMerge.mockImplementation((data: Record<string, unknown>) => {
           expect(data.email).toBe('a@b.com');
           expect(data.name).toBe('Alice');
-          return Promise.resolve({ id: 'users:u1', email: 'a@b.com', name: 'Alice', github_id: null, created_at: NOW });
+          return Promise.resolve({ id: 'users:u1', email: 'a@b.com', name: 'Alice', created_at: NOW });
         });
 
         await users.ensureUser(USER_ID, 'a@b.com', 'Alice');
@@ -309,7 +308,6 @@ describe('SurrealDatabaseService', () => {
             id: `users:${USER_ID}`,
             email: 'a@b.com',
             name: 'Alice',
-            github_id: null,
             created_at: NOW,
           });
         });
@@ -320,7 +318,6 @@ describe('SurrealDatabaseService', () => {
         expect(user.email).toBe('a@b.com');
         expect(user.name).toBe('Alice');
         expect(user.createdAt).toBe(NOW);
-        expect(user.githubId).toBeNull();
       });
 
       it('returns existing when called again with same id', async () => {
@@ -328,7 +325,6 @@ describe('SurrealDatabaseService', () => {
           id: `users:${USER_ID}`,
           email: 'a@b.com',
           name: 'Alice',
-          github_id: null,
           created_at: NOW,
         });
         mockMerge.mockResolvedValueOnce(userData()).mockResolvedValueOnce(userData());
@@ -354,7 +350,6 @@ describe('SurrealDatabaseService', () => {
             id: `users:${USER_ID}`,
             email: null,
             name: null,
-            github_id: null,
             created_at: NOW,
           });
         });
@@ -383,7 +378,6 @@ describe('SurrealDatabaseService', () => {
           id: `users:${USER_ID}`,
           email: 'a@b.com',
           name: 'Alice',
-          github_id: 123,
           created_at: NOW,
         });
 
@@ -393,7 +387,6 @@ describe('SurrealDatabaseService', () => {
         expect(user!.id).toBe(USER_ID);
         expect(user!.email).toBe('a@b.com');
         expect(user!.name).toBe('Alice');
-        expect(user!.githubId).toBe(123);
       });
 
       it('returns undefined when not found', async () => {
@@ -407,51 +400,6 @@ describe('SurrealDatabaseService', () => {
         mockSelect.mockRejectedValueOnce(new Error('ERR'));
 
         await expect(users.getUser(USER_ID)).rejects.toThrow('ERR');
-      });
-    });
-
-    // -----------------------------------------------------------------------
-    // getUserByGithubId
-    // -----------------------------------------------------------------------
-
-    describe('getUserByGithubId', () => {
-      it('returns UserRecord when found', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockReturnValue({
-            limit: vi
-              .fn()
-              .mockResolvedValue([
-                { id: `users:${USER_ID}`, email: 'a@b.com', name: 'Alice', github_id: 42, created_at: NOW },
-              ]),
-          }),
-        });
-
-        const user = await users.getUserByGithubId(42);
-
-        expect(user).toBeDefined();
-        expect(user!.id).toBe(USER_ID);
-        expect(user!.githubId).toBe(42);
-      });
-
-      it('returns undefined when not found', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([]),
-          }),
-        });
-
-        const user = await users.getUserByGithubId(999);
-        expect(user).toBeUndefined();
-      });
-
-      it('assertOk failure throws', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockRejectedValueOnce(new Error('ERR')),
-          }),
-        });
-
-        await expect(users.getUserByGithubId(1)).rejects.toThrow('ERR');
       });
     });
 
@@ -924,23 +872,41 @@ describe('SurrealDatabaseService', () => {
 
     describe('setReaction', () => {
       it('upserts reaction without reason', async () => {
+        mockQuery.mockResolvedValue(okResult([]));
+
         await reactions.setReaction('m1', 'u1', 'up');
 
-        expect(mockUpdate).toHaveBeenCalledWith(expect.any(Object));
-        expect(mockMerge).toHaveBeenCalledWith(expect.objectContaining({ reaction_type: 'up', reason: '' }));
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('INSERT INTO reactions'),
+          expect.objectContaining({
+            messageId: expect.any(RecordId),
+            userId: expect.any(RecordId),
+            reactionType: 'up',
+            reason: '',
+            createdAt: expect.any(Date),
+          }),
+        );
       });
 
       it('upserts reaction with reason', async () => {
+        mockQuery.mockResolvedValue(okResult([]));
+
         await reactions.setReaction('m1', 'u1', 'heart', 'great answer');
 
-        expect(mockUpdate).toHaveBeenCalledWith(expect.any(Object));
-        expect(mockMerge).toHaveBeenCalledWith(
-          expect.objectContaining({ reaction_type: 'heart', reason: 'great answer' }),
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('INSERT INTO reactions'),
+          expect.objectContaining({
+            messageId: expect.any(RecordId),
+            userId: expect.any(RecordId),
+            reactionType: 'heart',
+            reason: 'great answer',
+            createdAt: expect.any(Date),
+          }),
         );
       });
 
       it('assertOk failure throws', async () => {
-        mockMerge.mockRejectedValueOnce(new Error('ERR'));
+        mockQuery.mockRejectedValueOnce(new Error('ERR'));
 
         await expect(reactions.setReaction('m1', 'u1', 'down')).rejects.toThrow('ERR');
       });
@@ -952,36 +918,38 @@ describe('SurrealDatabaseService', () => {
 
     describe('getReaction', () => {
       it('returns ReactionResult when found', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{ reaction_type: 'up', reason: 'helpful' }]),
-          }),
-        });
+        mockQuery.mockResolvedValue(okResult([{ reaction_type: 'up', reason: 'helpful' }]));
 
         const result = await reactions.getReaction('m1', 'u1');
 
         expect(result).toBeDefined();
         expect(result!.type).toBe('up');
         expect(result!.reason).toBe('helpful');
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('SELECT * FROM reactions'),
+          expect.objectContaining({
+            messageId: expect.any(RecordId),
+            userId: expect.any(RecordId),
+          }),
+        );
       });
 
       it('returns null when not found', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([]),
-          }),
-        });
+        mockQuery.mockResolvedValue(okResult([]));
 
         const result = await reactions.getReaction('m1', 'u1');
         expect(result).toBeNull();
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('SELECT * FROM reactions'),
+          expect.objectContaining({
+            messageId: expect.any(RecordId),
+            userId: expect.any(RecordId),
+          }),
+        );
       });
 
       it('assertOk failure throws', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockRejectedValueOnce(new Error('ERR')),
-          }),
-        });
+        mockQuery.mockRejectedValueOnce(new Error('ERR'));
 
         await expect(reactions.getReaction('m1', 'u1')).rejects.toThrow('ERR');
       });
@@ -2267,6 +2235,7 @@ describe('SurrealDatabaseService', () => {
     describe('upsertChunks', () => {
       const chunkData = {
         chunkId: 'chunk_a',
+        slug: 'chunk_a',
         text: 'Some text',
         title: 'Title',
         date: '2026-01-01',
@@ -2592,41 +2561,31 @@ describe('SurrealDatabaseService', () => {
 
     describe('getDismissedFeatureTours', () => {
       it('returns featureId list when rows exist', async () => {
-        mockSelect.mockImplementation(() => {
-          const resolveValue: unknown[] = [{ feature_id: 'tour-a' }, { feature_id: 'tour-b' }];
-          const limitFn = vi.fn().mockResolvedValue(resolveValue);
-          const whereFn = vi.fn().mockResolvedValue(resolveValue);
-          const thenable = Promise.resolve(resolveValue) as Promise<unknown[]> & { where: typeof whereFn };
-          thenable.where = whereFn;
-          return thenable;
-        });
+        mockQuery.mockResolvedValue(okResult([{ feature_id: 'tour-a' }, { feature_id: 'tour-b' }]));
 
         const ids = await featureTours.getDismissedFeatureTours('u1');
 
         expect(ids).toEqual(['tour-a', 'tour-b']);
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('SELECT * FROM feature_tours'),
+          expect.objectContaining({ userId: expect.any(RecordId) }),
+        );
       });
 
       it('returns empty array when no rows found', async () => {
-        mockSelect.mockImplementation(() => {
-          const resolveValue: unknown[] = [];
-          const whereFn = vi.fn().mockResolvedValue(resolveValue);
-          const thenable = Promise.resolve(resolveValue) as Promise<unknown[]> & { where: typeof whereFn };
-          thenable.where = whereFn;
-          return thenable;
-        });
+        mockQuery.mockResolvedValue(okResult([]));
 
         const ids = await featureTours.getDismissedFeatureTours('u1');
 
         expect(ids).toEqual([]);
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('SELECT * FROM feature_tours'),
+          expect.objectContaining({ userId: expect.any(RecordId) }),
+        );
       });
 
       it('throws when query fails', async () => {
-        mockSelect.mockImplementation(() => {
-          const whereFn = vi.fn().mockRejectedValue(new Error('ERR'));
-          const thenable = Promise.reject(new Error('ERR')) as Promise<unknown[]> & { where: typeof whereFn };
-          thenable.where = whereFn;
-          return thenable;
-        });
+        mockQuery.mockRejectedValue(new Error('ERR'));
 
         await expect(featureTours.getDismissedFeatureTours('u1')).rejects.toThrow('ERR');
       });

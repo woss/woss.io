@@ -4,9 +4,10 @@
 
 export interface ChunkRecord {
   chunkId: string;
+  slug: string;
   text: string;
   title: string;
-  date: string | null;
+  date: string;
   tags: string[];
   section: string;
   embedding: number[];
@@ -17,7 +18,7 @@ export interface StoredChunk {
   id: string;
   text: string;
   title: string;
-  date: string | null;
+  date: string;
   tags: string[];
   section: string;
   slug: string;
@@ -115,7 +116,7 @@ export interface Post {
   toc: { id: string; text: string; level: number }[];
   title: string;
   description: string;
-  date: string | null;
+  date: string;
   tags: string[];
   status: string;
   excerpt: string;
@@ -184,7 +185,6 @@ export interface UserRecord {
   id: string;
   email: string | null;
   name: string | null;
-  githubId: number | null;
   createdAt: string;
 }
 
@@ -202,8 +202,7 @@ export interface IUserRepo {
   ensureUser(userId: string, email?: string, name?: string): Promise<void>;
   getOrCreateUser(userId: string, email?: string, name?: string): Promise<UserRecord>;
   getUser(userId: string): Promise<UserRecord | undefined>;
-  getUserByGithubId(githubId: number): Promise<UserRecord | undefined>;
-  updateUser(userId: string, updates: Partial<Pick<UserRecord, 'email' | 'name' | 'githubId'>>): Promise<void>;
+  updateUser(userId: string, updates: Partial<Pick<UserRecord, 'email' | 'name'>>): Promise<void>;
 }
 
 export interface IChatRepo {
@@ -269,7 +268,7 @@ export interface IContentRepo {
     toc: string;
     title: string;
     description: string;
-    date: string | null;
+    date: string;
     tags: string[];
     status: string;
     excerpt: string;

@@ -5,9 +5,11 @@ import { SvelteSet, SvelteDate } from 'svelte/reactivity';
 
 export interface SSECallbacks {
   onToken: (token: string) => void;
+  onReasoning?: (token: string) => void;
   onDone: (data: {
     messageId: string;
     answer: string;
+    reasoning?: string;
     queryType: string;
     sources: unknown[];
     usage: { tokensIn: number; tokensOut: number; durationMs: number };
@@ -37,14 +39,14 @@ export const sseState = new ChatSSEState();
 
 /* ─── Non-reactive State ─── */
 
-export const seenErrorMsgIds = new SvelteSet<string>();
+const seenErrorMsgIds = new SvelteSet<string>();
 let sseTimeout: ReturnType<typeof setTimeout> | undefined;
 let es: EventSource | null = null;
 let generation = 0;
 
 /* ─── Derived (getters — no $derived in module exports) ─── */
 
-export function getStreamingToolValues() {
+function getStreamingToolValues() {
   return Object.values(sseState.streamingToolCalls);
 }
 export function getActiveToolCount() {
@@ -101,6 +103,20 @@ export function connectSSE(chatId: string, callbacks: SSECallbacks): () => void 
       }
     })();
     callbacks.onToken(data.token);
+  });
+
+  es.addEventListener('reasoning', (e: MessageEvent) => {
+    if (currentGen !== generation) return;
+    resetSseTimeout();
+    if (typeof e.data !== 'string') return;
+    const data = (() => {
+      try {
+        return JSON.parse(e.data);
+      } catch {
+        return {};
+      }
+    })();
+    callbacks.onReasoning?.(data.token);
   });
 
   es.addEventListener('done', (e: MessageEvent) => {

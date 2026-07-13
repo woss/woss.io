@@ -3,10 +3,9 @@
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
+  import { enhance } from '$app/forms';
   import { matchSlashCommand } from '$lib/chat/slash-commands';
-  import { parse } from 'devalue';
-  import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
-  import { DISMISSED_TOURS_KEY, USER_ID_KEY, getUserId } from '$lib/chat/constants';
+  import { USER_ID_KEY, getUserId } from '$lib/chat/constants';
   import Seo from '$lib/components/Seo.svelte';
 
   import ChatSidebar from '$lib/components/ChatSidebar.svelte';
@@ -18,8 +17,7 @@
   import { toast } from 'svelte-sonner';
   import { Banner } from 'sv5ui';
   import FeatureTour from '$lib/components/FeatureTour.svelte';
-  import { TOUR_DEFINITIONS } from '$lib/chat/tour-config';
-  import type { TourDefinition } from '$lib/chat/tour-config';
+  import { tourState, initTourState, handleDismissTour } from '$lib/chat/tour-state.svelte';
 
   let { data } = $props();
 
@@ -28,8 +26,6 @@
   let messageText = $state('');
   let isLoading = $state(false);
   let inputEl: HTMLElement | null = $state(null);
-  let dismissedFeatures: string[] = $state([]);
-  let activeTour: TourDefinition | undefined = $state();
 
   interface Chat {
     id: string;
@@ -48,17 +44,21 @@
   let ready = $state(false);
   let showContactForm = $state(true);
 
+  let createFormEl: HTMLFormElement;
+  let deleteFormEl: HTMLFormElement;
+  let deleteChatId = $state('');
+  let pendingCreateMessage = $state('');
+
   function confirmDeleteChat(chatId: string): void {
     showDeleteConfirm = chatId;
   }
 
-  async function deleteChat(chatId: string): Promise<void> {
+  function deleteChat(chatId: string): void {
     if (deleting) return;
     deleting = true;
     showDeleteConfirm = null;
-    const ok = await deleteChatApi(userId, chatId);
-    if (ok) chats = chats.filter((c) => c.id !== chatId);
-    deleting = false;
+    deleteChatId = chatId;
+    deleteFormEl.requestSubmit();
   }
 
   $effect(() => {
@@ -75,32 +75,7 @@
     } catch {
       userId = randomUUID();
     }
-  });
-
-  // Fetch dismissed tours once userId is set — read localStorage first for persist across navigation
-  $effect(() => {
-    if (!browser || !userId) return;
-    // Read local state first so dismiss survives navigation even if server POST fails.
-    // Use local variable (not dismissedFeatures) to avoid reactive tracking → infinite loop
-    let initialFeatures: string[] = [];
-    try {
-      const local = localStorage.getItem(DISMISSED_TOURS_KEY);
-      if (local) {
-        initialFeatures = JSON.parse(local);
-        activeTour = TOUR_DEFINITIONS.find((t) => !initialFeatures.includes(t.featureId));
-      }
-    } catch {}
-    // Sync from server (may have dismissed from another device)
-    fetch(`/api/tours?userId=${encodeURIComponent(userId)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const serverDismissed: string[] = data.dismissed ?? [];
-        // Merge local + server dismissals (union via Set)
-        dismissedFeatures = [...new Set([...initialFeatures, ...serverDismissed])];
-        localStorage.setItem(DISMISSED_TOURS_KEY, JSON.stringify(dismissedFeatures));
-        activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
-      })
-      .catch(() => {});
+    initTourState(userId);
   });
 
   onMount(() => {
@@ -119,8 +94,9 @@
 
   async function sendMessage(text: string): Promise<void> {
     const trimmed = text.trim();
-    if (!trimmed || isLoading || trimmed.length > MAX_CHARS || !userId) return;
-
+    if (!trimmed || isLoading || trimmed.length > MAX_CHARS || !userId) {
+      return;
+    }
     // Intercept navigation slash commands — skip chat creation
     const matched = matchSlashCommand(trimmed);
     if (matched) {
@@ -144,45 +120,15 @@
     }
 
     isLoading = true;
-
-    try {
-      // Create chat first, then navigate with message as query param
-      const fd = new FormData();
-      fd.set('userId', userId);
-      const res = await fetch('?/create', { method: 'POST', body: fd, headers: { Accept: 'application/json' } });
-      const body = await res.json().catch(() => ({}));
-      const actionData = body.data != null ? parse(body.data) : {};
-      if (body.type === 'failure' || !actionData.id) {
-        isLoading = false;
-        toast.error('Failed to create chat. Please try again.');
-        return;
-      }
-      const chatId = actionData.id as string;
-      await goto(resolve(`/chat/${chatId}?q=${encodeURIComponent(trimmed)}`));
-    } catch (e) {
-      isLoading = false;
-      console.error('Error creating chat:', e);
-      toast.error('Failed to create chat.');
-    }
+    pendingCreateMessage = trimmed;
+    createFormEl.requestSubmit();
   }
 
-  async function createChat(): Promise<void> {
+  function createChat(): void {
+    if (isLoading) return;
     if (!canCreateChat) return;
-    const id = await createChatApi(userId);
-    if (id) goto(resolve(`/chat/${id}`));
-  }
-
-  function handleDismissTour(): void {
-    if (!activeTour || !userId) return;
-    fetch('/api/tours/dismiss', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, featureIds: [activeTour.featureId] }),
-    }).catch(() => {});
-    dismissedFeatures = [...dismissedFeatures, activeTour.featureId];
-    // Persist locally so dismiss survives navigation even if server POST fails
-    localStorage.setItem(DISMISSED_TOURS_KEY, JSON.stringify(dismissedFeatures));
-    activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
+    pendingCreateMessage = '';
+    createFormEl.requestSubmit();
   }
 </script>
 
@@ -194,6 +140,50 @@
 
 <div class="relative overflow-hidden flex-1 flex">
   {#if ready}
+    <!-- Hidden create form — invoked via requestSubmit() -->
+    <form
+      method="POST"
+      action="?/create"
+      bind:this={createFormEl}
+      use:enhance={() => {
+        return async ({ result }) => {
+          if (result.type === 'success' && result.data?.id) {
+            const chatId = result.data.id;
+            if (pendingCreateMessage) {
+              goto(resolve(`/chat/${chatId}?q=${encodeURIComponent(pendingCreateMessage)}`));
+            } else {
+              goto(resolve(`/chat/${chatId}`));
+            }
+          } else {
+            isLoading = false;
+            toast.error('Failed to create chat. Please try again.');
+          }
+        };
+      }}
+    >
+      <input type="hidden" name="userId" value={userId} />
+    </form>
+
+    <!-- Hidden delete form — invoked via requestSubmit() -->
+    <form
+      method="POST"
+      action="?/delete"
+      bind:this={deleteFormEl}
+      use:enhance={() => {
+        return async ({ result }) => {
+          if (result.type === 'success') {
+            chats = chats.filter((c) => c.id !== deleteChatId);
+          } else {
+            toast.error('Failed to delete chat');
+          }
+          deleting = false;
+        };
+      }}
+    >
+      <input type="hidden" name="userId" value={userId} />
+      <input type="hidden" name="chatId" value={deleteChatId} />
+    </form>
+
     <ChatSidebar
       {chats}
       {canCreateChat}
@@ -219,7 +209,15 @@
               to={resolve('/posts/[slug]', { slug: data.hero.slug })}
               class="rounded-lg"
               ui={{ container: 'min-h-24' }}
-              actions={[{ label: 'Read now', variant: 'solid', color: 'surface', size: 'sm', href: resolve('/posts/[slug]', { slug: data.hero.slug }) }]}
+              actions={[
+                {
+                  label: 'Read now',
+                  variant: 'solid',
+                  color: 'surface',
+                  size: 'sm',
+                  href: resolve('/posts/[slug]', { slug: data.hero.slug }),
+                },
+              ]}
             />
           </div>
         </div>
@@ -231,12 +229,7 @@
       >
         {#if canCreateChat}
           <div class="w-full max-w-200 flex flex-col gap-5">
-            <ChatInput
-              bind:messageText
-              bind:isLoading
-              bind:inputEl
-              onsend={sendMessage}
-            />
+            <ChatInput bind:messageText bind:isLoading bind:inputEl onsend={sendMessage} />
           </div>
         {:else}
           <!-- Contact form when chats exhausted -->
@@ -328,11 +321,11 @@
   {/if}
 </div>
 
-{#if activeTour}
+{#if tourState.activeTour}
   <FeatureTour
-    targetSelector={activeTour.targetSelector}
-    title={activeTour.title}
-    content={activeTour.content}
-    ondismiss={handleDismissTour}
+    targetSelector={tourState.activeTour.targetSelector}
+    title={tourState.activeTour.title}
+    content={tourState.activeTour.content}
+    ondismiss={() => handleDismissTour(userId)}
   />
 {/if}

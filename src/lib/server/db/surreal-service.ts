@@ -73,6 +73,31 @@ async function queryDb<T = unknown>(db: Surreal, sql: string, vars?: Record<stri
 }
 
 /**
+ * Create a record using raw SurrealQL to work around surrealdb.js v2
+ * `.create().content()` hanging on this SurrealDB instance.
+ *
+ * When `id` is provided, creates with an explicit record ID (table:id).
+ * When `id` is omitted, SurrealDB auto-generates a UUID.
+ *
+ * Returns the created record (same as `.create().content()` would).
+ */
+async function createRecord<T = Record<string, unknown>>(
+  db: Surreal,
+  table: string,
+  data: Record<string, unknown>,
+  id?: string | number,
+): Promise<T> {
+  const compactData = compact(data as Record<string, unknown>);
+  const sql =
+    id != null
+      ? `CREATE type::thing($table, $id) CONTENT $data RETURN AFTER`
+      : `CREATE type::thing($table) CONTENT $data RETURN AFTER`;
+  const vars: Record<string, unknown> = { table, data: compactData };
+  if (id != null) vars.id = String(id);
+  return queryDb<T>(db, sql, vars);
+}
+
+/**
  * Extract the plain key from a SurrealDB record-ID string (`table:key` → `key`).
  * When no colon is present the string is returned as-is.
  */
@@ -161,9 +186,8 @@ function toChat(row: Record<string, unknown>): Chat {
 function toUserRecord(row: Record<string, unknown>): UserRecord {
   return {
     id: row.id as string,
-    email: row.email as string | undefined,
-    name: row.name as string | undefined,
-    githubId: row.github_id as string | undefined,
+    email: row.email as string | null,
+    name: row.name as string | null,
     createdAt: toDateString(row.created_at),
   };
 }
@@ -219,16 +243,7 @@ class UserRepo implements IUserRepo {
     return toUserRecord(raw);
   }
 
-  async getUserByGithubId(githubId: number): Promise<UserRecord | undefined> {
-    const db = this.db();
-    const rows = await db.select(new Table('users')).where(eq('github_id', githubId)).limit(1);
-    if (rows.length === 0) return undefined;
-    const raw = rows[0] as Record<string, unknown>;
-    raw.id = stripPrefix(raw.id);
-    return toUserRecord(raw);
-  }
-
-  async updateUser(userId: string, updates: Partial<Pick<UserRecord, 'email' | 'name' | 'githubId'>>): Promise<void> {
+  async updateUser(userId: string, updates: Partial<Pick<UserRecord, 'email' | 'name'>>): Promise<void> {
     const filtered = compact(updates);
     if (Object.keys(filtered).length === 0) return;
 
@@ -254,12 +269,17 @@ class ChatRepo implements IChatRepo {
   async createChat(userId: string, title?: string, userAgentId?: number): Promise<string> {
     const db = this.db();
     const chatId = randomUUID();
-    await db.create(new RecordId('chats', chatId)).content({
-      user_id: new RecordId('users', userId),
-      title: title ?? 'New Chat',
-      user_agent_id: userAgentId != null ? new RecordId('user_agents', userAgentId) : null,
-      created_at: new Date(),
-    });
+    await createRecord(
+      db,
+      'chats',
+      {
+        user_id: new RecordId('users', userId),
+        title: title ?? 'New Chat',
+        user_agent_id: userAgentId != null ? new RecordId('user_agents', userAgentId) : null,
+        created_at: new Date(),
+      },
+      chatId,
+    );
     return chatId;
   }
 
@@ -426,25 +446,30 @@ class MessageRepo implements IMessageRepo {
     const db = this.db();
     const traceCtx = getCurrentTraceContext();
     log.debug`[MessageRepo.addMessage] db.create(messages) starting, id=${id}`;
-    await db.create(new RecordId('messages', id)).content({
-      user_id: new RecordId('users', params.userId),
-      chat_id: params.chatId != null ? new RecordId('chats', params.chatId) : null,
-      role: params.role,
-      content: params.content,
-      sources: params.sources ?? '[]',
-      reasoning: params.reasoning ?? '',
-      created_at: new Date(),
-      tokens_in: params.tokensIn ?? 0,
-      tokens_out: params.tokensOut ?? 0,
-      duration_ms: params.durationMs ?? 0,
-      max_tokens: params.maxTokens ?? 0,
-      query_type: params.queryType ?? null,
-      irrecoverable: params.irrecoverable ?? false,
-      error: params.error ?? null,
-      user_agent_id: params.userAgentId != null ? new RecordId('user_agents', params.userAgentId) : undefined,
-      from_cache: params.fromCache ?? false,
-      trace_id: traceCtx?.traceId ?? null,
-    });
+    await createRecord(
+      db,
+      'messages',
+      {
+        user_id: new RecordId('users', params.userId),
+        chat_id: params.chatId != null ? new RecordId('chats', params.chatId) : null,
+        role: params.role,
+        content: params.content,
+        sources: params.sources ?? '[]',
+        reasoning: params.reasoning ?? '',
+        created_at: new Date(),
+        tokens_in: params.tokensIn ?? 0,
+        tokens_out: params.tokensOut ?? 0,
+        duration_ms: params.durationMs ?? 0,
+        max_tokens: params.maxTokens ?? 0,
+        query_type: params.queryType ?? null,
+        irrecoverable: params.irrecoverable ?? false,
+        error: params.error ?? null,
+        user_agent_id: params.userAgentId != null ? new RecordId('user_agents', params.userAgentId) : undefined,
+        from_cache: params.fromCache ?? false,
+        trace_id: traceCtx?.traceId ?? null,
+      },
+      id,
+    );
     log.debug`[MessageRepo.addMessage] db.create(messages) completed, id=${id}`;
 
     return id;
@@ -534,12 +559,17 @@ class EventRepo implements IEventRepo {
     const db = this.db();
     const eventId = Date.now() * 1000 + (this.seq++ % 1000);
     log.debug(`[EventsRepo.insertChatEvent] db.create starting, chatId=${chatId} type=${type}`);
-    await db.create(new RecordId('chat_events', eventId)).content({
-      chat_id: new RecordId('chats', chatId),
-      type,
-      data: JSON.stringify(data),
-      created_at: new Date(),
-    });
+    await createRecord(
+      db,
+      'chat_events',
+      {
+        chat_id: new RecordId('chats', chatId),
+        type,
+        data: JSON.stringify(data),
+        created_at: new Date(),
+      },
+      eventId,
+    );
     log.debug`[EventsRepo.insertChatEvent] db.create completed, id=${eventId}`;
     return eventId;
   }
@@ -577,23 +607,40 @@ class ReactionRepo implements IReactionRepo {
     reactionType: 'up' | 'down' | 'heart',
     reason?: string,
   ): Promise<void> {
+    console.log(
+      '[ReactionRepo.setReaction] messageId=',
+      messageId,
+      'userId=',
+      userId,
+      'reactionType=',
+      reactionType,
+      'reason=',
+      reason,
+    );
     const db = this.db();
-    const reactionId = `${messageId}_${userId}`;
-    await db.update(new RecordId('reactions', reactionId)).merge({
-      message_id: new RecordId('messages', messageId),
-      user_id: new RecordId('users', userId),
-      reaction_type: reactionType,
-      reason: reason ?? '',
-      created_at: new Date(),
-    });
+    await queryDb(
+      db,
+      `INSERT INTO reactions (message_id, user_id, reaction_type, reason, created_at) VALUES ($messageId, $userId, $reactionType, $reason, $createdAt) ON DUPLICATE KEY UPDATE reaction_type = $reactionType, reason = $reason, created_at = $createdAt`,
+      {
+        messageId: new RecordId('messages', messageId),
+        userId: new RecordId('users', userId),
+        reactionType,
+        reason: reason ?? '',
+        createdAt: new Date(),
+      },
+    );
   }
 
   async getReaction(messageId: string, userId: string): Promise<ReactionResult | null> {
     const db = this.db();
-    const rows = await db
-      .select(new Table('reactions'))
-      .where(and(eq('message_id', messageId), eq('user_id', userId)))
-      .limit(1);
+    const rows = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT * FROM reactions WHERE message_id = $messageId AND user_id = $userId LIMIT 1`,
+      {
+        messageId: new RecordId('messages', messageId),
+        userId: new RecordId('users', userId),
+      },
+    );
     if (rows.length === 0) return null;
     const r = rows[0] as Record<string, unknown>;
     return {
@@ -669,13 +716,18 @@ class ToolCallRepo implements IToolCallRepo {
 
   async insertToolCall(id: string, msgId: string, name: string, serverId: string, toolInput: string): Promise<void> {
     const db = this.db();
-    await db.create(new RecordId('tool_calls', id)).content({
-      message_id: new RecordId('messages', msgId),
-      name,
-      server_id: serverId,
-      tool_input: toolInput,
-      started_at: new Date().toISOString(),
-    });
+    await createRecord(
+      db,
+      'tool_calls',
+      {
+        message_id: new RecordId('messages', msgId),
+        name,
+        server_id: serverId,
+        tool_input: toolInput,
+        started_at: new Date().toISOString(),
+      },
+      id,
+    );
   }
 
   async setToolCallResult(id: string, result: string, resultSize: number): Promise<void> {
@@ -756,7 +808,7 @@ class ContentRepo implements IContentRepo {
     if (existing.length > 0) {
       await db.update(new RecordId('page_posts', stripPrefix(existing[0].id))).merge(data);
     } else {
-      await db.create(new Table('page_posts')).content(data);
+      await createRecord(db, 'page_posts', data);
     }
   }
 
@@ -797,7 +849,7 @@ class ContentRepo implements IContentRepo {
     if (existing.length > 0) {
       await db.update(new RecordId('page_experience', stripPrefix(existing[0].id))).merge(data);
     } else {
-      await db.create(new Table('page_experience')).content(data);
+      await createRecord(db, 'page_experience', data);
     }
   }
 
@@ -858,7 +910,7 @@ class ContentRepo implements IContentRepo {
       toc: parseToc(r.toc),
       title: String(r.title ?? ''),
       description: String(r.description ?? ''),
-      date: r.date ? String(r.date) : null,
+      date: r.date ? String(r.date) : '',
       tags: (r.tags as string[]) ?? [],
       status: String(r.status),
       excerpt: String(r.excerpt ?? ''),
@@ -927,7 +979,7 @@ class LeadRepo implements ILeadRepo {
     ipAddress: string,
   ): Promise<void> {
     const db = this.db();
-    await db.create(new Table('leads')).content({
+    await createRecord(db, 'leads', {
       user_id: new RecordId('users', userId),
       name,
       email,
@@ -949,7 +1001,7 @@ class ContactIntentRepo implements IContactIntentRepo {
 
   async insertContactIntent(userId: string, chatId: string, text: string): Promise<void> {
     const db = this.db();
-    await db.create(new Table('contact_intents')).content({
+    await createRecord(db, 'contact_intents', {
       user_id: new RecordId('users', userId),
       chat_id: new RecordId('chats', chatId),
       text,
@@ -993,12 +1045,17 @@ class UserAgentRepo implements IUserAgentRepo {
     // Derive deviceType from ua
     const deviceType = uaParser(trimmed);
     const agentId = Date.now() * 1000 + (this.agentSeq++ % 1000);
-    const result = await db.create(new RecordId('user_agents', agentId)).content({
-      ua: trimmed,
-      device_type: deviceType,
-      ip: ip ?? null,
-      created_at: new Date(),
-    });
+    const result = await createRecord(
+      db,
+      'user_agents',
+      {
+        ua: trimmed,
+        device_type: deviceType,
+        ip: ip ?? null,
+        created_at: new Date(),
+      },
+      agentId,
+    );
     return Number(result.id);
   }
 
@@ -1072,7 +1129,7 @@ class LlmCacheRepo implements ILlmCacheRepo {
     const db = this.db();
     const sourcesArray = sources ? sources.split('\n').filter(Boolean) : [];
     const toolCallsArray = toolCalls ? toolCalls.split('\n').filter(Boolean) : [];
-    await db.create(new Table('llm_cache')).content({
+    await createRecord(db, 'llm_cache', {
       question,
       question_embedding: embedding,
       answer,
@@ -1131,7 +1188,7 @@ class RateLimitRepo implements IRateLimitRepo {
 
   async incrementRateLimit(ip: string): Promise<void> {
     const db = this.db();
-    await db.create(new Table('rate_limits')).content({ ip, timestamp: new Date() });
+    await createRecord(db, 'rate_limits', { ip, timestamp: new Date() });
   }
 
   async resetRateLimit(ip: string): Promise<void> {
@@ -1158,6 +1215,7 @@ class VectorRepo implements IVectorRepo {
       );
       const data = {
         chunk_id: r.chunkId,
+        slug: r.slug,
         text: r.text,
         title: r.title,
         date: r.date,
@@ -1169,7 +1227,7 @@ class VectorRepo implements IVectorRepo {
       if (existing.length > 0) {
         await db.update(new RecordId('chunks', String(existing[0].id))).merge(data);
       } else {
-        await db.create(new Table('chunks')).content(data);
+        await createRecord(db, 'chunks', data);
       }
     }
   }
@@ -1196,10 +1254,10 @@ class VectorRepo implements IVectorRepo {
         id: String(r.chunkId || r.id),
         text: String(r.text),
         title: String(r.title),
-        date: r.date ? String(r.date) : null,
+        date: r.date ? String(r.date) : '',
         tags: Array.isArray(r.tags) ? r.tags : [],
         section: String(r.section),
-        slug: String(r.slug || ''),
+        slug: String(r.slug || (typeof r.chunk_id === 'string' ? r.chunk_id.split('_chunk_')[0] : '')),
         embedding: [],
         type: String(r.type) as 'post' | 'experience',
       },
@@ -1222,7 +1280,7 @@ class ModelRepo implements IModelRepo {
       await db.update(new RecordId('models', id)).merge({ max_tokens: maxTokens });
       return id;
     }
-    const [result] = await db.create(new Table('models')).content({
+    const result = await createRecord(db, 'models', {
       provider,
       model_name: modelName,
       actual_model_name: actualModelName,
@@ -1284,8 +1342,12 @@ class FeatureTourRepo implements IFeatureTourRepo {
 
   async getDismissedFeatureTours(userId: string): Promise<string[]> {
     const db = this.db();
-    const rows = await db.select(new Table('feature_tours')).where(eq('user_id', new RecordId('users', userId)));
-    return rows.map((r) => String((r as Record<string, unknown>).feature_id));
+    const rows = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT * FROM feature_tours WHERE user_id = $userId`,
+      { userId: new RecordId('users', userId) },
+    );
+    return rows.map((r) => String(r.feature_id));
   }
 
   async dismissFeatureTours(userId: string, featureIds: string[]): Promise<void> {

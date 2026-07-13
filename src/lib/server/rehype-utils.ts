@@ -27,7 +27,7 @@ export function isElement(node: unknown): node is Element {
   return typeof node === 'object' && node !== null && (node as { type: string }).type === 'element';
 }
 
-export function findFirstChild(node: Element, tagName: string): Element | undefined {
+function findFirstChild(node: Element, tagName: string): Element | undefined {
   for (const child of node.children) {
     if (isElement(child) && child.tagName === tagName) return child;
   }

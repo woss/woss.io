@@ -35,7 +35,11 @@ class McpClient {
   private initPromise: Promise<void> | null = null;
 
   async initialize(): Promise<void> {
-    if (this.initPromise) return this.initPromise;
+    if (this.initPromise) {
+      log.debug`initialize: returning cached initPromise (already in progress)`;
+      return this.initPromise;
+    }
+    log.debug`initialize: cold start — creating new initPromise`;
     this.initPromise = this._doInit();
     return this.initPromise;
   }
@@ -46,7 +50,9 @@ class McpClient {
       return;
     }
     try {
+      log.debug`_doInit: calling manager.init()...`;
       await getManager().init();
+      log.debug`_doInit: manager.init() completed`;
       log.debug`initialized with ${config().mcp.servers.length} servers`;
     } catch (err) {
       log.warn`ERROR: initialize failed: ${err}`;

@@ -182,6 +182,7 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
   log.info('Sending SSE event', { event: 'done', chatId, dataLength: answerText.length });
   publishPersistent(chatId, 'done', {
     answer: answerText,
+    reasoning: reasoningText,
     sources,
     messageId: msgId,
     queryType,

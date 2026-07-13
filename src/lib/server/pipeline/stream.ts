@@ -187,6 +187,7 @@ export async function streamWithRetry(
                 break;
               case 'reasoning-delta':
                 reasoningText += event.text;
+                publishLive(chatId, 'reasoning', { token: event.text });
                 break;
               case 'finish': {
                 if (event.actualModelName || event.modelName) {

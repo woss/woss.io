@@ -16,8 +16,7 @@
   import { CONTACT_DISMISSED_KEY } from '$lib/chat/constants';
   import { Button, Banner } from 'sv5ui';
   import FeatureTour from '$lib/components/FeatureTour.svelte';
-  import { TOUR_DEFINITIONS } from '$lib/chat/tour-config';
-  import type { TourDefinition } from '$lib/chat/tour-config';
+  import { tourState, initTourState, handleDismissTour } from '$lib/chat/tour-state.svelte';
 
   import type { ChatMessage, Chat, ToolCallInfo, Source } from '$lib/chat/types';
   import { matchSlashCommand } from '$lib/chat/slash-commands';
@@ -32,7 +31,7 @@
     getCompletedToolCount,
   } from '$lib/stores/chat-sse.svelte';
   import { createChat as createChatApi, deleteChat as deleteChatApi } from '$lib/chat/chat-crud';
-  import { DISMISSED_TOURS_KEY, USER_ID_KEY, getUserId } from '$lib/chat/constants';
+  import { USER_ID_KEY, getUserId } from '$lib/chat/constants';
   import { SvelteMap } from 'svelte/reactivity';
 
   let { data } = $props() as { data: { messages: ChatMessage[]; locked: boolean; chatOwnerId?: string } };
@@ -59,8 +58,6 @@
   /* ─── State ─── */
 
   let userId = $state('');
-  let dismissedFeatures: string[] = $state([]);
-  let activeTour: TourDefinition | undefined = $state();
   // svelte-ignore state_referenced_locally
   const initialMessages = Array.isArray(data?.messages) ? data.messages : [];
   let messages: ChatMessage[] = $state(initialMessages);
@@ -218,6 +215,7 @@
           id: m.id as string,
           role: m.role as 'user' | 'assistant',
           text: m.content as string,
+          reasoning: m.reasoning as string | undefined,
           error: m.error as string | undefined,
           irrecoverable: m.irrecoverable as boolean | undefined,
           queryType: (m.queryType as string) || undefined,
@@ -516,49 +514,8 @@
     }
     userId = id;
     isOwner = id === data.chatOwnerId;
+    initTourState(userId, isOwner);
   });
-
-  // Fetch dismissed tours once userId is set — skip for read-only shared chats
-  // Read localStorage first so dismiss survives navigation even if server POST fails
-  $effect(() => {
-    if (!browser || !userId || !isOwner) return;
-    // Read local state first using local variable (not dismissedFeatures) to avoid reactive tracking loop
-    let initialFeatures: string[] = [];
-    try {
-      const local = localStorage.getItem(DISMISSED_TOURS_KEY);
-      if (local) {
-        initialFeatures = JSON.parse(local);
-        activeTour = TOUR_DEFINITIONS.find((t) => !initialFeatures.includes(t.featureId));
-      }
-    } catch {}
-    // Sync from server (may have dismissed from another device)
-    fetch(`/api/tours?userId=${encodeURIComponent(userId)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const serverDismissed: string[] = data.dismissed ?? [];
-        // Merge local + server dismissals (union via Set)
-        dismissedFeatures = [...new Set([...initialFeatures, ...serverDismissed])];
-        localStorage.setItem(DISMISSED_TOURS_KEY, JSON.stringify(dismissedFeatures));
-        activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
-      })
-      .catch(() => {
-        // Silently fail — tours are non-critical
-      });
-  });
-
-  function handleDismissTour(): void {
-    if (!activeTour || !userId) return;
-    fetch('/api/tours/dismiss', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, featureIds: [activeTour.featureId] }),
-    }).catch(() => {});
-    dismissedFeatures = [...dismissedFeatures, activeTour.featureId];
-    // Persist locally so dismiss survives navigation even if server POST fails
-    localStorage.setItem(DISMISSED_TOURS_KEY, JSON.stringify(dismissedFeatures));
-    // Find next undismissed tour
-    activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
-  }
 
   let isOwner = $state<boolean | undefined>(undefined);
 
@@ -742,6 +699,7 @@
               id: randomUUID(),
               role: 'assistant' as const,
               text: '',
+              reasoning: '',
               timestamp: Date.now(),
               createdAt: '',
             },
@@ -751,8 +709,28 @@
         messages[idx] = { ...messages[idx], text: messages[idx].text + token };
       },
 
+      onReasoning(token: string) {
+        const last = messages[messages.length - 1];
+        if (last?.role !== 'assistant') {
+          messages = [
+            ...messages,
+            {
+              id: randomUUID(),
+              role: 'assistant' as const,
+              text: '',
+              reasoning: token,
+              timestamp: Date.now(),
+              createdAt: '',
+            },
+          ];
+          return;
+        }
+        const idx = messages.length - 1;
+        messages[idx] = { ...messages[idx], reasoning: (messages[idx].reasoning ?? '') + token };
+      },
+
       onDone(data) {
-        const { messageId, answer, queryType, sources, usage, completedToolCalls } = data;
+        const { messageId, answer, reasoning, queryType, sources, usage, completedToolCalls } = data;
 
         // Skip replayed done events (already loaded from DB on page refresh)
         const existingIdx = messages.findIndex((m) => m.id === messageId);
@@ -772,6 +750,7 @@
               role: 'assistant' as const,
               queryType: queryType || '',
               text: answer || '',
+              reasoning: reasoning || '',
               timestamp: Date.now(),
               createdAt: '',
               sources: sources as Source[],
@@ -785,6 +764,7 @@
             ...messages[idx],
             id: messageId || messages[idx].id,
             text: answer || messages[idx].text,
+            reasoning: reasoning || messages[idx].reasoning,
             sources: (sources as Source[]) || messages[idx].sources,
             tokensIn: usage?.tokensIn || 0,
             tokensOut: usage?.tokensOut || 0,
@@ -1075,11 +1055,11 @@
   <RightSidebar {sidebarVisible} {sidebarMessage} bind:sidebarTab onclose={closeSidebar} />
 </div>
 
-{#if activeTour}
+{#if tourState.activeTour}
   <FeatureTour
-    targetSelector={activeTour.targetSelector}
-    title={activeTour.title}
-    content={activeTour.content}
-    ondismiss={handleDismissTour}
+    targetSelector={tourState.activeTour.targetSelector}
+    title={tourState.activeTour.title}
+    content={tourState.activeTour.content}
+    ondismiss={() => handleDismissTour(userId)}
   />
 {/if}

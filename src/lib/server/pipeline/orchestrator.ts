@@ -383,6 +383,7 @@ export async function startGeneration(
       const totalTime = Math.floor(performance.now() - startTime);
       publishLive(chatId, 'done', {
         answer: answerText,
+        reasoning: reasoningText,
         sources,
         messageId: msgId,
         queryType,

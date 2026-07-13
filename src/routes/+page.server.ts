@@ -49,6 +49,7 @@ export const actions = {
     }
 
     try {
+      console.log('trying', data);
       const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
       const userAgent = event.request.headers.get('user-agent');
       const userAgentId = userAgent ? await db.userAgents.getOrCreateUserAgent(userAgent, ip) : undefined;

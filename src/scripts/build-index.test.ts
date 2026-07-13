@@ -346,7 +346,7 @@ describe('processFile', () => {
     const file = {
       slug: 'empty',
       title: 'Empty',
-      date: null,
+      date: '',
       tags: [],
       body: '',
       type: 'post' as const,
@@ -390,7 +390,7 @@ describe('processFile', () => {
     const file = {
       slug: 'offset-test',
       title: 'Offset',
-      date: null,
+      date: '',
       tags: [],
       body: 'Some body text here that will produce chunks',
       type: 'post' as const,

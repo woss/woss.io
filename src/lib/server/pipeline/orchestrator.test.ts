@@ -290,7 +290,7 @@ describe('source score threshold', () => {
 
     const makeChunk = (title: string, slug: string, text = '...') => ({
       id: `id-${slug}`,
-      date: null,
+      date: '',
       tags: [],
       section: '',
       embedding: [],
@@ -340,7 +340,7 @@ describe('source score threshold', () => {
 
     const makeChunk = (title: string, slug: string) => ({
       id: `id-${slug}`,
-      date: null,
+      date: '',
       tags: [],
       section: '',
       embedding: [],
@@ -391,7 +391,7 @@ describe('source score threshold', () => {
 
     const makeChunk = (title: string, slug: string) => ({
       id: `id-${slug}`,
-      date: null,
+      date: '',
       tags: [],
       section: '',
       embedding: [],

@@ -161,7 +161,10 @@ export function buildRagPrompt(question: string, chunks: RagChunk[], history?: C
 
   if (chunks.length > 0) {
     const context = chunks
-      .map((c, i) => `[${i + 1}] From "${c.title}" (relevance: ${c.score.toFixed(2)}):\n${c.text}`)
+      .map((c, i) => {
+        const title = c.type === 'experience' ? `**${c.title}**` : `"${c.title}"`;
+        return `[${i + 1}] ${title} (relevance: ${c.score.toFixed(2)}):\n${c.text}`;
+      })
       .join('\n\n');
     systemPrompt += `\n\nContext:\n${context}`;
   }

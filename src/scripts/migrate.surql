@@ -34,16 +34,18 @@ REMOVE TABLE centroids;
 -- =============================================================================
 DEFINE TABLE chunks SCHEMAFULL;
 
-DEFINE FIELD chunk_id  ON TABLE chunks TYPE option<string> | null;
-DEFINE FIELD text      ON TABLE chunks TYPE option<string> | null;
-DEFINE FIELD title     ON TABLE chunks TYPE option<string> | null;
-DEFINE FIELD date      ON TABLE chunks TYPE option<string> | null;
-DEFINE FIELD tags      ON TABLE chunks TYPE option<array<string>> | null;
-DEFINE FIELD section   ON TABLE chunks TYPE option<string> | null;
-DEFINE FIELD embedding ON TABLE chunks TYPE option<array<float>> | null;
-DEFINE FIELD type      ON TABLE chunks TYPE option<string> | null;
+DEFINE FIELD chunk_id  ON TABLE chunks TYPE string;
+DEFINE FIELD slug      ON TABLE chunks TYPE string;
+DEFINE FIELD text      ON TABLE chunks TYPE string;
+DEFINE FIELD title     ON TABLE chunks TYPE string;
+DEFINE FIELD date      ON TABLE chunks TYPE string;
+DEFINE FIELD tags      ON TABLE chunks TYPE array<string>;
+DEFINE FIELD section   ON TABLE chunks TYPE string;
+DEFINE FIELD embedding ON TABLE chunks TYPE array<float>;
+DEFINE FIELD type      ON TABLE chunks TYPE string;
 
 DEFINE INDEX idx_chunks_chunk_id ON TABLE chunks FIELDS chunk_id UNIQUE;
+DEFINE INDEX idx_chunks_type ON TABLE chunks FIELDS type;
 -- ANN vector search not supported in SurrealDB 3.0.5 (falls back to brute-force vector::distance::cosine)
 
 -- =============================================================================
@@ -53,7 +55,6 @@ DEFINE TABLE users SCHEMAFULL;
 
 DEFINE FIELD email      ON TABLE users TYPE option<string> | null;
 DEFINE FIELD name       ON TABLE users TYPE option<string> | null;
-DEFINE FIELD github_id  ON TABLE users TYPE option<string> | null;
 DEFINE FIELD created_at ON TABLE users TYPE datetime DEFAULT time::now();
 
 DEFINE INDEX idx_users_email ON TABLE users FIELDS email UNIQUE;
@@ -82,6 +83,10 @@ DEFINE FIELD deleted_at   ON TABLE messages TYPE option<datetime> | null;
 DEFINE FIELD user_agent_id ON TABLE messages TYPE option<record<user_agents>> REFERENCE;
 DEFINE FIELD trace_id     ON TABLE messages TYPE option<string> | null;
 DEFINE FIELD from_cache   ON TABLE messages TYPE bool DEFAULT false;
+
+DEFINE INDEX idx_messages_chat_role_deleted ON TABLE messages FIELDS chat_id, role, deleted_at;
+DEFINE INDEX idx_messages_chat_created ON TABLE messages FIELDS chat_id, created_at;
+DEFINE INDEX idx_messages_user ON TABLE messages FIELDS user_id;
 
 -- 3b. used_model — Graph edge from message to model (replaces messages.model_id)
 DEFINE TABLE used_model TYPE RELATION SCHEMAFULL;
@@ -156,6 +161,7 @@ DEFINE FIELD actual_model_name   ON TABLE models TYPE option<string> | null;
 DEFINE FIELD max_tokens          ON TABLE models TYPE option<int> | null;
 
 DEFINE INDEX idx_models_unique ON TABLE models FIELDS provider, model_name, actual_model_name UNIQUE;
+DEFINE INDEX idx_models_provider_name ON TABLE models FIELDS provider, model_name;
 
 -- =============================================================================
 -- 8. reactions — User reactions to messages
@@ -184,6 +190,8 @@ DEFINE FIELD off_topic_count  ON TABLE chats TYPE int DEFAULT 0;
 DEFINE FIELD user_agent_id    ON TABLE chats TYPE option<record<user_agents>> REFERENCE;
 DEFINE FIELD trace_id         ON TABLE chats TYPE option<string> | null;
 
+DEFINE INDEX idx_chats_user_deleted ON TABLE chats FIELDS user_id, deleted_at;
+
 -- =============================================================================
 -- 10. chat_events — Event log scoped to a chat
 -- =============================================================================
@@ -193,6 +201,8 @@ DEFINE FIELD chat_id    ON TABLE chat_events TYPE option<record<chats>> REFERENC
 DEFINE FIELD type       ON TABLE chat_events TYPE option<string> | null;
 DEFINE FIELD data       ON TABLE chat_events TYPE option<string> | null;
 DEFINE FIELD created_at ON TABLE chat_events TYPE datetime DEFAULT time::now();
+
+DEFINE INDEX idx_chat_events_chat ON TABLE chat_events FIELDS chat_id;
 
 -- =============================================================================
 -- 11. leads — Sales/marketing lead capture
@@ -244,6 +254,8 @@ DEFINE FIELD result_size  ON TABLE tool_calls TYPE int DEFAULT 0;
 DEFINE FIELD started_at   ON TABLE tool_calls TYPE option<string> | null;
 DEFINE FIELD finished_at  ON TABLE tool_calls TYPE option<string> | null;
 
+DEFINE INDEX idx_tool_calls_message ON TABLE tool_calls FIELDS message_id;
+
 -- =============================================================================
 -- 15. rate_limits — IP-based rate limiting
 -- =============================================================================
@@ -253,6 +265,7 @@ DEFINE FIELD ip        ON TABLE rate_limits TYPE option<string> | null;
 DEFINE FIELD timestamp ON TABLE rate_limits TYPE option<datetime> | null;
 
 DEFINE INDEX idx_rate_limits_ip ON TABLE rate_limits FIELDS ip;
+DEFINE INDEX idx_rate_limits_ip_timestamp ON TABLE rate_limits FIELDS ip, timestamp;
 
 -- =============================================================================
 -- 16. feature_tours — Dismissed feature tours per user

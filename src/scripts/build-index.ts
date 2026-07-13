@@ -69,7 +69,7 @@ const log = createLogger(CAT.search);
 export interface ContentItem {
   slug: string;
   title: string;
-  date: string | null;
+  date: string;
   tags: string[];
   body: string;
   type: 'post' | 'experience';
@@ -77,9 +77,10 @@ export interface ContentItem {
 
 export interface ChunkRow {
   chunkId: string;
+  slug: string;
   text: string;
   title: string;
-  date: string | null;
+  date: string;
   tags: string[];
   section: string;
   embedding: number[];
@@ -281,6 +282,7 @@ export async function processFile(file: ContentItem, chunkOffset: number): Promi
     const embedding = embeddings[i];
     rows.push({
       chunkId: generateChunkId(file.slug, i),
+      slug: file.slug,
       text: chunk.text,
       title: chunk.title || file.title,
       date: chunk.date || file.date,
@@ -513,13 +515,13 @@ async function buildIndex(): Promise<void> {
 
       // Process title, date, tags — handle Date objects from frontmatter
       let title: string;
-      let date: string | null;
+      let date: string;
       let tags: string[];
 
       if (entry.type === 'post') {
         title = String(data.title ?? '') || entry.slug;
         const rawDate = data.date;
-        date = rawDate instanceof Date ? rawDate.toISOString() : rawDate ? String(rawDate) : null;
+        date = rawDate instanceof Date ? rawDate.toISOString() : rawDate ? String(rawDate) : '';
         tags = [...new Set<string>(Array.isArray(data.tags) ? data.tags.map(String) : [])];
         if (entry.dirTag) tags = [...new Set([...tags, entry.dirTag])];
       } else {
@@ -527,7 +529,7 @@ async function buildIndex(): Promise<void> {
         const role = String(data.role ?? '');
         title = company ? `${company} — ${role}` : entry.slug;
         const rawStartDate = data.startDate;
-        date = rawStartDate instanceof Date ? rawStartDate.toISOString() : rawStartDate ? String(rawStartDate) : null;
+        date = rawStartDate instanceof Date ? rawStartDate.toISOString() : rawStartDate ? String(rawStartDate) : '';
         tags = [...new Set<string>(Array.isArray(data.skills) ? data.skills.map(String) : [])];
         if (entry.dirTag) tags = [...new Set([...tags, entry.dirTag])];
       }
