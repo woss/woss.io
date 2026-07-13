@@ -18,7 +18,7 @@ part_of_series: opencode-visualizer
 
 My OpenCode database is 6.3GB. Nearly 10,000 sessions, 200,000 messages, 847,000 message parts. I've been collecting this data for 112 days without thinking much about it. Every session transcript, every token count, every cost, every model I've tried. It's all sitting there in a SQLite file at `~/.local/share/opencode/opencode.db`.
 
-I built a CLI tool called `ocv` to poke at this data. It renders an ANSI dashboard with bar charts, lets me query sessions by directory, search by title, see stats. Works fine for me at a terminal. But there's a problem the CLI can't solve.
+I built **OCV (opencode visualizer)**, a CLI tool called `ocv` to poke at this data. It renders an ANSI dashboard with bar charts, lets me query sessions by directory, search by title, see stats. Works fine for me at a terminal. But there's a problem the CLI can't solve.
 
 When an AI agent (like the one you're talking to right now) wants to answer "what model have I been using most this week?", it can run `ocv stats -o json` and read the output, but that's cumbersome. It has to parse the JSON from stdout, handle errors, deal with a CLI that was designed for human eyes not for AI native consumption. It has to know the right flags, the right subcommands, the right output format. It has to remember all that.
 

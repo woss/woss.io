@@ -130,6 +130,10 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 ]
 ```
 
+## API
+
+The chat UI communicates with a JSON API at `/api/chat`. See [docs/api.md](docs/api.md) for the full reference (create, delete, list chats, error codes).
+
 ## Customizing content
 
 Content lives in markdown files. Here's where everything is:
