@@ -267,6 +267,7 @@
   }
 
   async function sendMessage(text: string): Promise<void> {
+    if (currentChat?.locked) return;
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 500 || isLoading) return;
     if (userMessageCount >= config.public.maxMessages) return;
@@ -563,10 +564,6 @@
   $effect(() => {
     if (!browser || !userId || !chatId) return;
     if (chatsLoaded) return;
-    if (chats.length > 0) {
-      chatsLoaded = true;
-      return;
-    }
     loadChats();
   });
 
@@ -1042,6 +1039,7 @@
               {activeToolCount}
               {completedToolCount}
               currentStatus={sseState.currentStatus}
+              locked={currentChat?.locked ?? false}
               bind:inputEl
               onsend={(text: string) => sendMessage(text)}
               onstop={handleStop}
