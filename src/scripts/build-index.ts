@@ -77,14 +77,12 @@ export interface ContentItem {
 
 export interface ChunkRow {
   chunkId: string;
-  slug: string;
   text: string;
   title: string;
   date: string;
   tags: string[];
   section: string;
   embedding: number[];
-  type: string;
 }
 
 export interface ProcessResult {
@@ -282,14 +280,12 @@ export async function processFile(file: ContentItem, chunkOffset: number): Promi
     const embedding = embeddings[i];
     rows.push({
       chunkId: generateChunkId(file.slug, i),
-      slug: file.slug,
       text: chunk.text,
       title: chunk.title || file.title,
       date: chunk.date || file.date,
       tags: chunk.tags?.length ? chunk.tags : file.tags,
       section: chunk.section || '',
       embedding: embedding.data,
-      type: file.type,
     });
     indexKeys.push(BigInt(chunkOffset + i + 1));
   }
@@ -609,9 +605,13 @@ async function buildIndex(): Promise<void> {
         continue;
       }
 
-      await db.vector.upsertChunks(rows);
+      const chunkIds = await db.vector.upsertChunks(rows);
       newChunks += rows.length;
       log.debug`    ↳ ${rows.length} chunks indexed`;
+
+      // Create has_chunks edges connecting parent record to chunks
+      const parentTable = entry.type === 'post' ? 'page_posts' : 'page_experience';
+      await db.vector.createEdges(parentTable, entry.slug, chunkIds);
     } catch (err) {
       const processErr = err instanceof Error ? err : new Error(String(err));
       log.error`  ⚠ Failed to process ${entry.slug}: ${processErr.message}`;

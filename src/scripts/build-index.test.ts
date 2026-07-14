@@ -38,8 +38,9 @@ vi.mock('../lib/server/db/surreal-service', () => {
       updatePartOfSeries: vi.fn().mockResolvedValue(undefined),
     },
     vector: {
-      upsertChunks: vi.fn().mockResolvedValue(undefined),
+      upsertChunks: vi.fn().mockResolvedValue([]),
       deleteChunksBySlug: vi.fn().mockResolvedValue(undefined),
+      createEdges: vi.fn().mockResolvedValue(undefined),
     },
   };
   return {
@@ -333,7 +334,6 @@ describe('processFile', () => {
     expect(row.title).toBe('Test Post');
     expect(row.date).toBe('2024-01-15');
     expect(row.tags).toEqual(['test', 'example']);
-    expect(row.type).toBe('post');
     expect(row.embedding).toHaveLength(1024);
   });
 

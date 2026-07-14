@@ -11,6 +11,7 @@
 -- Drop all 17 tables first (idempotent — no-op if already removed)
 -- =============================================================================
 REMOVE TABLE chunks;
+REMOVE TABLE has_chunks;
 REMOVE TABLE users;
 REMOVE TABLE messages;
 REMOVE TABLE page_posts;
@@ -35,18 +36,22 @@ REMOVE TABLE centroids;
 DEFINE TABLE chunks SCHEMAFULL;
 
 DEFINE FIELD chunk_id  ON TABLE chunks TYPE string;
-DEFINE FIELD slug      ON TABLE chunks TYPE string;
 DEFINE FIELD text      ON TABLE chunks TYPE string;
 DEFINE FIELD title     ON TABLE chunks TYPE string;
 DEFINE FIELD date      ON TABLE chunks TYPE string;
 DEFINE FIELD tags      ON TABLE chunks TYPE array<string>;
 DEFINE FIELD section   ON TABLE chunks TYPE string;
 DEFINE FIELD embedding ON TABLE chunks TYPE array<float>;
-DEFINE FIELD type      ON TABLE chunks TYPE string;
 
 DEFINE INDEX idx_chunks_chunk_id ON TABLE chunks FIELDS chunk_id UNIQUE;
-DEFINE INDEX idx_chunks_type ON TABLE chunks FIELDS type;
 -- ANN vector search not supported in SurrealDB 3.0.5 (falls back to brute-force vector::distance::cosine)
+
+-- =============================================================================
+-- 1b. has_chunks — Edge table connecting page_posts/page_experience → chunks
+-- =============================================================================
+-- Schema: page_posts:xxx --has_chunks--> chunks:xxx_chunk_0
+-- Parent slug/type derived via <-has_chunks.in traversal (no slug/type on chunks)
+DEFINE TABLE has_chunks TYPE RELATION FROM page_posts, page_experience TO chunks SCHEMAFULL;
 
 -- =============================================================================
 -- 2. users — Platform users
