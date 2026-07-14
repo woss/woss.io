@@ -23,34 +23,33 @@ vi.mock('../lib/server/db/surreal', () => ({
   getSurreal: vi.fn(() => ({})),
 }));
 
-vi.mock('../lib/server/db/surreal-service', () => {
-  // Mock is self-contained — vitest hoists factories so no outer variable reachable
-  const _mockDb = {
-    init: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn().mockResolvedValue(undefined),
-    content: {
-      getStoredHashes: vi.fn().mockResolvedValue([]),
-      upsertPost: vi.fn().mockResolvedValue(undefined),
-      upsertExperience: vi.fn().mockResolvedValue(undefined),
-      deletePost: vi.fn().mockResolvedValue(undefined),
-      deleteExperience: vi.fn().mockResolvedValue(undefined),
-      getSlugToIdMap: vi.fn().mockResolvedValue([]),
-      updatePartOfSeries: vi.fn().mockResolvedValue(undefined),
-    },
-    vector: {
-      upsertChunks: vi.fn().mockResolvedValue([]),
-      deleteChunksBySlug: vi.fn().mockResolvedValue(undefined),
-      createEdges: vi.fn().mockResolvedValue(undefined),
-    },
-  };
-  return {
-    SurrealDatabaseService: class {
-      constructor() {
-        return _mockDb;
-      }
-    },
-  };
-});
+// Hoist mock db so tests can access it for assertions
+const mockDb = {
+  init: vi.fn().mockResolvedValue(undefined),
+  close: vi.fn().mockResolvedValue(undefined),
+  content: {
+    getStoredHashes: vi.fn().mockResolvedValue([]),
+    upsertPost: vi.fn().mockResolvedValue(undefined),
+    upsertExperience: vi.fn().mockResolvedValue(undefined),
+    deletePost: vi.fn().mockResolvedValue(undefined),
+    deleteExperience: vi.fn().mockResolvedValue(undefined),
+    getSlugToIdMap: vi.fn().mockResolvedValue([]),
+    updatePartOfSeries: vi.fn().mockResolvedValue(undefined),
+  },
+  vector: {
+    upsertChunks: vi.fn().mockResolvedValue([]),
+    deleteChunksBySlug: vi.fn().mockResolvedValue(undefined),
+    createEdges: vi.fn().mockResolvedValue(undefined),
+  },
+};
+
+vi.mock('../lib/server/db/surreal-service', () => ({
+  SurrealDatabaseService: class {
+    constructor() {
+      return mockDb;
+    }
+  },
+}));
 
 vi.mock('../lib/server/embed.js', () => ({
   embedTexts: vi.fn().mockResolvedValue([{ data: Array(1024).fill(0.1) }, { data: Array(1024).fill(0.2) }]),
@@ -92,6 +91,7 @@ import {
   parseFrontmatterSlug,
   walkMdFiles,
   readFileEntries,
+  buildIndex,
 } from './build-index.js';
 
 import { chunkContent } from './chunk-content.js';
@@ -558,5 +558,51 @@ describe('readFileEntries', () => {
     expect(result).toHaveLength(1);
     expect(result[0].slug).toBe('work');
     expect(result[0].type).toBe('experience');
+  });
+});
+
+// ===========================================================================
+// Describe 7: buildIndex integration — verify createEdges called
+// ===========================================================================
+
+describe('buildIndex', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: no stored hashes → all entries are "changed"
+    mockDb.content.getStoredHashes.mockResolvedValue([]);
+    // Default: upsertChunks returns chunk IDs
+    mockDb.vector.upsertChunks.mockResolvedValue(['slug_chunk_0']);
+  });
+
+  it('calls createEdges after upsertChunks for each processed entry', async () => {
+    // Mock readFileEntries to return one post entry
+    vi.mocked(readdirSync).mockImplementation((dirPath: unknown) => {
+      if (typeof dirPath === 'string' && dirPath.includes('posts')) {
+        return [{ name: 'test-post.md', isDirectory: () => false }] as unknown as never[];
+      }
+      return [];
+    });
+    vi.mocked(readFileSync).mockReturnValue('# Test Post\n\nSome content for testing.');
+
+    await buildIndex();
+
+    // Verify upsertChunks was called
+    expect(mockDb.vector.upsertChunks).toHaveBeenCalled();
+    // Verify createEdges was called with correct args
+    expect(mockDb.vector.createEdges).toHaveBeenCalledWith('page_posts', 'test-post', ['slug_chunk_0']);
+  });
+
+  it('calls createEdges with page_experience for experience entries', async () => {
+    vi.mocked(readdirSync).mockImplementation((dirPath: unknown) => {
+      if (typeof dirPath === 'string' && dirPath.includes('experience')) {
+        return [{ name: 'work.md', isDirectory: () => false }] as unknown as never[];
+      }
+      return [];
+    });
+    vi.mocked(readFileSync).mockReturnValue('# Work\n\nExperience content.');
+
+    await buildIndex();
+
+    expect(mockDb.vector.createEdges).toHaveBeenCalledWith('page_experience', 'work', ['slug_chunk_0']);
   });
 });

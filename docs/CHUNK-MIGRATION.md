@@ -15,13 +15,24 @@ After deploying the edge-based schema changes. Any chunks inserted before the de
 
 ## How to Re-Index
 
-Run the build script:
+Run the build script with `--update` to force re-index all content:
 
 ```bash
-bun run build
+pnpm exec bun src/scripts/build-index.ts --update
 ```
 
-This executes `src/scripts/build-index.ts`, which recreates all chunks with their edges.
+This recreates all chunks and creates `has_chunks` edges.
+
+### Verify Re-Index
+
+After re-index, verify edges exist:
+
+```sql
+SELECT count() AS cnt FROM has_chunks GROUP ALL;
+SELECT * FROM has_chunks LIMIT 10;
+```
+
+Expected: edge count equals total chunks across all content. Each edge links a `page_posts` or `page_experience` record to its chunks.
 
 ## What Happens During Re-Index
 

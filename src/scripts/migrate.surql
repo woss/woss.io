@@ -51,7 +51,7 @@ DEFINE INDEX idx_chunks_chunk_id ON TABLE chunks FIELDS chunk_id UNIQUE;
 -- =============================================================================
 -- Schema: page_posts:xxx --has_chunks--> chunks:xxx_chunk_0
 -- Parent slug/type derived via <-has_chunks.in traversal (no slug/type on chunks)
-DEFINE TABLE has_chunks TYPE RELATION FROM page_posts, page_experience TO chunks SCHEMAFULL;
+DEFINE TABLE has_chunks TYPE RELATION IN page_posts | page_experience OUT chunks SCHEMAFULL;
 
 -- =============================================================================
 -- 2. users — Platform users

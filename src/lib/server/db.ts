@@ -1,41 +1,10 @@
-export {
-  addMessage,
-  clearChatMessages,
-  classifyDeviceType,
-  closeDb,
-  createChat,
-  deleteChat,
-  deleteReaction,
-  dismissFeatureTours,
-  ensureModel,
-  getChat,
-  getChatEventsSince,
-  getChatMessageCount,
-  getChats,
-  getDismissedFeatureTours,
-  getExperience,
-  getMessages,
-  getMessagesByUserId,
-  getOffTopicCount,
-  getOrCreateUserAgent,
-  getPosts,
-  getReaction,
-  getToolCallsByMessageId,
-  getToolCallsForMessages,
-  getUserChatCount,
-  incrementOffTopicCount,
-  insertChatEvent,
-  insertContactIntent,
-  insertLead,
-  isChatLocked,
-  lockChat,
-  renameChat,
-  searchChunks,
-  setReaction,
-  softDeleteMessage,
-  updateUserContact,
-} from './db/sqlite-legacy';
+// Re-export SurrealDB service singleton for all consumers
+export { db } from './db/index';
 
+// Re-export aggregate service type
+export type { IDatabaseService } from './db/index';
+
+// Re-export all data interfaces and repo interfaces
 export type {
   StoredChunk,
   SearchResult,
@@ -43,7 +12,15 @@ export type {
   StoredMessage,
   Chat,
   AddMessageParams,
-} from './db/sqlite-legacy';
-
-// Re-export SurrealDB service singleton for new consumers
-export { db } from './db/index';
+  ChatEvent,
+  ReactionResult,
+  Post,
+  ExperienceEntry,
+  CacheHit,
+  CacheEntry,
+  CacheStats,
+  RateLimitResult,
+  UserAgentRecord,
+  UserRecord,
+  ChatSummary,
+} from './db/interfaces';

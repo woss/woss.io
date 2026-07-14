@@ -2,23 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
-vi.mock('$lib/server/db', () => {
-  const mockSetReaction = vi.fn();
-  const mockDeleteReaction = vi.fn();
-  const mockSoftDeleteMessage = vi.fn();
-  const mockGetChat = vi.fn();
-  return {
-    db: {
-      reactions: { setReaction: mockSetReaction, deleteReaction: mockDeleteReaction },
-      messages: { softDeleteMessage: mockSoftDeleteMessage },
-      chats: { getChat: mockGetChat },
-    },
-    setReaction: mockSetReaction,
-    deleteReaction: mockDeleteReaction,
-    softDeleteMessage: mockSoftDeleteMessage,
-    getChat: mockGetChat,
-  };
-});
+vi.mock('$lib/server/db', () => ({
+  db: {
+    reactions: { setReaction: vi.fn(), deleteReaction: vi.fn() },
+    messages: { softDeleteMessage: vi.fn() },
+    chats: { getChat: vi.fn() },
+  },
+}));
 
 vi.mock('$lib/server/webhooks', () => ({
   callWebhook: vi.fn().mockResolvedValue(undefined),
@@ -41,7 +31,7 @@ vi.mock('$lib/server/logger', () => ({
 }));
 
 // Import mocked modules for assertions
-import { setReaction, deleteReaction, softDeleteMessage, getChat } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { callWebhook } from '$lib/server/webhooks';
 import { lookupCountry } from '$lib/server/geo';
 import { actions } from './+page.server';
@@ -77,7 +67,7 @@ function buildEvent(chatId: string, fields: Record<string, string>): RequestEven
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(lookupCountry).mockReturnValue('US');
-  vi.mocked(getChat).mockReturnValue({
+  vi.mocked(db.chats.getChat).mockResolvedValue({
     id: 'chat-1',
     title: 'Test Chat',
     createdAt: '2025-01-15T10:00:00.000Z',
@@ -97,7 +87,7 @@ describe('reaction action', () => {
         reason: '',
       });
       const result = await actions.reaction(event);
-      expect(setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'up', undefined);
+      expect(db.reactions.setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'up', undefined);
       expect(callWebhook).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'messageUpvote',
@@ -117,7 +107,7 @@ describe('reaction action', () => {
         reason: '',
       });
       const result = await actions.reaction(event);
-      expect(setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'heart', undefined);
+      expect(db.reactions.setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'heart', undefined);
       expect(callWebhook).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'messageHeart',
@@ -136,7 +126,7 @@ describe('reaction action', () => {
         reason: 'Not clear',
       });
       const result = await actions.reaction(event);
-      expect(setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'down', 'Not clear');
+      expect(db.reactions.setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'down', 'Not clear');
       expect(callWebhook).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'messageDownvote',
@@ -179,7 +169,7 @@ describe('reaction action', () => {
         mode: 'remove',
       });
       const result = await actions.reaction(event);
-      expect(deleteReaction).toHaveBeenCalledWith('msg-1', 'user-1');
+      expect(db.reactions.deleteReaction).toHaveBeenCalledWith('msg-1', 'user-1');
       expect(callWebhook).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'reactionRemoved',
@@ -223,8 +213,8 @@ describe('report action', () => {
       reason: 'Offensive',
     });
     const result = await actions.report(event);
-    expect(setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'down', 'Offensive');
-    expect(softDeleteMessage).toHaveBeenCalledWith('msg-1');
+    expect(db.reactions.setReaction).toHaveBeenCalledWith('msg-1', 'user-1', 'down', 'Offensive');
+    expect(db.messages.softDeleteMessage).toHaveBeenCalledWith('msg-1');
     expect(callWebhook).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'reportMessage',

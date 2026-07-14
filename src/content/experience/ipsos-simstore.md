@@ -29,9 +29,9 @@ skills:
 
 ## Job role
 
-This is the role that defined my approach to engineering. This is the job where I co-own infrastructure end-to-end: Kubernetes on AWS, Terragrunt and OpenTofu for everything, service mesh with Kafka and Knative, CI/CD pipelines that actually made engineers faster instead of just adding ceremony. I designed it so engineers could ship without waiting on ops. Started as Senior DevOps, grew into Platform Architect and AI Adoption Lead. I started as DevOps and a right hand to Lead Platform Engineer, and now it grew up to own the cloud infrastructure, dev experience (internal tools) and platform security.
+This is the role that defined my approach to engineering. This is the job where I co-own infrastructure end-to-end: Kubernetes on AWS, Terragrunt and OpenTofu for everything, service mesh with Kafka and Knative, CI/CD pipelines that actually made engineers faster instead of just adding ceremony. I designed it so engineers could ship without waiting on ops. Started as Senior DevOps, grew into Platform Architect and AI Adoption Lead.
 
-Ipsos Simstore is where I stopped thinking about what I could build alone and started designing systems that enable engineers to ship with confidence. Today I own the cloud infrastructure strategy, developer experience, and platform reliability across a multi-region, highly available Kubernetes cluster.
+Ipsos Simstore is where I had to challenge myself in ways I never had before. From legacy systems patched to work with new technologies in the same platform architecture, CDK implementation replacing pure skaffold builds, building and maintaining dev tools, from data syncs to spinning up entire namespaces with pods,services, stateful sets and kafka triggers. Today I own the cloud infrastructure strategy, developer experience, and platform reliability across a multi-region, highly available Kubernetes cluster.
 
 I designed and built the service mesh architecture based on Kafka and Knative, enabling event-driven communication with automatic scaling — replacing a monolithic deployment model and cutting deployment times by orders of magnitude. Every piece of infrastructure is defined as code: Terragrunt, and OpenTofu across AWS environments.
 

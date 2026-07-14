@@ -2,18 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
-vi.mock('$lib/server/db', () => {
-  const mockInsertLead = vi.fn();
-  const mockUpdateUserContact = vi.fn();
-  return {
-    db: {
-      leads: { insertLead: mockInsertLead },
-      contactIntents: { updateUserContact: mockUpdateUserContact },
-    },
-    insertLead: mockInsertLead,
-    updateUserContact: mockUpdateUserContact,
-  };
-});
+vi.mock('$lib/server/db', () => ({
+  db: {
+    leads: { insertLead: vi.fn() },
+    contactIntents: { updateUserContact: vi.fn() },
+  },
+}));
 
 vi.mock('$lib/server/geo', () => ({
   lookupCountry: vi.fn(),
@@ -44,7 +38,7 @@ vi.mock('$lib/server/sanitize', () => ({
 }));
 
 // Import mocked modules for assertions
-import { insertLead, updateUserContact } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { lookupCountry } from '$lib/server/geo';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { callWebhook } from '$lib/server/webhooks';
@@ -236,8 +230,8 @@ describe('POST /api/leads', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
 
-      expect(updateUserContact).toHaveBeenCalledWith('user-1', 'Alice', 'alice@example.com');
-      expect(insertLead).toHaveBeenCalledWith(
+      expect(db.contactIntents.updateUserContact).toHaveBeenCalledWith('user-1', 'Alice', 'alice@example.com');
+      expect(db.leads.insertLead).toHaveBeenCalledWith(
         'user-1',
         'Alice',
         'alice@example.com',
@@ -264,13 +258,21 @@ describe('POST /api/leads', () => {
       const res = await POST(event);
       expect(res.status).toBe(200);
 
-      expect(insertLead).toHaveBeenCalledWith('user-1', 'Alice', 'alice@example.com', '', '', '', 'success-test-2');
+      expect(db.leads.insertLead).toHaveBeenCalledWith(
+        'user-1',
+        'Alice',
+        'alice@example.com',
+        '',
+        '',
+        '',
+        'success-test-2',
+      );
     });
   });
 
   describe('error handling', () => {
     it('returns 500 when DB call throws', async () => {
-      vi.mocked(insertLead).mockImplementation(() => {
+      vi.mocked(db.leads.insertLead).mockImplementation(() => {
         throw new Error('DB connection lost');
       });
 

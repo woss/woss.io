@@ -388,7 +388,7 @@ async function centroidDataChanged(db: IDatabaseService, log: Logger): Promise<b
 // Main
 // ---------------------------------------------------------------------------
 
-async function buildIndex(): Promise<void> {
+export async function buildIndex(): Promise<void> {
   // 1. Preload ML models before any work — fail fast on download issues
   process.stdout.write('  Downloading embedding model...\n');
   let lastPct = -1;

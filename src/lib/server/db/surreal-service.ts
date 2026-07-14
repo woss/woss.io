@@ -1,8 +1,8 @@
 /**
  * SurrealDatabaseService — core service layer for SurrealDB.
  *
- * Implements every repository interface defined in interfaces.ts using raw
- * SurrealQL via the surrealdb v2 SDK.  Uses query builder for simple SELECT by RecordId and WHERE
+ * Implements every repository interface defined in interfaces.ts using
+ * the surrealdb v2 SDK.  Uses query builder for simple SELECT by RecordId and WHERE
  *
  * All 15 repos are implemented.  FeatureTourRepo is a stub
  * (throws NOT_YET_IMPLEMENTED) pending migration.
@@ -72,13 +72,12 @@ async function queryDb<T = unknown>(db: Surreal, sql: string, vars?: Record<stri
 }
 
 /**
- * Create a record using raw SurrealQL to work around surrealdb.js v2
- * `.create().content()` hanging on this SurrealDB instance.
+ * Create a record using the surrealdb SDK `db.create()` method.
  *
- * When `id` is provided, creates with an explicit record ID (table:id).
+ * When `id` is provided, creates with an explicit RecordId (table:id).
  * When `id` is omitted, SurrealDB auto-generates a UUID.
  *
- * Returns the created record (same as `.create().content()` would).
+ * Returns the created record.
  */
 async function createRecord<T = Record<string, unknown>>(
   db: Surreal,
@@ -87,13 +86,11 @@ async function createRecord<T = Record<string, unknown>>(
   id?: string | number,
 ): Promise<T> {
   const compactData = compact(data as Record<string, unknown>);
-  const sql =
-    id != null
-      ? `CREATE type::record($table, $id) CONTENT $data RETURN AFTER`
-      : `CREATE type::record($table) CONTENT $data RETURN AFTER`;
-  const vars: Record<string, unknown> = { table, data: compactData };
-  if (id != null) vars.id = String(id);
-  return queryDb<T>(db, sql, vars);
+  if (id != null) {
+    const recordId = new RecordId(table, String(id));
+    return (await db.create(recordId).content(compactData).output('after')) as T;
+  }
+  return (await db.create(new Table(table)).content(compactData).output('after')) as T;
 }
 
 /**
@@ -827,7 +824,7 @@ class ContentRepo implements IContentRepo {
     if (existing.length > 0) {
       await db.update(new RecordId('page_posts', stripPrefix(existing[0].id))).merge(data);
     } else {
-      await createRecord(db, 'page_posts', data);
+      await createRecord(db, 'page_posts', data, opts.slug);
     }
   }
 
@@ -868,7 +865,7 @@ class ContentRepo implements IContentRepo {
     if (existing.length > 0) {
       await db.update(new RecordId('page_experience', stripPrefix(existing[0].id))).merge(data);
     } else {
-      await createRecord(db, 'page_experience', data);
+      await createRecord(db, 'page_experience', data, opts.slug);
     }
   }
 
@@ -1233,7 +1230,7 @@ class VectorRepo implements IVectorRepo {
       if (existing.length > 0) {
         await db.update(new RecordId('chunks', String(existing[0].id))).merge(data);
       } else {
-        await createRecord(db, 'chunks', data);
+        await createRecord(db, 'chunks', data, r.chunkId);
       }
       ids.push(r.chunkId);
     }
@@ -1245,67 +1242,109 @@ class VectorRepo implements IVectorRepo {
     parentSlug: string,
     chunkIds: string[],
   ): Promise<void> {
-    const db = this.db();
-    await queryDb(db, 'BEGIN TRANSACTION');
-    try {
-      for (const chunkId of chunkIds) {
-        await queryDb(
-          db,
-          `RELATE type::record($parentTable, $parentSlug) -> has_chunks -> type::record('chunks', $chunkId)`,
-          { parentTable, parentSlug, chunkId },
-        );
-      }
-      await queryDb(db, 'COMMIT TRANSACTION');
-    } catch (err) {
-      await queryDb(db, 'ROLLBACK TRANSACTION');
-      throw err;
+    if (chunkIds.length === 0) return;
+    if (parentTable !== 'page_posts' && parentTable !== 'page_experience') {
+      throw new Error(`Invalid parentTable: ${parentTable}`);
     }
+    const db = this.db();
+    // Always backtick-quote IDs — slugs contain hyphens which break the parser
+    // Batch all RELATEs into one query to stay in the same transaction context
+    const src = `${parentTable}:\`${parentSlug}\``;
+    const stmts = chunkIds.map((chunkId) => `RELATE ${src} -> has_chunks -> chunks:\`${chunkId}\``).join('; ');
+    await db.query(stmts);
   }
 
   async deleteChunksBySlug(slug: string): Promise<void> {
     const db = this.db();
-    // Delete edges first
-    await queryDb(
-      db,
-      `DELETE has_chunks WHERE in = type::record('page_posts', $slug) OR in = type::record('page_experience', $slug)`,
-      { slug },
-    );
-    // Then delete chunks
+    // Delete edges whose `in` references this slug (page_posts or page_experience)
+    const allEdges = (await db.select(new Table('has_chunks'))) as unknown as Array<
+      Record<string, unknown> & { id: RecordId; in: RecordId }
+    >;
+    const parentTables = ['page_posts', 'page_experience'];
+    for (const edge of allEdges) {
+      const inId = String(edge.in);
+      const matches = parentTables.some((t) => inId === `${t}:${slug}`);
+      if (matches && edge.id) {
+        await db.delete(edge.id);
+      }
+    }
+    // Delete chunks whose chunk_id starts with the slug prefix
     const prefix = `${slug}_chunk_`;
-    await queryDb(db, `DELETE chunks WHERE string::starts_with(chunk_id, $prefix)`, { prefix });
+    const allChunks = (await db.select(new Table('chunks'))) as unknown as Array<
+      Record<string, unknown> & { id: RecordId; chunk_id: string }
+    >;
+    for (const chunk of allChunks) {
+      if (typeof chunk.chunk_id === 'string' && chunk.chunk_id.startsWith(prefix) && chunk.id) {
+        await db.delete(chunk.id);
+      }
+    }
   }
 
   async searchChunks(embedding: number[], limit = 10, typeFilter?: 'post' | 'experience'): Promise<SearchResult[]> {
     const db = this.db();
-    // Map typeFilter to parent table name for edge traversal
-    const parentTableFilter =
-      typeFilter === 'post' ? 'page_posts' : typeFilter === 'experience' ? 'page_experience' : null;
-    const rows = await queryDb<Array<Record<string, unknown>>>(
+
+    // Step 1: Vector similarity search (over-fetch when typeFilter to compensate for JS-side filtering)
+    const fetchLimit = typeFilter ? limit * 5 : limit;
+    const chunkRows = await queryDb<Array<Record<string, unknown>>>(
       db,
       `SELECT *,
-        (1 - vector::similarity::cosine(embedding, $embedding)) AS score,
-        type::table(<-has_chunks.in) AS parent_table,
-        meta::id(<-has_chunks.in) AS parent_slug
+        (1 - vector::similarity::cosine(embedding, $embedding)) AS score
        FROM chunks
-       WHERE ($parentTableFilter IS NULL OR type::table(<-has_chunks.in) = $parentTableFilter)
        ORDER BY score ASC
        LIMIT $limit`,
-      { embedding, limit, parentTableFilter },
+      { embedding, limit: fetchLimit },
     );
-    return rows.map((r) => ({
-      chunk: {
-        id: String(r.chunkId || r.id),
-        text: String(r.text),
-        title: String(r.title),
-        date: r.date ? String(r.date) : '',
-        tags: Array.isArray(r.tags) ? r.tags : [],
-        section: String(r.section),
-        slug: String(r.parent_slug || (typeof r.chunk_id === 'string' ? r.chunk_id.split('_chunk_')[0] : '')),
-        embedding: [],
-        type: (String(r.parent_table) === 'page_posts' ? 'post' : 'experience') as 'post' | 'experience',
-      },
-      score: Number(r.score),
-    }));
+
+    if (chunkRows.length === 0) return [];
+
+    // Step 2: Batch-fetch edges to resolve parent slug/type
+    // 240 edges is tiny — full fetch is faster than a filtered query with IN clauses
+    const allEdges = (await db.select(new Table('has_chunks'))) as unknown as Array<{
+      in: RecordId;
+      out: RecordId;
+      id: RecordId;
+    }>;
+
+    const edgeMap = new Map<string, { slug: string; type: 'post' | 'experience' }>();
+    for (const edge of allEdges) {
+      const chunkId = String(edge.out);
+      // edge.in is a RecordId like `page_posts:my-slug` — extract the table and key
+      const parentStr = String(edge.in);
+      const colonIdx = parentStr.indexOf(':');
+      const parentTable = colonIdx >= 0 ? parentStr.slice(0, colonIdx) : parentStr;
+      const parentSlug = colonIdx >= 0 ? parentStr.slice(colonIdx + 1) : parentStr;
+      edgeMap.set(chunkId, {
+        slug: parentSlug,
+        type: parentTable === 'page_posts' ? 'post' : 'experience',
+      });
+    }
+
+    // Step 3: Merge chunk scores with edge metadata, apply type filter
+    let results = chunkRows
+      .filter((r) => edgeMap.has(String(r.id)))
+      .map((r) => {
+        const edge = edgeMap.get(String(r.id))!;
+        return {
+          chunk: {
+            id: String(r.chunkId || r.id),
+            text: String(r.text),
+            title: String(r.title),
+            date: r.date ? String(r.date) : '',
+            tags: Array.isArray(r.tags) ? r.tags : [],
+            section: String(r.section),
+            slug: edge.slug,
+            embedding: [],
+            type: edge.type,
+          },
+          score: Number(r.score),
+        };
+      });
+
+    if (typeFilter) {
+      results = results.filter((r) => r.chunk.type === typeFilter);
+    }
+
+    return results.slice(0, limit);
   }
 }
 

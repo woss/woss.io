@@ -9,103 +9,103 @@
 <line x1="60" y1="60" x2="60" y2="540" stroke="#eee" stroke-width="1"/>
 <line x1="60" y1="420" x2="740" y2="420" stroke="#eee" stroke-width="1"/>
 <line x1="230" y1="60" x2="230" y2="540" stroke="#eee" stroke-width="1"/>
-<text x="230" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">-0.38</text>
+<text x="230" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">-0.12</text>
 <text x="52" y="423" text-anchor="end" font-size="9" font-family="monospace" fill="#aaa">-0.15</text>
 <line x1="60" y1="300" x2="740" y2="300" stroke="#eee" stroke-width="1"/>
 <line x1="400" y1="60" x2="400" y2="540" stroke="#eee" stroke-width="1"/>
-<text x="400" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">-0.13</text>
+<text x="400" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">0.13</text>
 <text x="52" y="303" text-anchor="end" font-size="9" font-family="monospace" fill="#aaa">0.08</text>
-<line x1="60" y1="180.00000000000006" x2="740" y2="180.00000000000006" stroke="#eee" stroke-width="1"/>
+<line x1="60" y1="180" x2="740" y2="180" stroke="#eee" stroke-width="1"/>
 <line x1="570" y1="60" x2="570" y2="540" stroke="#eee" stroke-width="1"/>
-<text x="570" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">0.12</text>
-<text x="52" y="183.00000000000006" text-anchor="end" font-size="9" font-family="monospace" fill="#aaa">0.31</text>
+<text x="570" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">0.38</text>
+<text x="52" y="183" text-anchor="end" font-size="9" font-family="monospace" fill="#aaa">0.31</text>
 <line x1="60" y1="60" x2="740" y2="60" stroke="#eee" stroke-width="1"/>
 <line x1="740" y1="60" x2="740" y2="540" stroke="#eee" stroke-width="1"/>
-<text x="740" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">0.37</text>
+<text x="740" y="555" text-anchor="middle" font-size="9" font-family="monospace" fill="#aaa">0.63</text>
 <text x="52" y="63" text-anchor="end" font-size="9" font-family="monospace" fill="#aaa">0.55</text>
-<polygon points="502.3,210.5 504.2,215.9 509.9,216.0 505.4,219.5 507.0,225.0 502.3,221.7 497.6,225.0 499.3,219.5 494.7,216.0 500.4,215.9" fill="#3b82f6" opacity="0.6"/>
-<polygon points="575.5,360.0 577.3,365.4 583.1,365.6 578.5,369.0 580.2,374.5 575.5,371.2 570.8,374.5 572.4,369.0 567.9,365.6 573.6,365.4" fill="#22c55e" opacity="0.6"/>
-<polygon points="194.9,379.5 196.8,384.9 202.5,385.0 197.9,388.5 199.6,394.0 194.9,390.7 190.2,394.0 191.9,388.5 187.3,385.0 193.0,384.9" fill="#a855f7" opacity="0.6"/>
-<circle cx="613.0" cy="254.4" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
-<text x="621.0" y="258.4" font-size="11" font-family="monospace" fill="#333">Search GitHub for Daniel's repositories</text>
-<circle cx="590.1" cy="207.5" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
-<text x="598.1" y="211.5" font-size="11" font-family="monospace" fill="#333">Find Daniel's open issues on GitHub</text>
-<circle cx="636.7" cy="342.2" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
-<text x="644.7" y="346.2" font-size="11" font-family="monospace" fill="#333">What commits has Daniel made</text>
-<circle cx="345.3" cy="219.5" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
-<text x="353.3" y="223.5" font-size="11" font-family="monospace" fill="#333">How many stars does woss-io have</text>
-<circle cx="405.7" cy="100.0" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
-<text x="413.7" y="104.0" font-size="11" font-family="monospace" fill="#333">Show me the open issues on woss.io</text>
-<circle cx="423.1" cy="187.6" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
-<text x="431.1" y="191.6" font-size="11" font-family="monospace" fill="#333">Who contributed to woss-io recently</text>
-<circle cx="501.2" cy="353.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="509.2" y="357.6" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel</text>
-<circle cx="561.9" cy="380.9" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="569.9" y="384.9" font-size="11" font-family="monospace" fill="#333">Describe Daniel's work experience</text>
-<circle cx="558.4" cy="223.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="566.4" y="227.6" font-size="11" font-family="monospace" fill="#333">Show me Daniel's latest posts</text>
-<circle cx="393.5" cy="149.0" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="401.5" y="153.0" font-size="11" font-family="monospace" fill="#333">Show me posts</text>
-<circle cx="563.7" cy="226.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="571.7" y="230.6" font-size="11" font-family="monospace" fill="#333">Show me Daniel's posts</text>
-<circle cx="683.3" cy="382.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="691.3" y="386.6" font-size="11" font-family="monospace" fill="#333">What projects has Daniel founded?</text>
-<circle cx="629.2" cy="432.3" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="637.2" y="436.3" font-size="11" font-family="monospace" fill="#333">What skills and technologies does Daniel</text>
-<circle cx="331.0" cy="184.5" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="339.0" y="188.5" font-size="11" font-family="monospace" fill="#333">Tell me about woss.io</text>
-<circle cx="578.0" cy="338.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="586.0" y="342.1" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel's experience with c</text>
-<circle cx="649.0" cy="378.3" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="657.0" y="382.3" font-size="11" font-family="monospace" fill="#333">What DevOps and cloud experience does Da</text>
-<circle cx="642.2" cy="418.2" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="650.2" y="422.2" font-size="11" font-family="monospace" fill="#333">How has Daniel grown as a software devel</text>
-<circle cx="605.4" cy="449.4" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="613.4" y="453.4" font-size="11" font-family="monospace" fill="#333">What did Daniel learn building Anagolay </text>
-<circle cx="587.8" cy="457.5" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="595.8" y="461.5" font-size="11" font-family="monospace" fill="#333">What did Daniel learn building Macula</text>
-<circle cx="580.9" cy="344.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="588.9" y="348.1" font-size="11" font-family="monospace" fill="#333">What did Daniel learn building Woss.io</text>
-<circle cx="582.1" cy="401.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="590.1" y="405.1" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel's entrepreneurial j</text>
-<circle cx="585.3" cy="462.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="593.3" y="466.6" font-size="11" font-family="monospace" fill="#333">What leadership lessons did Daniel learn</text>
-<circle cx="633.7" cy="403.4" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="641.7" y="407.4" font-size="11" font-family="monospace" fill="#333">How did Daniel's platform engineering sk</text>
-<circle cx="609.6" cy="473.3" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="617.6" y="477.3" font-size="11" font-family="monospace" fill="#333">What did Daniel learn from being a digit</text>
-<circle cx="634.8" cy="440.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="642.8" y="444.1" font-size="11" font-family="monospace" fill="#333">How did Daniel develop his data visualiz</text>
-<circle cx="598.4" cy="461.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
-<text x="606.4" y="465.6" font-size="11" font-family="monospace" fill="#333">What did Daniel learn from his first sta</text>
-<circle cx="580.1" cy="261.7" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
-<text x="588.1" y="265.7" font-size="11" font-family="monospace" fill="#333">Show me Daniel's portfolio</text>
-<circle cx="610.8" cy="318.0" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
-<text x="618.8" y="322.0" font-size="11" font-family="monospace" fill="#333">Show me Daniel's AI projects and impleme</text>
-<circle cx="598.8" cy="366.0" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
-<text x="606.8" y="370.0" font-size="11" font-family="monospace" fill="#333">Daniel's experience and his recent PRs</text>
-<circle cx="677.5" cy="306.2" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
-<text x="685.5" y="310.2" font-size="11" font-family="monospace" fill="#333">What open source projects has Daniel con</text>
-<circle cx="593.9" cy="279.8" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
-<text x="601.9" y="283.8" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel and his GitHub acti</text>
-<circle cx="646.9" cy="372.0" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
-<text x="654.9" y="376.0" font-size="11" font-family="monospace" fill="#333">What grants has Daniel received</text>
-<circle cx="134.2" cy="500.0" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="142.2" y="504.0" font-size="11" font-family="monospace" fill="#333">who is haistlin?</text>
-<circle cx="116.7" cy="497.7" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="124.7" y="501.7" font-size="11" font-family="monospace" fill="#333">what is haistlin?</text>
-<circle cx="151.1" cy="440.0" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="159.1" y="444.0" font-size="11" font-family="monospace" fill="#333">tell me about haistlin</text>
-<circle cx="225.7" cy="288.2" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="233.7" y="292.2" font-size="11" font-family="monospace" fill="#333">who are you?</text>
-<circle cx="224.1" cy="306.3" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="232.1" y="310.3" font-size="11" font-family="monospace" fill="#333">what is your name?</text>
-<circle cx="135.4" cy="494.2" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="143.4" y="498.2" font-size="11" font-family="monospace" fill="#333">explain the name haistlin</text>
-<circle cx="262.2" cy="289.0" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="270.2" y="293.0" font-size="11" font-family="monospace" fill="#333">tell me about yourself</text>
-<circle cx="309.7" cy="284.7" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
-<text x="317.7" y="288.7" font-size="11" font-family="monospace" fill="#333">what do you do?</text>
+<polygon points="297.7,210.5 299.6,215.9 305.3,216.0 300.7,219.5 302.4,225.0 297.7,221.7 293.0,225.0 294.6,219.5 290.1,216.0 295.8,215.9" fill="#3b82f6" opacity="0.6"/>
+<polygon points="224.5,360.0 226.4,365.4 232.1,365.6 227.6,369.0 229.2,374.5 224.5,371.2 219.8,374.5 221.5,369.0 216.9,365.6 222.7,365.4" fill="#22c55e" opacity="0.6"/>
+<polygon points="605.1,379.5 607.0,384.9 612.7,385.0 608.1,388.5 609.8,394.0 605.1,390.7 600.4,394.0 602.1,388.5 597.5,385.0 603.2,384.9" fill="#a855f7" opacity="0.6"/>
+<circle cx="187.0" cy="254.4" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
+<text x="195.0" y="258.4" font-size="11" font-family="monospace" fill="#333">Search GitHub for Daniel's repositories</text>
+<circle cx="209.9" cy="207.5" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
+<text x="217.9" y="211.5" font-size="11" font-family="monospace" fill="#333">Find Daniel's open issues on GitHub</text>
+<circle cx="163.3" cy="342.2" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
+<text x="171.3" y="346.2" font-size="11" font-family="monospace" fill="#333">What commits has Daniel made</text>
+<circle cx="454.7" cy="219.5" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
+<text x="462.7" y="223.5" font-size="11" font-family="monospace" fill="#333">How many stars does woss-io have</text>
+<circle cx="394.3" cy="100.0" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
+<text x="402.3" y="104.0" font-size="11" font-family="monospace" fill="#333">Show me the open issues on woss.io</text>
+<circle cx="376.9" cy="187.6" r="5" fill="#3b82f6" stroke="#fff" stroke-width="1.5" />
+<text x="384.9" y="191.6" font-size="11" font-family="monospace" fill="#333">Who contributed to woss-io recently</text>
+<circle cx="298.8" cy="353.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="306.8" y="357.6" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel</text>
+<circle cx="238.1" cy="380.9" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="246.1" y="384.9" font-size="11" font-family="monospace" fill="#333">Describe Daniel's work experience</text>
+<circle cx="241.6" cy="223.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="249.6" y="227.6" font-size="11" font-family="monospace" fill="#333">Show me Daniel's latest posts</text>
+<circle cx="406.5" cy="149.0" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="414.5" y="153.0" font-size="11" font-family="monospace" fill="#333">Show me posts</text>
+<circle cx="236.3" cy="226.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="244.3" y="230.6" font-size="11" font-family="monospace" fill="#333">Show me Daniel's posts</text>
+<circle cx="116.7" cy="382.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="124.7" y="386.6" font-size="11" font-family="monospace" fill="#333">What projects has Daniel founded?</text>
+<circle cx="170.8" cy="432.3" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="178.8" y="436.3" font-size="11" font-family="monospace" fill="#333">What skills and technologies does Daniel</text>
+<circle cx="469.0" cy="184.5" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="477.0" y="188.5" font-size="11" font-family="monospace" fill="#333">Tell me about woss.io</text>
+<circle cx="222.0" cy="338.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="230.0" y="342.1" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel's experience with c</text>
+<circle cx="151.0" cy="378.3" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="159.0" y="382.3" font-size="11" font-family="monospace" fill="#333">What DevOps and cloud experience does Da</text>
+<circle cx="157.8" cy="418.2" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="165.8" y="422.2" font-size="11" font-family="monospace" fill="#333">How has Daniel grown as a software devel</text>
+<circle cx="194.6" cy="449.4" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="202.6" y="453.4" font-size="11" font-family="monospace" fill="#333">What did Daniel learn building Anagolay </text>
+<circle cx="212.2" cy="457.5" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="220.2" y="461.5" font-size="11" font-family="monospace" fill="#333">What did Daniel learn building Macula</text>
+<circle cx="219.1" cy="344.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="227.1" y="348.1" font-size="11" font-family="monospace" fill="#333">What did Daniel learn building Woss.io</text>
+<circle cx="217.9" cy="401.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="225.9" y="405.1" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel's entrepreneurial j</text>
+<circle cx="214.7" cy="462.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="222.7" y="466.6" font-size="11" font-family="monospace" fill="#333">What leadership lessons did Daniel learn</text>
+<circle cx="166.3" cy="403.4" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="174.3" y="407.4" font-size="11" font-family="monospace" fill="#333">How did Daniel's platform engineering sk</text>
+<circle cx="190.4" cy="473.3" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="198.4" y="477.3" font-size="11" font-family="monospace" fill="#333">What did Daniel learn from being a digit</text>
+<circle cx="165.2" cy="440.1" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="173.2" y="444.1" font-size="11" font-family="monospace" fill="#333">How did Daniel develop his data visualiz</text>
+<circle cx="201.6" cy="461.6" r="5" fill="#22c55e" stroke="#fff" stroke-width="1.5" />
+<text x="209.6" y="465.6" font-size="11" font-family="monospace" fill="#333">What did Daniel learn from his first sta</text>
+<circle cx="219.9" cy="261.7" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+<text x="227.9" y="265.7" font-size="11" font-family="monospace" fill="#333">Show me Daniel's portfolio</text>
+<circle cx="189.2" cy="318.0" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+<text x="197.2" y="322.0" font-size="11" font-family="monospace" fill="#333">Show me Daniel's AI projects and impleme</text>
+<circle cx="201.2" cy="366.0" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+<text x="209.2" y="370.0" font-size="11" font-family="monospace" fill="#333">Daniel's experience and his recent PRs</text>
+<circle cx="122.5" cy="306.2" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+<text x="130.5" y="310.2" font-size="11" font-family="monospace" fill="#333">What open source projects has Daniel con</text>
+<circle cx="206.1" cy="279.8" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+<text x="214.1" y="283.8" font-size="11" font-family="monospace" fill="#333">Tell me about Daniel and his GitHub acti</text>
+<circle cx="153.1" cy="372.0" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+<text x="161.1" y="376.0" font-size="11" font-family="monospace" fill="#333">What grants has Daniel received</text>
+<circle cx="665.8" cy="500.0" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="673.8" y="504.0" font-size="11" font-family="monospace" fill="#333">who is haistlin?</text>
+<circle cx="683.3" cy="497.7" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="691.3" y="501.7" font-size="11" font-family="monospace" fill="#333">what is haistlin?</text>
+<circle cx="648.9" cy="440.0" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="656.9" y="444.0" font-size="11" font-family="monospace" fill="#333">tell me about haistlin</text>
+<circle cx="574.3" cy="288.2" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="582.3" y="292.2" font-size="11" font-family="monospace" fill="#333">who are you?</text>
+<circle cx="575.9" cy="306.3" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="583.9" y="310.3" font-size="11" font-family="monospace" fill="#333">what is your name?</text>
+<circle cx="664.6" cy="494.2" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="672.6" y="498.2" font-size="11" font-family="monospace" fill="#333">explain the name haistlin</text>
+<circle cx="537.8" cy="289.0" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="545.8" y="293.0" font-size="11" font-family="monospace" fill="#333">tell me about yourself</text>
+<circle cx="490.3" cy="284.7" r="5" fill="#a855f7" stroke="#fff" stroke-width="1.5" />
+<text x="498.3" y="288.7" font-size="11" font-family="monospace" fill="#333">what do you do?</text>
 <rect x="650" y="40" width="140" height="120" fill="white" stroke="#ddd" rx="4"/>
 <text x="660" y="55" font-size="11" font-weight="bold" font-family="sans-serif" fill="#333">Legend</text>
 <circle cx="665" cy="70" r="4" fill="#3b82f6" stroke="white" stroke-width="1"/>

@@ -2,15 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
-vi.mock('$lib/server/db', () => {
-  const mockInsertContactIntent = vi.fn();
-  return {
-    db: {
-      contactIntents: { insertContactIntent: mockInsertContactIntent },
-    },
-    insertContactIntent: mockInsertContactIntent,
-  };
-});
+vi.mock('$lib/server/db', () => ({
+  db: {
+    contactIntents: { insertContactIntent: vi.fn() },
+  },
+}));
 
 vi.mock('$lib/server/rate-limiter', () => ({
   checkRateLimit: vi.fn(),
@@ -28,7 +24,7 @@ vi.mock('$lib/server/logger', () => ({
   }),
 }));
 
-import { insertContactIntent } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { POST } from './+server';
 
@@ -189,13 +185,13 @@ describe('POST /api/leads/contact-intent', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
 
-      expect(insertContactIntent).toHaveBeenCalledWith('user-1', 'chat-1', '/contact');
+      expect(db.contactIntents.insertContactIntent).toHaveBeenCalledWith('user-1', 'chat-1', '/contact');
     });
   });
 
   describe('error handling', () => {
     it('returns 200 even when insertContactIntent throws (fire-and-forget)', async () => {
-      vi.mocked(insertContactIntent).mockImplementation(() => {
+      vi.mocked(db.contactIntents.insertContactIntent).mockImplementation(() => {
         throw new Error('DB connection lost');
       });
 
@@ -215,7 +211,7 @@ describe('POST /api/leads/contact-intent', () => {
       });
       await POST(event);
 
-      expect(insertContactIntent).toHaveBeenCalledWith('user-42', 'chat-99', '/contact');
+      expect(db.contactIntents.insertContactIntent).toHaveBeenCalledWith('user-42', 'chat-99', '/contact');
     });
   });
 });
