@@ -35,6 +35,11 @@
       "type": "remote",
       "url": "https://u.macula.link/mcp",
       "enabled": true
+    },
+    "woss-io": {
+      "type": "remote",
+      "url": "http://localhost:5173/mcp",
+      "enabled": true
     }
   },
   "plugin": [
