@@ -42,7 +42,6 @@ export type {
   IContactIntentRepo,
   IUserAgentRepo,
   ILlmCacheRepo,
-  IRateLimitRepo,
   IVectorRepo,
   IModelRepo,
   IFeatureTourRepo,

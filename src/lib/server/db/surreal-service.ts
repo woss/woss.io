@@ -29,7 +29,6 @@ import type {
   IContactIntentRepo,
   IUserAgentRepo,
   ILlmCacheRepo,
-  IRateLimitRepo,
   IVectorRepo,
   IModelRepo,
   IFeatureTourRepo,
@@ -70,21 +69,6 @@ const log = createLogger(CAT.db);
 async function queryDb<T = unknown>(db: Surreal, sql: string, vars?: Record<string, unknown>): Promise<T> {
   const result = (await db.query(sql, vars)) as unknown[];
   return result[0] as T;
-}
-
-/**
- * Recursively convert RecordId instances in an object to strings
- * so they survive SurrealDB CBOR serialization.
- */
-function serializeRecordIds(obj: unknown): unknown {
-  if (obj instanceof RecordId) return obj.toString();
-  if (Array.isArray(obj)) return obj.map(serializeRecordIds);
-  if (obj && typeof obj === 'object' && obj.constructor === Object) {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj)) out[k] = serializeRecordIds(v);
-    return out;
-  }
-  return obj;
 }
 
 /**
@@ -186,7 +170,10 @@ function toChat(row: Record<string, unknown>): Chat {
     userId: stripPrefix(row.user_id),
     title: (row.title as string) ?? '',
     createdAt: toDateString(row.created_at),
-    messageCount: (row.messageCount as number) ?? 0,
+    messageCount:
+      typeof row.messageCount === 'object' && row.messageCount !== null
+        ? Number((row.messageCount as Record<string, unknown>).count ?? 0)
+        : Number(row.messageCount ?? 0),
     deletedAt: row.deleted_at != null ? toDateString(row.deleted_at) : undefined,
     locked: row.locked as boolean | undefined,
     userAgentId: row.user_agent_id ? Number(stripPrefix(row.user_agent_id)) : undefined,
@@ -312,7 +299,7 @@ class ChatRepo implements IChatRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id FROM chats WHERE user_id = $userId AND deleted_at IS NONE ORDER BY created_at DESC`,
+      `SELECT *, meta::id(id) AS id, (SELECT count() FROM messages WHERE meta::id(chat_id) = meta::id($parent.id) AND role = 'user' AND deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE user_id = $userId AND deleted_at IS NONE ORDER BY created_at DESC`,
       { userId: new RecordId('users', userId) },
     );
     return rows.map(toChat);
@@ -320,11 +307,13 @@ class ChatRepo implements IChatRepo {
 
   async getChat(chatId: string): Promise<Chat | undefined> {
     const db = this.db();
-    const row = await db.select(new RecordId('chats', chatId));
-    if (!row) return undefined;
-    const raw = row as Record<string, unknown>;
-    raw.id = stripPrefix(raw.id);
-    return toChat(raw);
+    const rows = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT *, meta::id(id) AS id, (SELECT count() FROM messages WHERE meta::id(chat_id) = meta::id($parent.id) AND role = 'user' AND deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE id = $chatId AND deleted_at IS NONE`,
+      { chatId: new RecordId('chats', chatId) },
+    );
+    if (rows.length === 0) return undefined;
+    return toChat(rows[0]);
   }
 
   async updateChat(chatId: string, updates: Partial<Pick<Chat, 'title' | 'locked' | 'deletedAt'>>): Promise<void> {
@@ -715,11 +704,16 @@ class ToolCallRepo implements IToolCallRepo {
   async getToolCallsForMessages(messageIds: string[]): Promise<Record<string, ToolCallRecord[]>> {
     if (messageIds.length === 0) return {};
     const db = this.db();
+    const recordIds = messageIds.map((id) => {
+      const match = id.match(/^(\w+):`([^`]+)$/);
+      if (match) return new RecordId(match[1], match[2]);
+      return new RecordId('messages', id);
+    });
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
       `SELECT meta::id(id) AS id, meta::id(message_id) AS messageId, name, server_id AS serverId, started_at AS startedAt, finished_at AS finishedAt
         FROM tool_calls WHERE message_id INSIDE $messageIds ORDER BY started_at ASC`,
-      { messageIds },
+      { messageIds: recordIds },
     );
     const map: Record<string, ToolCallRecord[]> = {};
     for (const r of rows) {
@@ -921,13 +915,33 @@ class ContentRepo implements IContentRepo {
     }
   }
 
-  async getPosts(slug?: string): Promise<Post[]> {
+  async getPosts(opts?: {
+    slug?: string;
+    sort?: 'date' | 'title';
+    order?: 'asc' | 'desc';
+    limit?: number;
+  }): Promise<Post[]> {
     const db = this.db();
-    let query = db.select<Record<string, unknown>>(new Table('page_posts'));
-    if (slug) {
-      query = query.where(eq('slug', slug));
+    const sortField = opts?.sort ?? 'date';
+    const sortOrder = opts?.order ?? 'desc';
+    const sortColumn = sortField === 'title' ? 'title' : 'date';
+
+    let sql = `SELECT * FROM page_posts`;
+    const vars: Record<string, unknown> = {};
+
+    if (opts?.slug) {
+      sql += ` WHERE slug = $slug`;
+      vars.slug = opts.slug;
     }
-    const rows = (await query) as Array<Record<string, unknown>>;
+
+    sql += ` ORDER BY ${sortColumn} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
+
+    if (opts?.limit != null && opts.limit > 0) {
+      sql += ` LIMIT $limit`;
+      vars.limit = opts.limit;
+    }
+
+    const rows = await queryDb<Array<Record<string, unknown>>>(db, sql, vars);
     return rows.map((r) => ({
       id: Number(stripPrefix(r.id)),
       slug: String(r.slug),
@@ -1195,54 +1209,12 @@ class LlmCacheRepo implements ILlmCacheRepo {
   }
 }
 
-class RateLimitRepo implements IRateLimitRepo {
-  private MAX_REQUESTS = 10;
-  private WINDOW_MS = 60_000;
-
-  constructor(private db: () => Surreal) {}
-
-  async getRateLimit(ip: string): Promise<RateLimitResult> {
-    const db = this.db();
-    const rows = await queryDb<Array<Record<string, unknown>>>(
-      db,
-      `SELECT count() AS count, math::min(timestamp) AS oldest
-       FROM rate_limits
-       WHERE ip = $ip AND timestamp > time::now() - 60s
-       GROUP ALL`,
-      { ip },
-    );
-    const count = Number(rows[0]?.count ?? 0);
-    const oldest = rows[0]?.oldest ? new Date(String(rows[0].oldest)).getTime() : Date.now();
-    const resetAt = oldest + this.WINDOW_MS;
-
-    return {
-      allowed: count < this.MAX_REQUESTS,
-      remaining: Math.max(0, this.MAX_REQUESTS - count),
-      resetAt,
-    };
-  }
-
-  async incrementRateLimit(ip: string): Promise<void> {
-    const db = this.db();
-    await createRecord(db, 'rate_limits', { ip, timestamp: new Date() });
-  }
-
-  async resetRateLimit(ip: string): Promise<void> {
-    const db = this.db();
-    await queryDb(db, `DELETE rate_limits WHERE ip = $ip`, { ip });
-  }
-
-  async cleanupExpired(): Promise<void> {
-    const db = this.db();
-    await queryDb(db, `DELETE rate_limits WHERE timestamp < time::now() - 60s`);
-  }
-}
-
 class VectorRepo implements IVectorRepo {
   constructor(private db: () => Surreal) {}
 
-  async upsertChunks(rows: ChunkRecord[]): Promise<void> {
+  async upsertChunks(rows: ChunkRecord[]): Promise<string[]> {
     const db = this.db();
+    const ids: string[] = [];
     for (const r of rows) {
       const existing = await queryDb<Array<Record<string, unknown>>>(
         db,
@@ -1251,39 +1223,74 @@ class VectorRepo implements IVectorRepo {
       );
       const data = {
         chunk_id: r.chunkId,
-        slug: r.slug,
         text: r.text,
         title: r.title,
         date: r.date,
         tags: r.tags,
         section: r.section,
         embedding: r.embedding,
-        type: r.type,
       };
       if (existing.length > 0) {
         await db.update(new RecordId('chunks', String(existing[0].id))).merge(data);
       } else {
         await createRecord(db, 'chunks', data);
       }
+      ids.push(r.chunkId);
+    }
+    return ids;
+  }
+
+  async createEdges(
+    parentTable: 'page_posts' | 'page_experience',
+    parentSlug: string,
+    chunkIds: string[],
+  ): Promise<void> {
+    const db = this.db();
+    await queryDb(db, 'BEGIN TRANSACTION');
+    try {
+      for (const chunkId of chunkIds) {
+        await queryDb(
+          db,
+          `RELATE type::record($parentTable, $parentSlug) -> has_chunks -> type::record('chunks', $chunkId)`,
+          { parentTable, parentSlug, chunkId },
+        );
+      }
+      await queryDb(db, 'COMMIT TRANSACTION');
+    } catch (err) {
+      await queryDb(db, 'ROLLBACK TRANSACTION');
+      throw err;
     }
   }
 
   async deleteChunksBySlug(slug: string): Promise<void> {
     const db = this.db();
+    // Delete edges first
+    await queryDb(
+      db,
+      `DELETE has_chunks WHERE in = type::record('page_posts', $slug) OR in = type::record('page_experience', $slug)`,
+      { slug },
+    );
+    // Then delete chunks
     const prefix = `${slug}_chunk_`;
     await queryDb(db, `DELETE chunks WHERE string::starts_with(chunk_id, $prefix)`, { prefix });
   }
 
   async searchChunks(embedding: number[], limit = 10, typeFilter?: 'post' | 'experience'): Promise<SearchResult[]> {
     const db = this.db();
+    // Map typeFilter to parent table name for edge traversal
+    const parentTableFilter =
+      typeFilter === 'post' ? 'page_posts' : typeFilter === 'experience' ? 'page_experience' : null;
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, (1 - vector::similarity::cosine(embedding, $embedding)) AS score
+      `SELECT *,
+        (1 - vector::similarity::cosine(embedding, $embedding)) AS score,
+        type::table(<-has_chunks.in) AS parent_table,
+        meta::id(<-has_chunks.in) AS parent_slug
        FROM chunks
-       WHERE ($typeFilter IS NULL OR type = $typeFilter)
+       WHERE ($parentTableFilter IS NULL OR type::table(<-has_chunks.in) = $parentTableFilter)
        ORDER BY score ASC
        LIMIT $limit`,
-      { embedding, typeFilter: typeFilter ?? null, limit },
+      { embedding, limit, parentTableFilter },
     );
     return rows.map((r) => ({
       chunk: {
@@ -1293,9 +1300,9 @@ class VectorRepo implements IVectorRepo {
         date: r.date ? String(r.date) : '',
         tags: Array.isArray(r.tags) ? r.tags : [],
         section: String(r.section),
-        slug: String(r.slug || (typeof r.chunk_id === 'string' ? r.chunk_id.split('_chunk_')[0] : '')),
+        slug: String(r.parent_slug || (typeof r.chunk_id === 'string' ? r.chunk_id.split('_chunk_')[0] : '')),
         embedding: [],
-        type: String(r.type) as 'post' | 'experience',
+        type: (String(r.parent_table) === 'page_posts' ? 'post' : 'experience') as 'post' | 'experience',
       },
       score: Number(r.score),
     }));
@@ -1459,7 +1466,6 @@ export class SurrealDatabaseService implements IDatabaseService {
     this.contactIntents = new ContactIntentRepo(this.db);
     this.userAgents = new UserAgentRepo(this.db);
     this.llmCache = new LlmCacheRepo(this.db);
-    this.rateLimit = new RateLimitRepo(this.db);
     this.vector = new VectorRepo(this.db);
     this.models = new ModelRepo(this.db);
     this.featureTours = new FeatureTourRepo(this.db);
@@ -1508,7 +1514,6 @@ export class SurrealDatabaseService implements IDatabaseService {
   readonly contactIntents: IContactIntentRepo;
   readonly userAgents: IUserAgentRepo;
   readonly llmCache: ILlmCacheRepo;
-  readonly rateLimit: IRateLimitRepo;
   readonly vector: IVectorRepo;
   readonly models: IModelRepo;
   readonly featureTours: IFeatureTourRepo;

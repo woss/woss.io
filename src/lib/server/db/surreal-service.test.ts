@@ -98,11 +98,9 @@ import type {
   IUserAgentRepo,
   IVectorRepo,
   ILlmCacheRepo,
-  IRateLimitRepo,
   IModelRepo,
   IFeatureTourRepo,
   ICentroidRepo,
-  CentroidRecord,
 } from './interfaces';
 
 // ---------------------------------------------------------------------------
@@ -131,6 +129,31 @@ const USER_ID = 'u1';
 const CHAT_ID = 'c1';
 const MESSAGE_ID = 'm1';
 const NOW = '2026-01-15T10:00:00.000Z';
+
+/**
+ * Build a raw DB row matching the shape returned by `queryDb` in getPosts.
+ * Provides sensible defaults; callers override via spread.
+ */
+function makeDbRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'page_posts:1',
+    slug: 'default-post',
+    content: 'default content',
+    toc: '[]',
+    title: 'Default Title',
+    description: '',
+    date: '2026-01-01',
+    tags: [],
+    status: 'published',
+    excerpt: '',
+    header_image: null,
+    featured: false,
+    position: null,
+    part_of_series: null,
+    workflow_files: null,
+    ...overrides,
+  };
+}
 
 // ===========================================================================
 // SurrealDatabaseService
@@ -494,13 +517,9 @@ describe('SurrealDatabaseService', () => {
 
     describe('getChat', () => {
       it('returns Chat when found', async () => {
-        mockSelect.mockResolvedValueOnce({
-          id: CHAT_ID,
-          user_id: USER_ID,
-          title: 'My Chat',
-          created_at: NOW,
-          messageCount: 3,
-        });
+        mockQuery.mockResolvedValueOnce(
+          okResult([{ id: CHAT_ID, user_id: USER_ID, title: 'My Chat', created_at: NOW, messageCount: 3 }]),
+        );
 
         const chat = await chats.getChat(CHAT_ID);
 
@@ -513,14 +532,14 @@ describe('SurrealDatabaseService', () => {
       });
 
       it('returns undefined when not found', async () => {
-        mockSelect.mockResolvedValueOnce(null);
+        mockQuery.mockResolvedValueOnce(okResult([]));
 
         const chat = await chats.getChat('nonexistent');
         expect(chat).toBeUndefined();
       });
 
       it('assertOk failure throws', async () => {
-        mockSelect.mockRejectedValueOnce(new Error('ERR'));
+        mockQuery.mockRejectedValueOnce(new Error('ERR'));
 
         await expect(chats.getChat(CHAT_ID)).rejects.toThrow('ERR');
       });
@@ -1054,6 +1073,13 @@ describe('SurrealDatabaseService', () => {
         expect(map['m1'][0].name).toBe('search');
         expect(map['m2'].length).toBe(1);
         expect(map['m2'][0].name).toBe('calc');
+
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            messageIds: expect.arrayContaining([expect.any(RecordId)]),
+          }),
+        );
       });
 
       it('returns empty object for empty input array', async () => {
@@ -1093,114 +1119,191 @@ describe('SurrealDatabaseService', () => {
     // -----------------------------------------------------------------------
 
     describe('getPosts', () => {
-      it('returns all posts when slug not provided', async () => {
-        mockSelect.mockResolvedValueOnce([
-          {
-            id: '1',
-            slug: 'post-1',
-            content: 'hello',
-            toc: '[]',
-            title: 'Post 1',
-            description: 'desc',
-            date: NOW,
-            tags: ['tag1'],
-            status: 'published',
-            excerpt: 'excerpt',
-            header_image: null,
-            featured: true,
-            position: 1,
-            part_of_series: null,
-            workflow_files: null,
-          },
-        ]);
+      // -------------------------------------------------------------------
+      // getPosts with opts (queryDb-based)
+      // -------------------------------------------------------------------
+
+      it('returns all posts via queryDb when no opts provided', async () => {
+        const rows = [
+          makeDbRow({ id: '1', slug: 'post-a', title: 'Post A', date: '2026-03-01' }),
+          makeDbRow({ id: '2', slug: 'post-b', title: 'Post B', date: '2026-02-01' }),
+        ];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
 
         const posts = await content.getPosts();
+
+        expect(posts.length).toBe(2);
+        expect(posts[0].slug).toBe('post-a');
+        expect(posts[0].title).toBe('Post A');
+        expect(posts[1].slug).toBe('post-b');
+        expect(posts[1].title).toBe('Post B');
+        // Default: ORDER BY date DESC
+        const sql = mockQuery.mock.calls[0][0] as string;
+        expect(sql).toContain('ORDER BY date DESC');
+        expect(sql).not.toContain('LIMIT');
+      });
+
+      it('getPosts({ limit: 2 }) passes limit variable and appends LIMIT to SQL', async () => {
+        const rows = [
+          makeDbRow({ id: '1', slug: 'p1', title: 'T1', date: '2026-01-01' }),
+          makeDbRow({ id: '2', slug: 'p2', title: 'T2', date: '2026-01-02' }),
+        ];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
+
+        const posts = await content.getPosts({ limit: 2 });
+
+        expect(posts.length).toBe(2);
+        const sql = mockQuery.mock.calls[0][0] as string;
+        const vars = mockQuery.mock.calls[0][1] as Record<string, unknown>;
+        expect(sql).toContain('LIMIT $limit');
+        expect(vars.limit).toBe(2);
+      });
+
+      it('getPosts({ sort: "title", order: "asc" }) orders by title ASC', async () => {
+        const rows = [
+          makeDbRow({ id: '1', slug: 'p1', title: 'Alpha', date: '2026-01-01' }),
+          makeDbRow({ id: '2', slug: 'p2', title: 'Zeta', date: '2026-01-02' }),
+        ];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
+
+        const posts = await content.getPosts({ sort: 'title', order: 'asc' });
+
+        expect(posts.length).toBe(2);
+        expect(posts[0].title).toBe('Alpha');
+        expect(posts[1].title).toBe('Zeta');
+        const sql = mockQuery.mock.calls[0][0] as string;
+        expect(sql).toContain('ORDER BY title ASC');
+      });
+
+      it('getPosts({ slug }) filters by slug via WHERE clause', async () => {
+        const rows = [makeDbRow({ id: '5', slug: 'target', title: 'Target Post', date: '2026-06-01' })];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
+
+        const posts = await content.getPosts({ slug: 'target' });
 
         expect(posts.length).toBe(1);
-        expect(posts[0].id).toBe(1);
-        expect(posts[0].slug).toBe('post-1');
-        expect(posts[0].title).toBe('Post 1');
-        expect(posts[0].featured).toBe(true);
-        expect(posts[0].tags).toEqual(['tag1']);
+        expect(posts[0].slug).toBe('target');
+        expect(posts[0].title).toBe('Target Post');
+        const sql = mockQuery.mock.calls[0][0] as string;
+        const vars = mockQuery.mock.calls[0][1] as Record<string, unknown>;
+        expect(sql).toContain('WHERE slug = $slug');
+        expect(vars.slug).toBe('target');
       });
 
-      it('filters by slug when provided', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockResolvedValue([]),
-        });
+      it('getPosts({ limit: 1, sort: "date", order: "desc" }) returns 1 most recent', async () => {
+        const rows = [makeDbRow({ id: '3', slug: 'newest', title: 'Newest', date: '2026-12-01' })];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
 
-        const result = await content.getPosts('my-post');
+        const posts = await content.getPosts({ limit: 1, sort: 'date', order: 'desc' });
 
-        expect(Array.isArray(result)).toBe(true);
+        expect(posts.length).toBe(1);
+        expect(posts[0].slug).toBe('newest');
+        const sql = mockQuery.mock.calls[0][0] as string;
+        const vars = mockQuery.mock.calls[0][1] as Record<string, unknown>;
+        expect(sql).toContain('ORDER BY date DESC');
+        expect(sql).toContain('LIMIT $limit');
+        expect(vars.limit).toBe(1);
       });
 
-      it('returns empty array when no posts found', async () => {
-        mockSelect.mockResolvedValueOnce([]);
+      it('getPosts({ limit: 0 }) returns all posts (limit 0 ignored)', async () => {
+        const rows = [
+          makeDbRow({ id: '1', slug: 'a', title: 'A', date: '2026-01-01' }),
+          makeDbRow({ id: '2', slug: 'b', title: 'B', date: '2026-01-02' }),
+          makeDbRow({ id: '3', slug: 'c', title: 'C', date: '2026-01-03' }),
+        ];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
 
-        const posts = await content.getPosts();
+        const posts = await content.getPosts({ limit: 0 });
+
+        expect(posts.length).toBe(3);
+        const sql = mockQuery.mock.calls[0][0] as string;
+        expect(sql).not.toContain('LIMIT');
+      });
+
+      it('getPosts({ limit: -1 }) returns all posts (negative limit ignored)', async () => {
+        const rows = [
+          makeDbRow({ id: '1', slug: 'a', title: 'A', date: '2026-01-01' }),
+          makeDbRow({ id: '2', slug: 'b', title: 'B', date: '2026-01-02' }),
+        ];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
+
+        const posts = await content.getPosts({ limit: -1 });
+
+        expect(posts.length).toBe(2);
+        const sql = mockQuery.mock.calls[0][0] as string;
+        expect(sql).not.toContain('LIMIT');
+      });
+
+      it('returns empty array when queryDb returns no rows', async () => {
+        mockQuery.mockResolvedValueOnce(okResult([]));
+
+        const posts = await content.getPosts({ slug: 'nonexistent' });
+
         expect(posts).toEqual([]);
       });
 
-      it('parses toc string field', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockResolvedValue([
-            {
-              id: '1',
-              slug: 'p1',
-              content: 'x',
-              toc: JSON.stringify([{ id: 'sec1', text: 'Section 1', level: 2 }]),
-              title: 'P1',
-              description: '',
-              date: null,
-              tags: [],
-              status: 'draft',
-              excerpt: '',
-              header_image: null,
-              featured: false,
-              position: null,
-              part_of_series: null,
-              workflow_files: null,
-            },
-          ]),
-        });
+      it('queryDb failure propagates as thrown error', async () => {
+        mockQuery.mockRejectedValueOnce(new Error('DB connection lost'));
 
-        const posts = await content.getPosts('p1');
-
-        expect(posts[0].toc).toEqual([{ id: 'sec1', text: 'Section 1', level: 2 }]);
+        await expect(content.getPosts()).rejects.toThrow('DB connection lost');
       });
 
-      it('handles malformed toc gracefully', async () => {
-        mockSelect.mockReturnValueOnce({
-          where: vi.fn().mockResolvedValue([
-            {
-              id: '1',
-              slug: 'p1',
-              content: 'x',
-              toc: 'not-json',
-              title: 'P1',
-              description: '',
-              date: null,
-              tags: [],
-              status: 'draft',
-              excerpt: '',
-              header_image: null,
-              featured: false,
-              position: null,
-              part_of_series: null,
-              workflow_files: null,
-            },
-          ]),
-        });
+      it('getPosts with combined slug + limit applies both WHERE and LIMIT', async () => {
+        const rows = [makeDbRow({ id: '1', slug: 'filtered', title: 'Filtered', date: '2026-05-01' })];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
 
-        const posts = await content.getPosts('p1');
+        const posts = await content.getPosts({ slug: 'filtered', limit: 5 });
 
-        expect(posts[0].toc).toEqual([]);
+        expect(posts.length).toBe(1);
+        const sql = mockQuery.mock.calls[0][0] as string;
+        const vars = mockQuery.mock.calls[0][1] as Record<string, unknown>;
+        expect(sql).toContain('WHERE slug = $slug');
+        expect(sql).toContain('LIMIT $limit');
+        expect(vars.slug).toBe('filtered');
+        expect(vars.limit).toBe(5);
       });
 
-      it('assertOk failure throws', async () => {
-        mockSelect.mockRejectedValueOnce(new Error('ERR'));
+      it('getPosts maps raw DB fields to Post shape correctly', async () => {
+        const rows = [
+          {
+            id: 'page_posts:42',
+            slug: 'my-post',
+            content: '# Hello World',
+            toc: JSON.stringify([{ id: 's1', text: 'Intro', level: 2 }]),
+            title: 'My Post',
+            description: 'A description',
+            date: '2026-06-15',
+            tags: ['svelte', 'typescript'],
+            status: 'published',
+            excerpt: 'Short excerpt',
+            header_image: '/img/hero.png',
+            featured: true,
+            position: 3,
+            part_of_series: 'page_posts:10',
+            workflow_files: null,
+          },
+        ];
+        mockQuery.mockResolvedValueOnce(okResult(rows));
 
-        await expect(content.getPosts()).rejects.toThrow('ERR');
+        const posts = await content.getPosts({ slug: 'my-post' });
+
+        expect(posts.length).toBe(1);
+        const p = posts[0];
+        expect(p.id).toBe(42);
+        expect(p.slug).toBe('my-post');
+        expect(p.content).toBe('# Hello World');
+        expect(p.title).toBe('My Post');
+        expect(p.description).toBe('A description');
+        expect(p.date).toBe('2026-06-15');
+        expect(p.tags).toEqual(['svelte', 'typescript']);
+        expect(p.status).toBe('published');
+        expect(p.excerpt).toBe('Short excerpt');
+        expect(p.headerImage).toBe('/img/hero.png');
+        expect(p.featured).toBe(true);
+        expect(p.position).toBe(3);
+        expect(p.partOfSeries).toBe(10);
+        expect(p.toc).toEqual([{ id: 's1', text: 'Intro', level: 2 }]);
+        expect(p.workflowFiles).toBeNull();
       });
     });
 
@@ -2024,114 +2127,6 @@ describe('SurrealDatabaseService', () => {
   });
 
   // =========================================================================
-  // RateLimitRepo
-  // =========================================================================
-
-  describe('rateLimit', () => {
-    let rateLimit: IRateLimitRepo;
-
-    beforeEach(() => {
-      rateLimit = service.rateLimit;
-    });
-
-    // -----------------------------------------------------------------------
-    // getRateLimit
-    // -----------------------------------------------------------------------
-
-    describe('getRateLimit', () => {
-      it('allows when under limit', async () => {
-        mockQuery.mockResolvedValue(okResult([{ count: 5, oldest: NOW }]));
-
-        const result = await rateLimit.getRateLimit('1.2.3.4');
-
-        expect(result.allowed).toBe(true);
-        expect(result.remaining).toBe(5);
-        expect(result.resetAt).toBe(new Date(NOW).getTime() + 60_000);
-      });
-
-      it('blocks when at limit (10 requests)', async () => {
-        mockQuery.mockResolvedValue(okResult([{ count: 10, oldest: NOW }]));
-
-        const result = await rateLimit.getRateLimit('1.2.3.4');
-
-        expect(result.allowed).toBe(false);
-        expect(result.remaining).toBe(0);
-      });
-
-      it('allows when no records exist', async () => {
-        mockQuery.mockResolvedValue(okResult([]));
-
-        const result = await rateLimit.getRateLimit('1.2.3.4');
-
-        expect(result.allowed).toBe(true);
-        expect(result.remaining).toBe(10);
-        expect(typeof result.resetAt).toBe('number');
-      });
-
-      it('clamps remaining to 0 when over limit', async () => {
-        mockQuery.mockResolvedValue(okResult([{ count: 15, oldest: NOW }]));
-
-        const result = await rateLimit.getRateLimit('1.2.3.4');
-
-        expect(result.allowed).toBe(false);
-        expect(result.remaining).toBe(0);
-      });
-
-      it('assertOk failure throws', async () => {
-        mockQuery.mockRejectedValue(new Error('ERR'));
-
-        await expect(rateLimit.getRateLimit('1.2.3.4')).rejects.toThrow('ERR');
-      });
-    });
-
-    // -----------------------------------------------------------------------
-    // incrementRateLimit
-    // -----------------------------------------------------------------------
-
-    describe('incrementRateLimit', () => {
-      it('inserts rate limit record', async () => {
-        await rateLimit.incrementRateLimit('1.2.3.4');
-
-        expect(mockCreate).toHaveBeenCalledWith(expect.any(Object));
-        expect(mockContent).toHaveBeenCalledWith(expect.objectContaining({ ip: '1.2.3.4' }));
-      });
-
-      it('assertOk failure throws', async () => {
-        mockContent.mockRejectedValueOnce(new Error('ERR'));
-
-        await expect(rateLimit.incrementRateLimit('1.2.3.4')).rejects.toThrow('ERR');
-      });
-    });
-
-    // -----------------------------------------------------------------------
-    // resetRateLimit
-    // -----------------------------------------------------------------------
-
-    describe('resetRateLimit', () => {
-      it('deletes all rate limit records for IP', async () => {
-        mockQuery.mockImplementation(async (sql: string, vars?: Record<string, unknown>) => {
-          if (sql.includes('DELETE rate_limits')) {
-            expect(vars?.ip).toBe('1.2.3.4');
-            return Promise.resolve(okResult([]));
-          }
-          return Promise.resolve(okResult([]));
-        });
-
-        await rateLimit.resetRateLimit('1.2.3.4');
-
-        const calls = mockQuery.mock.calls.map((c: string[]) => c[0]);
-        expect(calls.some((s: string) => s.includes('DELETE rate_limits'))).toBe(true);
-      });
-
-      it('assertOk failure throws', async () => {
-        mockQuery.mockRejectedValue(new Error('ERR'));
-
-        await expect(rateLimit.resetRateLimit('1.2.3.4')).rejects.toThrow('ERR');
-      });
-    });
-  });
-
-  // =========================================================================
   // VectorRepo
   // =========================================================================
 
@@ -2150,6 +2145,8 @@ describe('SurrealDatabaseService', () => {
       const EMBEDDING = [0.1, 0.2, 0.3];
 
       it('returns SearchResult array ranked by cosine distance', async () => {
+        // Mock data matches SurrealDB query output: parent_table/parent_slug
+        // come from edge traversal, NOT stored on the chunk itself.
         mockQuery.mockResolvedValue(
           okResult([
             {
@@ -2159,8 +2156,8 @@ describe('SurrealDatabaseService', () => {
               date: NOW,
               tags: ['tag1'],
               section: 'sec1',
-              slug: 'p1',
-              type: 'post',
+              parent_table: 'page_posts',
+              parent_slug: 'my-slug',
               score: 0.1,
             },
             {
@@ -2170,8 +2167,8 @@ describe('SurrealDatabaseService', () => {
               date: null,
               tags: [],
               section: 'sec2',
-              slug: '',
-              type: 'experience',
+              parent_table: 'page_experience',
+              parent_slug: 'exp-slug',
               score: 0.5,
             },
           ]),
@@ -2183,33 +2180,37 @@ describe('SurrealDatabaseService', () => {
         expect(results[0].chunk.id).toBe('chunks:a');
         expect(results[0].chunk.text).toBe('Chunk 1');
         expect(results[0].chunk.type).toBe('post');
+        expect(results[0].chunk.slug).toBe('my-slug');
         expect(results[0].score).toBe(0.1);
         expect(results[1].chunk.id).toBe('chunks:b');
         expect(results[1].chunk.type).toBe('experience');
+        expect(results[1].chunk.slug).toBe('exp-slug');
         expect(results[1].score).toBe(0.5);
       });
 
-      it('filters by type "post"', async () => {
+      it('filters by type "post" using parentTableFilter', async () => {
         mockQuery.mockImplementation(async (_sql: string, vars?: Record<string, unknown>) => {
-          expect(vars?.typeFilter).toBe('post');
+          // Implementation maps typeFilter 'post' → parentTableFilter 'page_posts'
+          expect(vars?.parentTableFilter).toBe('page_posts');
           return Promise.resolve(okResult([]));
         });
 
         await vector.searchChunks(EMBEDDING, 10, 'post');
       });
 
-      it('filters by type "experience"', async () => {
+      it('filters by type "experience" using parentTableFilter', async () => {
         mockQuery.mockImplementation(async (_sql: string, vars?: Record<string, unknown>) => {
-          expect(vars?.typeFilter).toBe('experience');
+          // Implementation maps typeFilter 'experience' → parentTableFilter 'page_experience'
+          expect(vars?.parentTableFilter).toBe('page_experience');
           return Promise.resolve(okResult([]));
         });
 
         await vector.searchChunks(EMBEDDING, 10, 'experience');
       });
 
-      it('passes null typeFilter when not provided', async () => {
+      it('passes null parentTableFilter when typeFilter not provided', async () => {
         mockQuery.mockImplementation(async (_sql: string, vars?: Record<string, unknown>) => {
-          expect(vars?.typeFilter).toBeNull();
+          expect(vars?.parentTableFilter).toBeNull();
           return Promise.resolve(okResult([]));
         });
 
@@ -2251,15 +2252,14 @@ describe('SurrealDatabaseService', () => {
               date: null,
               tags: null,
               section: 's',
-              slug: '',
-              type: 'post',
+              parent_table: 'page_posts',
+              parent_slug: 'page_posts:my-slug',
               score: 0.5,
             },
           ]),
         );
 
         const results = await vector.searchChunks(EMBEDDING);
-
         expect(results[0].chunk.tags).toEqual([]);
       });
 
@@ -2277,14 +2277,12 @@ describe('SurrealDatabaseService', () => {
     describe('upsertChunks', () => {
       const chunkData = {
         chunkId: 'chunk_a',
-        slug: 'chunk_a',
         text: 'Some text',
         title: 'Title',
         date: '2026-01-01',
         tags: ['tag1'],
         section: 'sec1',
         embedding: [0.1, 0.2],
-        type: 'post' as const,
       };
 
       it('updates existing chunk when chunkId found', async () => {
@@ -2301,8 +2299,13 @@ describe('SurrealDatabaseService', () => {
 
         await vector.upsertChunks([chunkData]);
 
-        expect(mockCreate).toHaveBeenCalledWith(expect.any(Object));
-        expect(mockContent).toHaveBeenCalledWith(
+        // createRecord uses queryDb (db.query), not db.create().content()
+        // First call = SELECT (empty), second call = CREATE
+        const createCall = mockQuery.mock.calls.find((c) => String(c[0]).includes('CREATE'));
+        expect(createCall).toBeDefined();
+        const vars = createCall![1] as Record<string, unknown>;
+        expect(vars.table).toBe('chunks');
+        expect(vars.data).toEqual(
           expect.objectContaining({ chunk_id: 'chunk_a', text: 'Some text', embedding: [0.1, 0.2] }),
         );
       });
@@ -2311,8 +2314,8 @@ describe('SurrealDatabaseService', () => {
         let callIndex = 0;
         mockQuery.mockImplementation(async () => {
           callIndex++;
-          if (callIndex === 1) return Promise.resolve(okResult([{ id: '1' }])); // first exists
-          if (callIndex === 2) return Promise.resolve(okResult([])); // second new
+          if (callIndex === 1) return Promise.resolve(okResult([{ id: '1' }])); // first exists → SELECT returns id
+          if (callIndex === 2) return Promise.resolve(okResult([])); // second new → SELECT returns empty
           return Promise.resolve(okResult([]));
         });
 
@@ -2322,7 +2325,9 @@ describe('SurrealDatabaseService', () => {
         ]);
 
         expect(mockUpdate).toHaveBeenCalledTimes(1);
-        expect(mockCreate).toHaveBeenCalledTimes(1);
+        // createRecord uses queryDb, not db.create().content()
+        const createCalls = mockQuery.mock.calls.filter((c) => String(c[0]).includes('CREATE'));
+        expect(createCalls.length).toBe(1);
       });
 
       it('does nothing when rows array is empty', async () => {
@@ -2330,7 +2335,6 @@ describe('SurrealDatabaseService', () => {
 
         expect(mockQuery).not.toHaveBeenCalled();
         expect(mockUpdate).not.toHaveBeenCalled();
-        expect(mockCreate).not.toHaveBeenCalled();
       });
 
       it('throws when SELECT query fails', async () => {

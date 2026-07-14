@@ -4,16 +4,19 @@
 
 export interface ChunkRecord {
   chunkId: string;
-  slug: string;
   text: string;
   title: string;
   date: string;
   tags: string[];
   section: string;
   embedding: number[];
-  type: string;
 }
 
+/**
+ * Stored chunk with parent identity derived from has_chunks edge traversal.
+ * `slug` and `type` are populated from the parent record (page_posts/page_experience)
+ * via edge traversal, NOT stored on the chunk itself.
+ */
 export interface StoredChunk {
   id: string;
   text: string;
@@ -21,8 +24,10 @@ export interface StoredChunk {
   date: string;
   tags: string[];
   section: string;
+  /** Parent record slug — derived from has_chunks edge traversal */
   slug: string;
   embedding: number[];
+  /** Parent record type — derived from has_chunks edge traversal */
   type: 'post' | 'experience';
 }
 
@@ -309,7 +314,7 @@ export interface IContentRepo {
   // parentSlug non-null → set to the parent's record ID via subquery
   updatePartOfSeries(slug: string, parentSlug: string | null): Promise<void>;
 
-  getPosts(slug?: string): Promise<Post[]>;
+  getPosts(opts?: { slug?: string; sort?: 'date' | 'title'; order?: 'asc' | 'desc'; limit?: number }): Promise<Post[]>;
   getExperience(slug?: string): Promise<ExperienceEntry[]>;
   getRelatedBusinessPages(slug: string): Promise<string[]>;
 }
@@ -350,21 +355,41 @@ export interface ILlmCacheRepo {
   getCacheStats(): Promise<CacheStats>;
 }
 
-export interface IRateLimitRepo {
-  getRateLimit(ip: string): Promise<RateLimitResult>;
-  incrementRateLimit(ip: string): Promise<void>;
-  resetRateLimit(ip: string): Promise<void>;
-  cleanupExpired(): Promise<void>;
+/**
+ * Edge connecting a parent record (page_posts/page_experience) to its chunks.
+ * Schema: page_posts:xxx --has_chunks--> chunks:xxx_chunk_0
+ */
+export interface HasChunkEdge {
+  /** Parent record table + id (e.g., 'page_posts:my-post-slug') */
+  parentTable: 'page_posts' | 'page_experience';
+  /** Parent record slug */
+  parentSlug: string;
+  /** Chunk table + id (e.g., 'chunks:my-post-slug_chunk_0') */
+  chunkId: string;
 }
 
 export interface IVectorRepo {
-  // Bulk upsert chunks. For each row, UPSERT by chunk_id (has UNIQUE index)
-  upsertChunks(rows: ChunkRecord[]): Promise<void>;
+  /** Bulk upsert chunks. For each row, UPSERT by chunk_id (has UNIQUE index). Chunks no longer store slug/type. */
+  upsertChunks(rows: ChunkRecord[]): Promise<string[]>;
 
-  // Delete all chunks whose chunk_id starts with the given slug
-  // Use string::starts_with(chunk_id, slug_prefix) in SurrealQL
+  /**
+   * Create has_chunks edges connecting a parent record to its chunks.
+   * @param parentTable - 'page_posts' or 'page_experience'
+   * @param parentSlug - slug of the parent record
+   * @param chunkIds - array of chunk chunk_id values to connect
+   */
+  createEdges(parentTable: 'page_posts' | 'page_experience', parentSlug: string, chunkIds: string[]): Promise<void>;
+
+  /** Delete all chunks and their has_chunks edges for a given parent slug. */
   deleteChunksBySlug(slug: string): Promise<void>;
 
+  /**
+   * Search chunks by embedding similarity.
+   * Traverses has_chunks edges to populate slug/type from parent records.
+   * @param embedding - query vector
+   * @param limit - max results
+   * @param typeFilter - optional filter on parent type ('post' | 'experience')
+   */
   searchChunks(embedding: number[], limit?: number, typeFilter?: 'post' | 'experience'): Promise<SearchResult[]>;
 }
 
@@ -422,7 +447,6 @@ export interface IDatabaseService {
   contactIntents: IContactIntentRepo;
   userAgents: IUserAgentRepo;
   llmCache: ILlmCacheRepo;
-  rateLimit: IRateLimitRepo;
   vector: IVectorRepo;
   models: IModelRepo;
   featureTours: IFeatureTourRepo;
