@@ -88,7 +88,6 @@ const SCHEMA_TABLES = [
 
   `DEFINE TABLE IF NOT EXISTS messages SCHEMAFULL;`,
   `DEFINE FIELD IF NOT EXISTS user_id ON TABLE messages TYPE option<record<users>>;`,
-  `DEFINE FIELD IF NOT EXISTS chat_id ON TABLE messages TYPE option<record<chats>>;`,
   `DEFINE FIELD IF NOT EXISTS role ON TABLE messages TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS content ON TABLE messages TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS sources ON TABLE messages TYPE option<string>;`,
@@ -175,7 +174,7 @@ const SCHEMA_TABLES = [
   `DEFINE FIELD IF NOT EXISTS section ON TABLE chunks TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS embedding ON TABLE chunks TYPE option<array<float>>;`,
 
-  `DEFINE TABLE IF NOT EXISTS has_chunks TYPE RELATION IN page_posts,page_experience OUT chunks SCHEMAFULL;`,
+  `DEFINE TABLE IF NOT EXISTS has_chunk TYPE RELATION IN page_posts | page_experience OUT chunks SCHEMAFULL;`,
 
   `DEFINE TABLE IF NOT EXISTS leads SCHEMAFULL;`,
   `DEFINE FIELD IF NOT EXISTS user_id ON TABLE leads TYPE option<record<users>>;`,
@@ -231,6 +230,10 @@ const SCHEMA_TABLES = [
   // used_model relation: messages -> used_model -> models
   `DEFINE TABLE IF NOT EXISTS used_model TYPE RELATION IN messages OUT models SCHEMAFULL;`,
   `DEFINE FIELD IF NOT EXISTS created_at ON TABLE used_model TYPE option<datetime> DEFAULT time::now();`,
+
+  // has_message relation: chats -> has_message -> messages
+  `DEFINE TABLE IF NOT EXISTS has_message TYPE RELATION IN chats OUT messages SCHEMAFULL;`,
+  `DEFINE FIELD IF NOT EXISTS created_at ON TABLE has_message TYPE option<datetime> DEFAULT time::now();`,
 ];
 
 /**
@@ -246,7 +249,7 @@ const CLEAN_TABLES = [
   'page_posts',
   'page_experience',
   'chunks',
-  'has_chunks',
+  'has_chunk',
   'leads',
   'contact_intents',
   'user_agents',
@@ -255,6 +258,7 @@ const CLEAN_TABLES = [
   'centroids',
   'feature_tours',
   'used_model',
+  'has_message',
 ];
 
 // ===========================================================================

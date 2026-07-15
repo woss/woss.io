@@ -609,7 +609,7 @@ export async function buildIndex(): Promise<void> {
       newChunks += rows.length;
       log.debug`    ↳ ${rows.length} chunks indexed`;
 
-      // Create has_chunks edges connecting parent record to chunks
+      // Create has_chunk edges connecting parent record to chunks
       const parentTable = entry.type === 'post' ? 'page_posts' : 'page_experience';
       await db.vector.createEdges(parentTable, entry.slug, chunkIds);
     } catch (err) {

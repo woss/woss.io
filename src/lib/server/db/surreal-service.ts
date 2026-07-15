@@ -137,7 +137,6 @@ function toStoredMessage(row: Record<string, unknown>): StoredMessage {
   return {
     id: row.id as string,
     userId: stripPrefix(row.user_id),
-    chatId: row.chat_id != null ? stripPrefix(row.chat_id) : null,
     role: row.role as 'user' | 'assistant' | 'system',
     content: row.content as string,
     sources: Array.isArray(row.sources) ? JSON.stringify(row.sources) : ((row.sources as string) ?? ''),
@@ -169,7 +168,11 @@ function toChat(row: Record<string, unknown>): Chat {
     createdAt: toDateString(row.created_at),
     messageCount:
       typeof row.messageCount === 'object' && row.messageCount !== null
-        ? Number((row.messageCount as Record<string, unknown>).count ?? 0)
+        ? Number(
+            (Array.isArray(row.messageCount)
+              ? (row.messageCount as Record<string, unknown>[])[0]?.count
+              : (row.messageCount as Record<string, unknown>).count) ?? 0,
+          )
         : Number(row.messageCount ?? 0),
     deletedAt: row.deleted_at != null ? toDateString(row.deleted_at) : undefined,
     locked: row.locked as boolean | undefined,
@@ -296,7 +299,7 @@ class ChatRepo implements IChatRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT count() FROM messages WHERE meta::id(chat_id) = meta::id($parent.id) AND role = 'user' AND deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE user_id = $userId AND deleted_at IS NONE ORDER BY created_at DESC`,
+      `SELECT *, meta::id(id) AS id, (SELECT count() FROM has_message WHERE in = $parent.id AND out.role = 'user' AND out.deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE user_id = $userId AND deleted_at IS NONE ORDER BY created_at DESC`,
       { userId: new RecordId('users', userId) },
     );
     return rows.map(toChat);
@@ -306,7 +309,7 @@ class ChatRepo implements IChatRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT count() FROM messages WHERE meta::id(chat_id) = meta::id($parent.id) AND role = 'user' AND deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE id = $chatId AND deleted_at IS NONE`,
+      `SELECT *, meta::id(id) AS id, (SELECT count() FROM has_message WHERE in = $parent.id AND out.role = 'user' AND out.deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE id = $chatId AND deleted_at IS NONE`,
       { chatId: new RecordId('chats', chatId) },
     );
     if (rows.length === 0) return undefined;
@@ -343,7 +346,7 @@ class ChatRepo implements IChatRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT count() AS count FROM messages WHERE chat_id = $chatId AND role = $role AND deleted_at IS NONE GROUP ALL`,
+      `SELECT count() AS count FROM has_message WHERE in = $chatId AND out.role = $role AND out.deleted_at IS NONE GROUP ALL`,
       { chatId: new RecordId('chats', chatId), role: 'user' },
     );
     return (rows[0]?.count as number) ?? 0;
@@ -392,7 +395,11 @@ class ChatRepo implements IChatRepo {
 
   async clearChatMessages(chatId: string): Promise<void> {
     const db = this.db();
-    await queryDb(db, `DELETE messages WHERE chat_id = $chatId`, { chatId: new RecordId('chats', chatId) });
+    await queryDb(db, `DELETE $chatId->has_message->messages`, {
+      chatId: new RecordId('chats', chatId),
+    });
+    // Clean up edges
+    await queryDb(db, `DELETE has_message WHERE in = $chatId`, { chatId: new RecordId('chats', chatId) });
   }
 
   async getChatSummaryForApi(chatId: string): Promise<ChatSummary | undefined> {
@@ -407,14 +414,14 @@ class ChatRepo implements IChatRepo {
 
     const countRows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT count() AS count FROM messages WHERE chat_id = $chatId AND role = $role AND deleted_at IS NONE GROUP ALL`,
+      `SELECT count() AS count FROM has_message WHERE in = $chatId AND out.role = $role AND out.deleted_at IS NONE GROUP ALL`,
       { chatId: new RecordId('chats', chatId), role: 'user' },
     );
     const messageCount = (countRows[0]?.count as number) ?? 0;
 
     const lastRows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT MAX(created_at) AS lastAt FROM messages WHERE chat_id = $chatId GROUP ALL`,
+      `SELECT MAX(created_at) AS lastAt FROM $chatId->has_message->messages GROUP ALL`,
       { chatId: new RecordId('chats', chatId) },
     );
     const lastMessageAt = (lastRows[0]?.lastAt as string) ?? null;
@@ -462,7 +469,6 @@ class MessageRepo implements IMessageRepo {
       'messages',
       {
         user_id: new RecordId('users', params.userId),
-        chat_id: params.chatId != null ? new RecordId('chats', params.chatId) : null,
         role: params.role,
         content: params.content,
         sources: params.sources ?? '[]',
@@ -483,6 +489,13 @@ class MessageRepo implements IMessageRepo {
     );
     log.debug`[MessageRepo.addMessage] db.create(messages) completed, id=${id}`;
 
+    // Create has_message edge: chats:chatId -> has_message -> messages:msgId
+    if (params.chatId) {
+      await db.relate(new RecordId('chats', params.chatId), new Table('has_message'), new RecordId('messages', id), {
+        created_at: new Date(),
+      });
+    }
+
     return id;
   }
 
@@ -500,7 +513,7 @@ class MessageRepo implements IMessageRepo {
     const o = offset ?? 0;
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM messages WHERE chat_id = $chatId ORDER BY created_at ASC LIMIT $limit START $offset`,
+      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM $chatId->has_message->messages ORDER BY created_at ASC LIMIT $limit START $offset`,
       { chatId: new RecordId('chats', chatId), limit: l, offset: o },
     );
     return rows.map(toStoredMessage);
@@ -522,7 +535,7 @@ class MessageRepo implements IMessageRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM messages WHERE chat_id = $chatId ORDER BY created_at DESC LIMIT $count`,
+      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM $chatId->has_message->messages ORDER BY created_at DESC LIMIT $count`,
       { chatId: new RecordId('chats', chatId), count },
     );
     // Reverse to return in chronological order
@@ -1250,14 +1263,14 @@ class VectorRepo implements IVectorRepo {
     // Always backtick-quote IDs — slugs contain hyphens which break the parser
     // Batch all RELATEs into one query to stay in the same transaction context
     const src = `${parentTable}:\`${parentSlug}\``;
-    const stmts = chunkIds.map((chunkId) => `RELATE ${src} -> has_chunks -> chunks:\`${chunkId}\``).join('; ');
+    const stmts = chunkIds.map((chunkId) => `RELATE ${src} -> has_chunk -> chunks:\`${chunkId}\``).join('; ');
     await db.query(stmts);
   }
 
   async deleteChunksBySlug(slug: string): Promise<void> {
     const db = this.db();
     // Delete edges whose `in` references this slug (page_posts or page_experience)
-    const allEdges = (await db.select(new Table('has_chunks'))) as unknown as Array<
+    const allEdges = (await db.select(new Table('has_chunk'))) as unknown as Array<
       Record<string, unknown> & { id: RecordId; in: RecordId }
     >;
     const parentTables = ['page_posts', 'page_experience'];
@@ -1299,7 +1312,7 @@ class VectorRepo implements IVectorRepo {
 
     // Step 2: Batch-fetch edges to resolve parent slug/type
     // 240 edges is tiny — full fetch is faster than a filtered query with IN clauses
-    const allEdges = (await db.select(new Table('has_chunks'))) as unknown as Array<{
+    const allEdges = (await db.select(new Table('has_chunk'))) as unknown as Array<{
       in: RecordId;
       out: RecordId;
       id: RecordId;

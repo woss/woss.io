@@ -8,29 +8,6 @@
 -- =============================================================================
 
 -- =============================================================================
--- Drop all 17 tables first (idempotent — no-op if already removed)
--- =============================================================================
-REMOVE TABLE chunks;
-REMOVE TABLE has_chunks;
-REMOVE TABLE users;
-REMOVE TABLE messages;
-REMOVE TABLE page_posts;
-REMOVE TABLE page_experience;
-REMOVE TABLE llm_cache;
-REMOVE TABLE models;
-REMOVE TABLE reactions;
-REMOVE TABLE chats;
-REMOVE TABLE chat_events;
-REMOVE TABLE leads;
-REMOVE TABLE contact_intents;
-REMOVE TABLE user_agents;
-REMOVE TABLE used_model;
-REMOVE TABLE tool_calls;
-REMOVE TABLE rate_limits;
-REMOVE TABLE feature_tours;
-REMOVE TABLE centroids;
-
--- =============================================================================
 -- 1. chunks — Document chunks with text embeddings for semantic search
 -- =============================================================================
 DEFINE TABLE chunks SCHEMAFULL;
@@ -47,11 +24,11 @@ DEFINE INDEX idx_chunks_chunk_id ON TABLE chunks FIELDS chunk_id UNIQUE;
 -- ANN vector search not supported in SurrealDB 3.0.5 (falls back to brute-force vector::distance::cosine)
 
 -- =============================================================================
--- 1b. has_chunks — Edge table connecting page_posts/page_experience → chunks
+-- 1b. has_chunk — Edge table connecting page_posts/page_experience → chunks
 -- =============================================================================
--- Schema: page_posts:xxx --has_chunks--> chunks:xxx_chunk_0
--- Parent slug/type derived via <-has_chunks.in traversal (no slug/type on chunks)
-DEFINE TABLE has_chunks TYPE RELATION IN page_posts | page_experience OUT chunks SCHEMAFULL;
+-- Schema: page_posts:xxx --has_chunk--> chunks:xxx_chunk_0
+-- Parent slug/type derived via <-has_chunk.in traversal (no slug/type on chunks)
+DEFINE TABLE has_chunk TYPE RELATION IN page_posts | page_experience OUT chunks SCHEMAFULL;
 
 -- =============================================================================
 -- 2. users — Platform users
@@ -70,7 +47,7 @@ DEFINE INDEX idx_users_email ON TABLE users FIELDS email UNIQUE;
 DEFINE TABLE messages SCHEMAFULL;
 
 DEFINE FIELD user_id      ON TABLE messages TYPE record<users> REFERENCE ASSERT $value != NONE;
-DEFINE FIELD chat_id      ON TABLE messages TYPE option<record<chats>> REFERENCE;
+-- chat_id removed — replaced by edge table has_message
 DEFINE FIELD role         ON TABLE messages TYPE string ASSERT $value != NONE;
 DEFINE FIELD content      ON TABLE messages TYPE string ASSERT $value != NONE;
 DEFINE FIELD sources      ON TABLE messages TYPE string DEFAULT '[]';
@@ -89,13 +66,15 @@ DEFINE FIELD user_agent_id ON TABLE messages TYPE option<record<user_agents>> RE
 DEFINE FIELD trace_id     ON TABLE messages TYPE option<string> | null;
 DEFINE FIELD from_cache   ON TABLE messages TYPE bool DEFAULT false;
 
-DEFINE INDEX idx_messages_chat_role_deleted ON TABLE messages FIELDS chat_id, role, deleted_at;
-DEFINE INDEX idx_messages_chat_created ON TABLE messages FIELDS chat_id, created_at;
 DEFINE INDEX idx_messages_user ON TABLE messages FIELDS user_id;
 
 -- 3b. used_model — Graph edge from message to model (replaces messages.model_id)
 DEFINE TABLE used_model TYPE RELATION SCHEMAFULL;
 DEFINE FIELD created_at ON TABLE used_model TYPE datetime DEFAULT time::now();
+
+-- 3c. has_message — Graph edge from chat to message (replaces messages.chat_id REFERENCE)
+DEFINE TABLE has_message TYPE RELATION IN chats OUT messages SCHEMAFULL;
+DEFINE FIELD created_at ON TABLE has_message TYPE datetime DEFAULT time::now();
 
 -- =============================================================================
 -- 4. page_posts — Blog posts and pages with content, series support
@@ -296,3 +275,19 @@ DEFINE FIELD hash   ON TABLE centroids TYPE string;
 DEFINE FIELD updated ON TABLE centroids TYPE datetime DEFAULT time::now();
 
 DEFINE INDEX idx_centroids_class ON TABLE centroids FIELDS class UNIQUE;
+
+-- =============================================================================
+-- Data Migration: Create has_message edges from existing chat_id values
+-- =============================================================================
+-- Verify chat_id data exists before migration
+LET $before_count = (SELECT count() FROM messages WHERE chat_id IS NOT NONE);
+INFO::"Messages with chat_id before migration: " + <string>$before_count;
+
+-- Create has_message edges: chats:chat_id -> has_message -> messages:id
+FOR $msg IN SELECT id, chat_id FROM messages WHERE chat_id IS NOT NONE {
+    RELATE $msg.chat_id->has_message->$msg.id SET created_at = time::now();
+};
+
+-- Verify edge count matches original chat_id count
+LET $after_count = (SELECT count() FROM has_message);
+INFO::"has_message edges created: " + <string>$after_count;

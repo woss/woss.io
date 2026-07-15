@@ -13,7 +13,7 @@ export interface ChunkRecord {
 }
 
 /**
- * Stored chunk with parent identity derived from has_chunks edge traversal.
+ * Stored chunk with parent identity derived from has_chunk edge traversal.
  * `slug` and `type` are populated from the parent record (page_posts/page_experience)
  * via edge traversal, NOT stored on the chunk itself.
  */
@@ -24,10 +24,10 @@ export interface StoredChunk {
   date: string;
   tags: string[];
   section: string;
-  /** Parent record slug — derived from has_chunks edge traversal */
+  /** Parent record slug — derived from has_chunk edge traversal */
   slug: string;
   embedding: number[];
-  /** Parent record type — derived from has_chunks edge traversal */
+  /** Parent record type — derived from has_chunk edge traversal */
   type: 'post' | 'experience';
 }
 
@@ -49,7 +49,6 @@ export interface ToolCallRecord {
 export interface StoredMessage {
   id: string;
   userId: string;
-  chatId: string | null;
   role: 'user' | 'assistant' | 'system';
   content: string;
   sources: string;
@@ -357,7 +356,7 @@ export interface ILlmCacheRepo {
 
 /**
  * Edge connecting a parent record (page_posts/page_experience) to its chunks.
- * Schema: page_posts:xxx --has_chunks--> chunks:xxx_chunk_0
+ * Schema: page_posts:xxx --has_chunk--> chunks:xxx_chunk_0
  */
 export interface HasChunkEdge {
   /** Parent record table + id (e.g., 'page_posts:my-post-slug') */
@@ -373,19 +372,19 @@ export interface IVectorRepo {
   upsertChunks(rows: ChunkRecord[]): Promise<string[]>;
 
   /**
-   * Create has_chunks edges connecting a parent record to its chunks.
+   * Create has_chunk edges connecting a parent record to its chunks.
    * @param parentTable - 'page_posts' or 'page_experience'
    * @param parentSlug - slug of the parent record
    * @param chunkIds - array of chunk chunk_id values to connect
    */
   createEdges(parentTable: 'page_posts' | 'page_experience', parentSlug: string, chunkIds: string[]): Promise<void>;
 
-  /** Delete all chunks and their has_chunks edges for a given parent slug. */
+  /** Delete all chunks and their has_chunk edges for a given parent slug. */
   deleteChunksBySlug(slug: string): Promise<void>;
 
   /**
    * Search chunks by embedding similarity.
-   * Traverses has_chunks edges to populate slug/type from parent records.
+   * Traverses has_chunk edges to populate slug/type from parent records.
    * @param embedding - query vector
    * @param limit - max results
    * @param typeFilter - optional filter on parent type ('post' | 'experience')
