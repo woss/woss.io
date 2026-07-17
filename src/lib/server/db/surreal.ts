@@ -12,7 +12,10 @@
  * ```
  */
 
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { Surreal, createRemoteEngines } from 'surrealdb';
+import { createLogger, CAT } from '$lib/server/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,6 +65,53 @@ async function loadEnv(): Promise<SurrealOptions> {
 }
 
 // ---------------------------------------------------------------------------
+// Schema application
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply `schema.surql` to the connected database.
+ *
+ * Statements are idempotent DEFINE TABLE/FIELD/INDEX — safe to run on every
+ * startup. If the schema file is missing a warning is logged and the app
+ * continues without error.
+ */
+async function applySchema(db: Surreal): Promise<void> {
+  const log = createLogger(CAT.db);
+  const schemaPath = resolve(process.cwd(), 'src/scripts/schema.surql');
+
+  let raw: string;
+  try {
+    raw = readFileSync(schemaPath, 'utf-8');
+  } catch {
+    log.warn(`Schema file not found at ${schemaPath} — skipping schema application`);
+    return;
+  }
+
+  const stmts = raw
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n')
+    .split(';\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  let applied = 0;
+  for (const stmt of stmts) {
+    try {
+      await db.query(stmt);
+      applied++;
+    } catch (cause) {
+      const msg = (cause as Error).message ?? '';
+      if (/already exists/i.test(msg)) {
+        continue;
+      }
+      log.warn(`Schema statement failed: ${msg}\n  Statement: ${stmt.slice(0, 120)}`);
+    }
+  }
+  log.info(`Schema applied: ${applied} statements`);
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -94,6 +144,8 @@ export async function initSurreal(opts?: SurrealOptions): Promise<Surreal> {
         database: dbName,
         authentication: { username: user, password: pass },
       });
+
+      await applySchema(db);
 
       _db = db;
       _initialized = true;

@@ -18,6 +18,8 @@ vi.mock('$lib/server/db/index', () => ({
   db: {
     messages: {
       addMessage: vi.fn(() => 'msg-42'),
+      createMessageForStreaming: vi.fn(() => 'msg-42'),
+      finalizeMessage: vi.fn(),
       setMessageQueryType: vi.fn(),
     },
     vector: {

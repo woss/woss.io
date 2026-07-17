@@ -6,7 +6,7 @@ import { initSurreal, closeSurreal } from '../lib/server/db/surreal';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const sql = readFileSync(resolve(import.meta.dirname, 'migrate.surql'), 'utf-8');
+const sql = readFileSync(resolve(import.meta.dirname, 'schema.surql'), 'utf-8');
 
 // Extract individual statements (terminated by ;), strip comments and blank lines
 const statements = sql
@@ -17,7 +17,7 @@ const statements = sql
   .map((s) => s.trim() + ';')
   .filter((s) => s.length > 1); // more than just ";"
 
-console.log(`Running ${statements.length} statements from migrate.surql...\n`);
+console.log(`Running ${statements.length} statements from schema.surql...\n`);
 
 const db = await initSurreal();
 

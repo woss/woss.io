@@ -30,3 +30,5 @@ List of coding tools:
 - [opencode zen](https://opencode.ai/zen?ref=woss.io) (because it gets me the top models)
 - fable 5 for planing and reasoning
 - glm-5.2 and deepseek-v4-flash for coding
+
+## The Journey

@@ -81,7 +81,7 @@ Service layer lives at `src/lib/server/db/` — see [`interfaces.ts`](../src/lib
 | 13  | contact_intents | user_id→users, chat_id→chats                                        | —                                                |
 | 14  | user_agents     | —                                                                   | UNIQUE on ua                                     |
 | 15  | rate_limits     | —                                                                   | —                                                |
-| 16  | feature_tours   | user_id→users                                                       | UNIQUE (user_id, feature_id)                     |
+| 16  | feature_tours   | via `has_tour` graph edge (users → feature_tours)                   | — (unique enforced via edge + feature_id)        |
 
 Key SurrealDB type mappings:
 

@@ -15,6 +15,7 @@ import type { LLMEvent, FinishReason, TokenUsage } from './llm/types';
 import type { ModelMessage, ToolSet } from 'ai';
 import type { McpToolCallResult } from './mcp/client';
 import { getSystemPrompt } from './prompts.ts';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 
 /** @group LLMEvent Factory Functions */
 
@@ -98,6 +99,7 @@ function toModelMessages(messages: ChatMessage[]): Array<ModelMessage> {
 }
 
 const log = createLogger(CAT.llm);
+const tracer = trace.getTracer('woss-llm');
 
 /** @group Types */
 
@@ -256,6 +258,16 @@ export function chatStreamWithTools(
   mcpToolDefs: McpToolDef[],
   signal?: AbortSignal,
 ): StreamType<LLMEvent, Error> {
+  const span = tracer.startSpan('gen_ai.chat', {
+    attributes: {
+      'gen_ai.system': 'openai',
+      'gen_ai.request.model': MODEL,
+      'gen_ai.request.max_tokens': MAX_TOKENS ?? 0,
+      'gen_ai.request.temperature': 0.2,
+      'gen_ai.request.tools': mcpToolDefs?.length ?? 0,
+    },
+  });
+
   return Stream.asyncPush<LLMEvent, Error>(
     (emit) =>
       Effect.acquireRelease(
@@ -548,6 +560,15 @@ export function chatStreamWithTools(
                 ),
               );
               emit.end();
+
+              span.setAttributes({
+                'gen_ai.response.model': actualModelName,
+                'gen_ai.usage.input_tokens': aggregatedUsage?.inputTokens ?? 0,
+                'gen_ai.usage.output_tokens': aggregatedUsage?.outputTokens ?? 0,
+                'gen_ai.usage.total_tokens': aggregatedUsage?.totalTokens ?? 0,
+                'gen_ai.finish_reason': lastFinishReason,
+              });
+              span.end();
             })
             .catch((err: unknown) => {
               if (aborted) return;
@@ -560,6 +581,11 @@ export function chatStreamWithTools(
               } else {
                 emit.fail(err instanceof Error ? err : new Error(String(err)));
               }
+
+              const error = err instanceof Error ? err : new Error(String(err));
+              span.recordException(error);
+              span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+              span.end();
             });
 
           return Effect.sync(() => {

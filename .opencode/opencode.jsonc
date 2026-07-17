@@ -43,8 +43,9 @@
     }
   },
   "plugin": [
-    // "@tarquinen/opencode-dcp@3.1.13",
-    // "@franlol/opencode-md-table-formatter@0.0.6",
+    "@datadog/opencode-plugin",
+    "@tarquinen/opencode-dcp@3.1.13",
+    "@franlol/opencode-md-table-formatter@0.0.6",
     "caveman-opencode-plugin@latest",
     // "./plugins/notify.ts",
     // "./plugins/background-agents.ts",

@@ -230,6 +230,25 @@ export interface IChatRepo {
 
 export interface IMessageRepo {
   addMessage(params: AddMessageParams): Promise<string>;
+  createMessageForStreaming(
+    params: Pick<AddMessageParams, 'userId' | 'chatId' | 'role' | 'queryType' | 'userAgentId' | 'msgId'>,
+  ): Promise<string>;
+  finalizeMessage(
+    msgId: string,
+    updates: Pick<
+      AddMessageParams,
+      | 'content'
+      | 'sources'
+      | 'reasoning'
+      | 'tokensIn'
+      | 'tokensOut'
+      | 'durationMs'
+      | 'maxTokens'
+      | 'irrecoverable'
+      | 'error'
+      | 'fromCache'
+    >,
+  ): Promise<void>;
   setMessageModel(msgId: string, modelId: string): Promise<void>;
   getMessages(chatId: string, limit?: number, offset?: number): Promise<StoredMessage[]>;
   getMessagesByUserId(userId: string, limit?: number, offset?: number): Promise<StoredMessage[]>;

@@ -45,7 +45,6 @@ import type {
   CacheHit,
   CacheEntry,
   CacheStats,
-  RateLimitResult,
   UserAgentRecord,
   Post,
   ExperienceEntry,
@@ -90,7 +89,9 @@ async function createRecord<T = Record<string, unknown>>(
     const recordId = new RecordId(table, String(id));
     return (await db.create(recordId).content(compactData).output('after')) as T;
   }
-  return (await db.create(new Table(table)).content(compactData).output('after')) as T;
+  // db.create(Table) returns RecordResult<T>[] — extract the first element
+  const results = (await db.create(new Table(table)).content(compactData).output('after')) as T[];
+  return results[0] as T;
 }
 
 /**
@@ -110,11 +111,6 @@ function stripPrefix(recordId: unknown): string {
 }
 
 /**
- * Remove entries with `undefined` values from an object so SurrealDB does not
- * receive `undefined` in its query variables (which can cause serialisation
- * issues).  `null` values are preserved so callers can explicitly clear a field.
- */
-/**
  * Safely convert a SurrealDB datetime value (Date or string) to an ISO string.
  * SurrealDB SDK v2 returns Date objects for datetime fields — `as string` casts
  * only suppress the TS error without runtime conversion.
@@ -125,8 +121,14 @@ function toDateString(val: unknown): string {
   return '';
 }
 
+/**
+ * Remove entries with `undefined` or `null` values from an object so SurrealDB
+ * does not receive them in query variables.  `null` is no longer preserved
+ * because SurrealDB 3.x SCHEMAFULL tables reject NULL for `option<type>`
+ * columns that lack `| null` in their definition.
+ */
 function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
-  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>;
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null)) as Partial<T>;
 }
 
 /**
@@ -163,7 +165,21 @@ function toStoredMessage(row: Record<string, unknown>): StoredMessage {
 function toChat(row: Record<string, unknown>): Chat {
   return {
     id: row.id as string,
-    userId: stripPrefix(row.user_id),
+    // SurrealDB subquery returns [{ "meta::id(in)": "uuid" }] — extract the value
+    userId: stripPrefix(
+      (() => {
+        const raw = row.userId ?? row.user_id;
+        if (Array.isArray(raw)) {
+          const first = raw[0];
+          // Subquery row object: extract the value from the object
+          if (first && typeof first === 'object' && !Array.isArray(first)) {
+            return Object.values(first)[0];
+          }
+          return first;
+        }
+        return raw;
+      })(),
+    ),
     title: (row.title as string) ?? '',
     createdAt: toDateString(row.created_at),
     messageCount:
@@ -218,25 +234,35 @@ class UserRepo implements IUserRepo {
     const updates = compact({ email, name });
     if (Object.keys(updates).length === 0) {
       // UPSERT: create user if absent, no-op if already exists
-      await queryDb(db, `UPSERT type::record('users', $id)`, { id: userId });
+      await queryDb(db, `UPSERT $id`, { id: new RecordId('users', userId) });
       return;
     }
     await queryDb(
       db,
-      `UPSERT type::record('users', $id) SET ${Object.keys(updates)
+      `UPSERT $id SET ${Object.keys(updates)
         .map((k) => `${k} = $${k}`)
         .join(', ')}`,
-      { id: userId, ...updates },
+      { id: new RecordId('users', userId), ...updates },
     );
   }
 
   async getOrCreateUser(userId: string, email?: string, name?: string): Promise<UserRecord> {
     const db = this.db();
-    await queryDb(db, `UPSERT type::record('users', $id) SET email = $email, name = $name`, {
-      id: userId,
-      email: email ?? null,
-      name: name ?? null,
-    });
+    const parts: string[] = [];
+    const vars: Record<string, unknown> = { id: new RecordId('users', userId) };
+    if (email != null) {
+      parts.push('email = $email');
+      vars.email = email;
+    }
+    if (name != null) {
+      parts.push('name = $name');
+      vars.name = name;
+    }
+    if (parts.length > 0) {
+      await queryDb(db, `UPSERT $id SET ${parts.join(', ')}`, vars);
+    } else {
+      await queryDb(db, 'UPSERT $id SET _ = true', vars);
+    }
     const row = await db.select(new RecordId('users', userId));
     if (!row) throw new Error('getOrCreateUser returned no rows');
     const raw = row as Record<string, unknown>;
@@ -271,36 +297,59 @@ class ChatRepo implements IChatRepo {
 
   async ensureChat(chatId: string, userId: string): Promise<void> {
     const db = this.db();
-    await queryDb(db, `UPSERT type::record('chats', $chatId) SET user_id = type::record('users', $userId)`, {
-      chatId,
-      userId,
-    });
+    const existing = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT id FROM has_chat WHERE in = $userId AND out = $chatId`,
+      { userId: new RecordId('users', userId), chatId: new RecordId('chats', chatId) },
+    );
+    if (existing.length === 0) {
+      await queryDb(db, `RELATE $userId->has_chat->$chatId`, {
+        userId: new RecordId('users', userId),
+        chatId: new RecordId('chats', chatId),
+      });
+    }
   }
 
   async createChat(userId: string, title?: string, userAgentId?: number): Promise<string> {
     const db = this.db();
     const chatId = randomUUID();
-    console.log('creating chat', { userId, title, userAgentId, chatId });
+    log.debug`[ChatRepo.createChat] userId=${userId} title=${title} userAgentId=${userAgentId} chatId=${chatId}`;
     await createRecord(
       db,
       'chats',
       {
-        user_id: new RecordId('users', userId),
         title: title ?? 'New Chat',
         user_agent_id: userAgentId != null ? new RecordId('user_agents', userAgentId) : null,
         created_at: new Date(),
       },
       chatId,
     );
+    await queryDb(db, `RELATE $userId->has_chat->$chatId`, {
+      userId: new RecordId('users', userId),
+      chatId: new RecordId('chats', chatId),
+    });
     return chatId;
   }
 
   async getChats(userId: string): Promise<Chat[]> {
     const db = this.db();
+    // Step 1: Get chat record IDs via graph traversal (INSIDE broken in SurrealDB 3.1.4)
+    const refs = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT ->has_chat->chats AS chatRefs FROM type::record('users', $userId) LIMIT 1`,
+      { userId },
+    );
+    const chatRefs = (refs[0]?.chatRefs as string[]) ?? [];
+    if (chatRefs.length === 0) return [];
+
+    // Step 2: Query chats with subqueries for userId and messageCount
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT count() FROM has_message WHERE in = $parent.id AND out.role = 'user' AND out.deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE user_id = $userId AND deleted_at IS NONE ORDER BY created_at DESC`,
-      { userId: new RecordId('users', userId) },
+      `SELECT meta::id(id) AS id, title, created_at, user_agent_id, off_topic_count, locked,
+       (SELECT meta::id(in) FROM has_chat WHERE out = $parent.id LIMIT 1) AS userId,
+       (SELECT count() FROM has_message WHERE in = $parent.id AND out.role = 'user' AND out.deleted_at IS NONE GROUP ALL) AS messageCount
+       FROM $chats WHERE deleted_at IS NONE ORDER BY created_at DESC`,
+      { chats: chatRefs },
     );
     return rows.map(toChat);
   }
@@ -309,7 +358,7 @@ class ChatRepo implements IChatRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT count() FROM has_message WHERE in = $parent.id AND out.role = 'user' AND out.deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE id = $chatId AND deleted_at IS NONE`,
+      `SELECT *, meta::id(id) AS id, (SELECT meta::id(in) FROM has_chat WHERE out = $parent.id LIMIT 1) AS userId, (SELECT count() FROM has_message WHERE in = $parent.id AND out.role = 'user' AND out.deleted_at IS NONE GROUP ALL) AS messageCount FROM chats WHERE id = $chatId AND deleted_at IS NONE`,
       { chatId: new RecordId('chats', chatId) },
     );
     if (rows.length === 0) return undefined;
@@ -354,10 +403,20 @@ class ChatRepo implements IChatRepo {
 
   async getUserChatCount(userId: string): Promise<number> {
     const db = this.db();
+    // Step 1: Get chat record IDs via graph traversal (INSIDE broken in SurrealDB 3.1.4)
+    const refs = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT ->has_chat->chats AS chatRefs FROM type::record('users', $userId) LIMIT 1`,
+      { userId },
+    );
+    const chatRefs = (refs[0]?.chatRefs as string[]) ?? [];
+    if (chatRefs.length === 0) return 0;
+
+    // Step 2: Count non-deleted chats from those refs
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT count() AS count FROM chats WHERE user_id = $userId AND deleted_at IS NONE GROUP ALL`,
-      { userId: new RecordId('users', userId) },
+      `SELECT count() AS count FROM $chats WHERE deleted_at IS NONE GROUP ALL`,
+      { chats: chatRefs },
     );
     return (rows[0]?.count as number) ?? 0;
   }
@@ -385,9 +444,9 @@ class ChatRepo implements IChatRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `UPDATE type::record('chats', $chatId) SET off_topic_count += 1 RETURN off_topic_count`,
+      `UPDATE $chatId SET off_topic_count += 1 RETURN off_topic_count`,
       {
-        chatId,
+        chatId: new RecordId('chats', chatId),
       },
     );
     return rows.length > 0 ? ((rows[0]?.off_topic_count as number) ?? 1) : 1;
@@ -499,6 +558,88 @@ class MessageRepo implements IMessageRepo {
     return id;
   }
 
+  async createMessageForStreaming(
+    params: Pick<AddMessageParams, 'userId' | 'chatId' | 'role' | 'queryType' | 'userAgentId' | 'msgId'>,
+  ): Promise<string> {
+    const id = params.msgId ?? randomUUID();
+
+    // Ensure parent entities exist
+    await this.userRepo.ensureUser(params.userId);
+    if (params.chatId) {
+      await this.chatRepo.ensureChat(params.chatId, params.userId);
+    }
+
+    const db = this.db();
+    const traceCtx = getCurrentTraceContext();
+
+    // Create message record with empty content — will be updated by finalizeMessage
+    await createRecord(
+      db,
+      'messages',
+      {
+        user_id: new RecordId('users', params.userId),
+        role: params.role,
+        content: '',
+        sources: '[]',
+        reasoning: '',
+        created_at: new Date(),
+        tokens_in: 0,
+        tokens_out: 0,
+        duration_ms: 0,
+        max_tokens: 0,
+        query_type: params.queryType ?? null,
+        irrecoverable: false,
+        error: null,
+        user_agent_id: params.userAgentId != null ? new RecordId('user_agents', params.userAgentId) : undefined,
+        from_cache: false,
+        trace_id: traceCtx?.traceId ?? null,
+      },
+      id,
+    );
+
+    // Create has_message edge: chats:chatId -> has_message -> messages:msgId
+    if (params.chatId) {
+      await db.relate(new RecordId('chats', params.chatId), new Table('has_message'), new RecordId('messages', id), {
+        created_at: new Date(),
+      });
+    }
+
+    log.debug`[MessageRepo.createMessageForStreaming] created message ${id} for streaming`;
+    return id;
+  }
+
+  async finalizeMessage(
+    msgId: string,
+    updates: Pick<
+      AddMessageParams,
+      | 'content'
+      | 'sources'
+      | 'reasoning'
+      | 'tokensIn'
+      | 'tokensOut'
+      | 'durationMs'
+      | 'maxTokens'
+      | 'irrecoverable'
+      | 'error'
+      | 'fromCache'
+    >,
+  ): Promise<void> {
+    const db = this.db();
+    log.debug`[MessageRepo.finalizeMessage] msgId=${msgId}`;
+    await db.update(new RecordId('messages', msgId)).merge({
+      content: updates.content,
+      sources: updates.sources ?? '[]',
+      reasoning: updates.reasoning ?? '',
+      tokens_in: updates.tokensIn ?? 0,
+      tokens_out: updates.tokensOut ?? 0,
+      duration_ms: updates.durationMs ?? 0,
+      max_tokens: updates.maxTokens ?? 0,
+      irrecoverable: updates.irrecoverable ?? false,
+      error: updates.error ?? null,
+      from_cache: updates.fromCache ?? false,
+    });
+  }
+
   async setMessageModel(msgId: string, modelId: string): Promise<void> {
     const db = this.db();
     log.debug`[MessageRepo.setMessageModel] msgId=${msgId} modelId=${modelId}`;
@@ -587,13 +728,14 @@ class EventRepo implements IEventRepo {
       db,
       'chat_events',
       {
-        chat_id: new RecordId('chats', chatId),
         type,
         data: JSON.stringify(data),
+        chat_id: chatId,
         created_at: new Date(),
       },
       eventId,
     );
+
     log.debug`[EventsRepo.insertChatEvent] db.create completed, id=${eventId}`;
     return eventId;
   }
@@ -602,15 +744,15 @@ class EventRepo implements IEventRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT meta::id(id) AS id, meta::id(chat_id) AS chatId, type, data, created_at AS createdAt
+      `SELECT meta::id(id) AS id, type, data, chat_id, created_at AS createdAt
        FROM chat_events
-        WHERE meta::id(chat_id) = $chatId AND <int> meta::id(id) > $lastEventId
+       WHERE chat_id = $chatId AND <int> meta::id(id) > $lastEventId
        ORDER BY id ASC`,
       { chatId, lastEventId },
     );
     return rows.map((r) => ({
       id: Number(r.id),
-      chatId: String(r.chatId),
+      chatId: String(r.chat_id),
       type: String(r.type),
       data: JSON.parse(String(r.data)),
       createdAt: String(r.createdAt),
@@ -631,35 +773,58 @@ class ReactionRepo implements IReactionRepo {
     reactionType: 'up' | 'down' | 'heart',
     reason?: string,
   ): Promise<void> {
-    console.log(
-      '[ReactionRepo.setReaction] messageId=',
-      messageId,
-      'userId=',
-      userId,
-      'reactionType=',
-      reactionType,
-      'reason=',
-      reason,
-    );
+    log.debug`[ReactionRepo.setReaction] messageId=${messageId} userId=${userId} reactionType=${reactionType} reason=${reason}`;
     const db = this.db();
-    await queryDb(
+    // Check if user already has a reaction on this message
+    const existing = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `INSERT INTO reactions (message_id, user_id, reaction_type, reason, created_at) VALUES ($messageId, $userId, $reactionType, $reason, $createdAt) ON DUPLICATE KEY UPDATE reaction_type = $reactionType, reason = $reason, created_at = $createdAt`,
+      `SELECT id FROM reactions WHERE id IN (SELECT out FROM has_reaction WHERE in = $messageId) AND user_id = $userId LIMIT 1`,
       {
         messageId: new RecordId('messages', messageId),
         userId: new RecordId('users', userId),
-        reactionType,
-        reason: reason ?? '',
-        createdAt: new Date(),
       },
     );
+
+    if (existing.length > 0) {
+      // Update existing reaction
+      const reactionId = existing[0].id as RecordId;
+      await queryDb(
+        db,
+        `UPDATE $reactionId SET reaction_type = $reactionType, reason = $reason, created_at = $createdAt`,
+        {
+          reactionId,
+          reactionType,
+          reason: reason ?? '',
+          createdAt: new Date(),
+        },
+      );
+    } else {
+      // Create new reaction
+      const created = await queryDb<Array<Record<string, unknown>>>(
+        db,
+        `CREATE reactions CONTENT { user_id: $userId, reaction_type: $reactionType, reason: $reason, created_at: $createdAt } RETURN AFTER`,
+        {
+          userId: new RecordId('users', userId),
+          reactionType,
+          reason: reason ?? '',
+          createdAt: new Date(),
+        },
+      );
+
+      if (created.length > 0) {
+        const newReactionId = created[0].id as RecordId;
+        await db.relate(new RecordId('messages', messageId), new Table('has_reaction'), newReactionId, {
+          created_at: new Date(),
+        });
+      }
+    }
   }
 
   async getReaction(messageId: string, userId: string): Promise<ReactionResult | null> {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT * FROM reactions WHERE message_id = $messageId AND user_id = $userId LIMIT 1`,
+      `SELECT * FROM reactions WHERE id IN (SELECT out FROM has_reaction WHERE in = $messageId) AND user_id = $userId LIMIT 1`,
       {
         messageId: new RecordId('messages', messageId),
         userId: new RecordId('users', userId),
@@ -675,10 +840,15 @@ class ReactionRepo implements IReactionRepo {
 
   async deleteReaction(messageId: string, userId: string): Promise<void> {
     const db = this.db();
-    await queryDb(db, `DELETE reactions WHERE message_id = $messageId AND user_id = $userId`, {
-      messageId: new RecordId('messages', messageId),
-      userId: new RecordId('users', userId),
-    });
+    const msgId = new RecordId('messages', messageId);
+    const usrId = new RecordId('users', userId);
+    // Capture IDs first, then delete both in one transaction
+    await db.query(
+      `LET $rids = (SELECT id FROM reactions WHERE user_id = $usrId AND id IN (SELECT out FROM has_reaction WHERE in = $msgId));
+       DELETE has_reaction WHERE in = $msgId AND out IN $rids;
+       DELETE reactions WHERE id IN $rids;`,
+      { msgId, usrId },
+    );
   }
 }
 
@@ -691,11 +861,21 @@ class ToolCallRepo implements IToolCallRepo {
 
   async getToolCallsByMessageId(messageId: string): Promise<ToolCallRecord[]> {
     const db = this.db();
+    // Step 1: Get tool_call record IDs via graph traversal (IN subquery broken in SurrealDB 3.1.4)
+    const relRows = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT meta::id(out) AS toolCallId FROM has_tool_call WHERE in = $messageId`,
+      { messageId: new RecordId('messages', messageId) },
+    );
+    const toolCallIds = relRows.map((r) => new RecordId('tool_calls', String(r.toolCallId)));
+    if (toolCallIds.length === 0) return [];
+
+    // Step 2: Query tool_calls using those IDs
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
       `SELECT meta::id(id) AS id, name, server_id AS serverId, started_at AS startedAt, finished_at AS finishedAt
-        FROM tool_calls WHERE message_id = $messageId ORDER BY started_at ASC`,
-      { messageId: new RecordId('messages', messageId) },
+       FROM tool_calls WHERE id IN $toolCallIds ORDER BY started_at ASC`,
+      { toolCallIds },
     );
     return rows.map((r) => {
       const startedAt = String(r.startedAt);
@@ -714,31 +894,60 @@ class ToolCallRepo implements IToolCallRepo {
   async getToolCallsForMessages(messageIds: string[]): Promise<Record<string, ToolCallRecord[]>> {
     if (messageIds.length === 0) return {};
     const db = this.db();
-    const recordIds = messageIds.map((id) => {
-      const match = id.match(/^(\w+):`([^`]+)$/);
-      if (match) return new RecordId(match[1], match[2]);
-      return new RecordId('messages', id);
-    });
+
+    // Step 1: Get all message→tool_call mappings via graph traversal (batch, no N+1)
+    const relRows = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT meta::id(in) AS msgId, meta::id(out) AS toolCallId FROM has_tool_call WHERE in IN $messageIds`,
+      { messageIds: messageIds.map((id) => new RecordId('messages', id)) },
+    );
+
+    // Group toolCallIds by msgId
+    const msgToToolCallIds: Record<string, string[]> = {};
+    const allToolCallIdSet = new Set<string>();
+    for (const row of relRows) {
+      const msgId = String(row.msgId);
+      const toolCallId = String(row.toolCallId);
+      if (!msgToToolCallIds[msgId]) msgToToolCallIds[msgId] = [];
+      msgToToolCallIds[msgId].push(toolCallId);
+      allToolCallIdSet.add(toolCallId);
+    }
+    if (allToolCallIdSet.size === 0) return {};
+
+    // Step 2: Query all tool_calls in one shot
+    const allToolCallIds = [...allToolCallIdSet].map((id) => new RecordId('tool_calls', id));
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT meta::id(id) AS id, meta::id(message_id) AS messageId, name, server_id AS serverId, started_at AS startedAt, finished_at AS finishedAt
-        FROM tool_calls WHERE message_id INSIDE $messageIds ORDER BY started_at ASC`,
-      { messageIds: recordIds },
+      `SELECT meta::id(id) AS id, name, server_id AS serverId, started_at AS startedAt, finished_at AS finishedAt
+       FROM tool_calls WHERE id IN $allToolCallIds ORDER BY started_at ASC`,
+      { allToolCallIds },
     );
-    const map: Record<string, ToolCallRecord[]> = {};
+
+    // Build id→record lookup
+    const toolCallById: Record<string, ToolCallRecord> = {};
     for (const r of rows) {
-      const msgId = String(r.messageId);
-      if (!map[msgId]) map[msgId] = [];
       const startedAt = String(r.startedAt);
       const finishedAt = r.finishedAt ? String(r.finishedAt) : null;
-      map[msgId].push({
+      toolCallById[String(r.id)] = {
         id: String(r.id),
         name: String(r.name),
         serverId: String(r.serverId),
         startedAt,
         finishedAt,
         durationMs: finishedAt ? Math.round(new Date(finishedAt).getTime() - new Date(startedAt).getTime()) : null,
-      });
+      };
+    }
+
+    // Build final map: msgId → ToolCallRecord[]
+    const map: Record<string, ToolCallRecord[]> = {};
+    for (const msgId of messageIds) {
+      const tcIds = msgToToolCallIds[msgId];
+      if (tcIds && tcIds.length > 0) {
+        const records = tcIds.map((id) => toolCallById[id]).filter(Boolean);
+        if (records.length > 0) {
+          map[msgId] = records;
+        }
+      }
     }
     return map;
   }
@@ -749,7 +958,6 @@ class ToolCallRepo implements IToolCallRepo {
       db,
       'tool_calls',
       {
-        message_id: new RecordId('messages', msgId),
         name,
         server_id: serverId,
         tool_input: toolInput,
@@ -757,6 +965,15 @@ class ToolCallRepo implements IToolCallRepo {
       },
       id,
     );
+
+    // Create has_tool_call edge: messages → tool_calls
+    try {
+      await db.relate(new RecordId('messages', msgId), new Table('has_tool_call'), new RecordId('tool_calls', id), {
+        created_at: new Date(),
+      });
+    } catch (edgeErr) {
+      log.warn`[ToolCallRepo.createToolCall] Failed to create has_tool_call edge for tool_call ${id}: ${(edgeErr as Error).message}`;
+    }
   }
 
   async setToolCallResult(id: string, result: string, resultSize: number): Promise<void> {
@@ -909,7 +1126,13 @@ class ContentRepo implements IContentRepo {
         .where(eq('slug', slug))
         .limit(1);
       if (existing.length > 0) {
-        await db.update(new RecordId('page_posts', stripPrefix(existing[0].id))).merge({ part_of_series: null });
+        const recordId = new RecordId('page_posts', stripPrefix(existing[0].id));
+        // SurrealDB 3.x SCHEMAFULL rejects NULL for option<record> without | null.
+        // Use UNSET to remove the field entirely rather than setting it to null.
+        const msg = await db.select(recordId);
+        if (msg && 'part_of_series' in (msg as Record<string, unknown>)) {
+          await db.query('UPDATE $id UNSET part_of_series', { id: recordId });
+        }
       }
     } else {
       const parentRows = await db.select(new Table('page_posts')).where(eq('slug', parentSlug)).limit(1);
@@ -1088,16 +1311,16 @@ class UserAgentRepo implements IUserAgentRepo {
       if (Number.isFinite(agentId) && agentId > 0) {
         // Valid existing record — update ip if needed
         if (ip) {
-          await queryDb(db, `UPDATE type::record('user_agents', $agentId) SET ip = $ip WHERE ip IS NONE`, {
-            agentId: stripPrefix(existingRows[0].id),
+          await queryDb(db, `UPDATE $agentId SET ip = $ip WHERE ip IS NONE`, {
+            agentId: new RecordId('user_agents', stripPrefix(existingRows[0].id)),
             ip,
           });
         }
         return agentId;
       }
       // Corrupted record (NaN/0/negative) — delete it and recreate below
-      await queryDb(db, `DELETE type::record('user_agents', $id)`, {
-        id: stripPrefix(existingRows[0].id),
+      await queryDb(db, `DELETE $id`, {
+        id: new RecordId('user_agents', stripPrefix(existingRows[0].id)),
       }).catch(() => {}); // best-effort cleanup
     }
 
@@ -1162,8 +1385,8 @@ class LlmCacheRepo implements ILlmCacheRepo {
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
       `SELECT meta::id(id) AS id, question, answer, array::join(sources, '\n') AS sources, array::join(tool_calls, '\n') AS tool_calls, meta::id(message_id) AS message_id, created_at
-       FROM type::record('llm_cache', $cacheId)`,
-      { cacheId: cacheId.toString() },
+       FROM $cacheId`,
+      { cacheId: new RecordId('llm_cache', cacheId.toString()) },
     );
     if (rows.length === 0) return undefined;
     const r = rows[0];
@@ -1439,8 +1662,8 @@ class FeatureTourRepo implements IFeatureTourRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT * FROM feature_tours WHERE user_id = $userId`,
-      { userId: new RecordId('users', userId) },
+      `SELECT feature_id FROM feature_tours WHERE id IN $users->has_tour->feature_tours`,
+      { users: new RecordId('users', userId) },
     );
     return rows.map((r) => String(r.feature_id));
   }
@@ -1448,17 +1671,31 @@ class FeatureTourRepo implements IFeatureTourRepo {
   async dismissFeatureTours(userId: string, featureIds: string[]): Promise<void> {
     const db = this.db();
     for (const featureId of featureIds) {
-      await queryDb(
-        db,
-        `INSERT INTO feature_tours (user_id, feature_id) VALUES ($userId, $featureId) ON DUPLICATE KEY UPDATE dismissed_at = time::now()`,
-        { userId: new RecordId('users', userId), featureId },
-      );
+      const recordId = new RecordId('feature_tours', `${userId}:${featureId}`);
+      await queryDb(db, `UPSERT $recordId SET feature_id = $featureId, dismissed_at = time::now()`, {
+        recordId,
+        featureId,
+      });
+      try {
+        await db.relate(new RecordId('users', userId), new Table('has_tour'), recordId, { created_at: new Date() });
+      } catch (edgeErr) {
+        log.warn`[FeatureTourRepo.completeTour] Failed to create has_tour edge for user ${userId}, tour ${featureId}: ${(edgeErr as Error).message}`;
+      }
     }
   }
 
   async resetFeatureTours(userId: string): Promise<void> {
     const db = this.db();
-    await queryDb(db, `DELETE feature_tours WHERE user_id = $userId`, { userId: new RecordId('users', userId) });
+    const rows = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      `SELECT id FROM feature_tours WHERE id IN $users->has_tour->feature_tours`,
+      { users: new RecordId('users', userId) },
+    );
+    await queryDb(db, `DELETE has_tour WHERE in = $users`, { users: new RecordId('users', userId) });
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      await queryDb(db, `DELETE feature_tours WHERE id INSIDE $ids`, { ids });
+    }
   }
 }
 
@@ -1482,7 +1719,7 @@ class CentroidRepo implements ICentroidRepo {
     // (AlreadyExists), UPDATE ... CONTENT sets `updated` to NONE
     // (SCHEMAFULL blocks datetime=NONE with DEFAULT time::now()),
     // and db.update().merge() silently fails to create new records.
-    await queryDb(db, `DELETE centroids:${key}`);
+    await queryDb(db, `DELETE FROM centroids:${key}`);
     await queryDb(
       db,
       `INSERT INTO centroids (id, class, vector, dims, model, hash)
@@ -1550,7 +1787,11 @@ export class SurrealDatabaseService implements IDatabaseService {
       await queryDb(db, 'COMMIT TRANSACTION');
       return result;
     } catch (err) {
-      await queryDb(db, 'CANCEL TRANSACTION');
+      try {
+        await queryDb(db, 'CANCEL TRANSACTION');
+      } catch {
+        /* no transaction to cancel */
+      }
       throw err;
     }
   }

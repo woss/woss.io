@@ -247,12 +247,26 @@ async function migrateChats(db: Database.Database, surreal: Surreal) {
         trace_id: r.trace_id ?? null,
         deleted_at: toDate(r.deleted_at) ?? null,
       };
-      if (r.user_id) data.user_id = new RecordId('users', String(r.user_id));
       if (r.user_agent_id) {
         const mapped = userAgentIdMap.get(Number(r.user_agent_id));
         if (mapped) data.user_agent_id = mapped;
       }
       await surreal.create(new RecordId('chats', String(r.id))).content(data);
+
+      // Create has_chat edge: users → chats
+      if (r.user_id) {
+        try {
+          await surreal.relate(
+            new RecordId('users', String(r.user_id)),
+            new Table('has_chat'),
+            new RecordId('chats', String(r.id)),
+            { created_at: toDate(r.created_at) ?? new Date() },
+          );
+        } catch (edgeErr) {
+          console.warn(`Failed to create has_chat edge for chat ${r.id}: ${(edgeErr as Error).message}`);
+        }
+      }
+
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -336,8 +350,20 @@ async function migrateToolCalls(db: Database.Database, surreal: Surreal) {
         started_at: r.started_at ?? null,
         finished_at: r.finished_at ?? null,
       };
-      if (r.message_id) data.message_id = new RecordId('messages', String(r.message_id));
       await surreal.create(new RecordId('tool_calls', String(r.id))).content(data);
+      // Create has_tool_call edge: messages → tool_calls
+      if (r.message_id) {
+        try {
+          await surreal.relate(
+            new RecordId('messages', String(r.message_id)),
+            new Table('has_tool_call'),
+            new RecordId('tool_calls', String(r.id)),
+            { created_at: new Date() },
+          );
+        } catch (edgeErr) {
+          console.warn(`Failed to create has_tool_call edge for tool_call ${r.id}: ${(edgeErr as Error).message}`);
+        }
+      }
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -360,9 +386,23 @@ async function migrateReactions(db: Database.Database, surreal: Surreal) {
         reason: r.reason ?? '',
         created_at: toDate(r.created_at) ?? new Date(),
       };
-      if (r.message_id) data.message_id = new RecordId('messages', String(r.message_id));
       if (r.user_id) data.user_id = new RecordId('users', String(r.user_id));
-      await surreal.create(new Table('reactions')).content(data);
+      const created = await surreal.create(new Table('reactions')).content(data);
+      // Create has_reaction edge: messages → reactions
+      if (r.message_id) {
+        try {
+          await surreal.relate(
+            new RecordId('messages', String(r.message_id)),
+            new Table('has_reaction'),
+            created[0].id as RecordId,
+            {
+              created_at: toDate(r.created_at) ?? new Date(),
+            },
+          );
+        } catch (edgeErr) {
+          console.warn(`Failed to create has_reaction edge for reaction ${r.id}: ${(edgeErr as Error).message}`);
+        }
+      }
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -385,8 +425,20 @@ async function migrateChatEvents(db: Database.Database, surreal: Surreal) {
         data: r.data ?? null,
         created_at: toDate(r.created_at) ?? new Date(),
       };
-      if (r.chat_id) data.chat_id = new RecordId('chats', String(r.chat_id));
-      await surreal.create(new Table('chat_events')).content(data);
+      await surreal.create(new RecordId('chat_events', String(r.id))).content(data);
+      // Create has_event edge: chats → chat_events
+      if (r.chat_id) {
+        try {
+          await surreal.relate(
+            new RecordId('chats', String(r.chat_id)),
+            new Table('has_event'),
+            new RecordId('chat_events', String(r.id)),
+            { created_at: new Date() },
+          );
+        } catch (edgeErr) {
+          console.warn(`Failed to create has_event edge for event ${r.id}: ${(edgeErr as Error).message}`);
+        }
+      }
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -485,10 +537,26 @@ async function migrateFeatureTours(db: Database.Database, surreal: Surreal) {
     try {
       const compositeId = `${r.user_id}:${r.feature_id}`;
       await surreal.create(new RecordId('feature_tours', compositeId)).content({
-        user_id: new RecordId('users', String(r.user_id)),
         feature_id: String(r.feature_id),
         dismissed_at: toDate(r.dismissed_at) ?? new Date(),
       });
+
+      // Create has_tour edge: users → feature_tours
+      if (r.user_id) {
+        try {
+          await surreal.relate(
+            new RecordId('users', String(r.user_id)),
+            new Table('has_tour'),
+            new RecordId('feature_tours', compositeId),
+            { created_at: new Date() },
+          );
+        } catch (edgeErr) {
+          console.warn(
+            `Failed to create has_tour edge for user ${r.user_id}, tour ${r.feature_id}: ${(edgeErr as Error).message}`,
+          );
+        }
+      }
+
       result.succeeded++;
     } catch (e) {
       result.failed++;

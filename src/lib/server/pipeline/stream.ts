@@ -127,6 +127,7 @@ export async function streamWithRetry(
   chatId: string,
   abortController: AbortController,
   toolServerMap: Map<string, string>,
+  existingMsgId?: string,
 ): Promise<StreamResult> {
   publishLive(chatId, 'status', { step: 'generating' });
   let lastError: Error | null = null;
@@ -152,7 +153,7 @@ export async function streamWithRetry(
   let finishModelInfo: { provider: string; modelName: string; actualModelName: string; maxTokens: number } | undefined;
 
   // Pre-generate message ID for tool-call FK tracking
-  const msgId = randomUUID();
+  const msgId = existingMsgId ?? randomUUID();
   setMsgId(msgId);
 
   // change from 3 to 10 attempts after adding retry-on-doom-loop logic, to give the model more chances to recover with tools disabled

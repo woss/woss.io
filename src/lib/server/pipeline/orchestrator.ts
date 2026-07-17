@@ -9,6 +9,7 @@ import { CAT, createLogger } from '$lib/server/logger';
 import { classifyQuery, type QueryClass } from '$lib/query-classifier';
 import { needsGithubTools, needsMaculaTools, parseSources, tryRenameChat } from '$lib/server/chat-helpers';
 import { generateTraceId, withTrace } from '$lib/server/trace-context';
+import { randomUUID } from '$lib/utils/random-uuid';
 
 import { handleEarlyGates } from './early-gates';
 import { streamWithRetry } from './stream';
@@ -68,6 +69,7 @@ export async function startGeneration(
 
   const abortController = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let streamingMsgId: string | undefined;
   activeGenerations.set(chatId, abortController);
 
   const startTime = performance.now();
@@ -298,12 +300,29 @@ export async function startGeneration(
       toolServerMap.set(def.name, def.serverId ?? 'unknown');
     }
 
+    // Create message record BEFORE streaming so insertToolCall() FK edges can reference it
+    streamingMsgId = randomUUID();
+    await db.messages.createMessageForStreaming({
+      userId,
+      chatId,
+      role: 'assistant',
+      msgId: streamingMsgId,
+      queryType,
+    });
+
     // 7. Stream from OpenRouter with retry
     log.info('Starting LLM stream', { round: 1, totalRounds: 1, chatId });
     // Start generation timeout right before the real LLM call to exclude early-gate overhead
     timeoutId = setTimeout(() => abortController.abort(), 300_000);
     timeoutId?.unref?.();
-    const streamResult = await streamWithRetry(messages, mcpToolDefs, chatId, abortController, toolServerMap);
+    const streamResult = await streamWithRetry(
+      messages,
+      mcpToolDefs,
+      chatId,
+      abortController,
+      toolServerMap,
+      streamingMsgId,
+    );
     const {
       answerText,
       reasoningText,
@@ -400,32 +419,49 @@ export async function startGeneration(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     log.error`Background generation failed: ${err}`;
-    // Try DB error-save with timeout; fallback to publishLive if DB hangs
     const ERROR_SAVE_TIMEOUT_MS = 10_000;
     try {
-      await Promise.race([
-        db.messages.addMessage({
-          userId,
-          role: 'assistant',
-          content: '',
-          chatId,
-          irrecoverable: true,
-          error: message,
-          userAgentId,
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error(`Error save timed out after ${ERROR_SAVE_TIMEOUT_MS}ms`)),
-            ERROR_SAVE_TIMEOUT_MS,
+      if (streamingMsgId) {
+        // Message already created by createMessageForStreaming — update it with error
+        await Promise.race([
+          db.messages.finalizeMessage(streamingMsgId, {
+            content: '',
+            irrecoverable: true,
+            error: message,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Error save timed out after ${ERROR_SAVE_TIMEOUT_MS}ms`)),
+              ERROR_SAVE_TIMEOUT_MS,
+            ),
           ),
-        ),
-      ]);
-      publishPersistent(chatId, 'error', { message, messageId: '', irrecoverable: false });
+        ]);
+        publishPersistent(chatId, 'error', { message, messageId: streamingMsgId, irrecoverable: false });
+      } else {
+        // Error before message creation (e.g. early gates failed) — create a new message
+        await Promise.race([
+          db.messages.addMessage({
+            userId,
+            role: 'assistant',
+            content: '',
+            chatId,
+            irrecoverable: true,
+            error: message,
+            userAgentId,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Error save timed out after ${ERROR_SAVE_TIMEOUT_MS}ms`)),
+              ERROR_SAVE_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        publishPersistent(chatId, 'error', { message, messageId: '', irrecoverable: false });
+      }
     } catch (innerErr) {
       log.error('Failed to persist error SSE event after generation failure', {
         error: innerErr instanceof Error ? innerErr.message : String(innerErr),
       });
-      // Last resort: emit error via in-memory SSE so client unfreezes
       publishLive(chatId, 'error', { message, messageId: '', irrecoverable: false });
     }
   } finally {

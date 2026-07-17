@@ -1,7 +1,3 @@
-import { CAT, createLogger } from '$lib/server/logger';
-
-const log = createLogger(CAT.rateLimit);
-
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS = 100;
 
