@@ -155,6 +155,7 @@ export function connectSSE(chatId: string, callbacks: SSECallbacks): () => void 
       usage: data.usage || { tokensIn: 0, tokensOut: 0, durationMs: 0 },
       completedToolCalls,
     });
+    sseState.streamingToolCalls = {};
   });
 
   es.addEventListener('contact_intent', () => {
