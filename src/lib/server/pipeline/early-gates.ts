@@ -106,7 +106,7 @@ export async function handleEarlyGates(
             chatId,
             reason: `off-topic question (${count}/3). Chat has ${ctxMessages.length} messages, ${getChatMessageCount(chatId)} total messages. Last message: "${text.slice(0, 100)}" with id ${errMsgId}`,
           });
-          publishPersistent(chatId, 'error', {
+          await publishPersistent(chatId, 'error', {
             message: "I can only answer questions about Daniel Maricic's professional portfolio and experience.",
             irrecoverable: true,
             messageId: errMsgId,
@@ -121,7 +121,7 @@ export async function handleEarlyGates(
             error: `I can only answer questions about Daniel Maricic's professional portfolio and experience. This chat will be locked after ${remaining} more off-topic question${remaining === 1 ? '' : 's'}.`,
             userAgentId,
           });
-          publishPersistent(chatId, 'error', {
+          await publishPersistent(chatId, 'error', {
             message: `I can only answer questions about Daniel Maricic's professional portfolio and experience.`,
             messageId: errMsgId,
             attemptsLeft: remaining,
@@ -147,7 +147,7 @@ export async function handleEarlyGates(
         chatId,
         userAgentId,
       });
-      publishPersistent(chatId, 'done', {
+      await publishPersistent(chatId, 'done', {
         answer: politeResponse,
         sources: [],
         messageId: msgId,
@@ -157,7 +157,7 @@ export async function handleEarlyGates(
       log.warn`Polite response generation failed, using fallback: ${e}`;
       const fallback = "You're welcome! I'm glad I could help. Feel free to ask more about Daniel's work.";
       const msgId = addMessage({ userId, role: 'assistant', content: fallback, sources: '', chatId, userAgentId });
-      publishPersistent(chatId, 'done', {
+      await publishPersistent(chatId, 'done', {
         answer: fallback,
         sources: [],
         messageId: msgId,
@@ -183,7 +183,7 @@ export async function handleEarlyGates(
       error: 'Failed to generate embedding',
       userAgentId,
     });
-    publishPersistent(chatId, 'error', { message: 'Failed to generate embedding', messageId: errMsgId });
+    await publishPersistent(chatId, 'error', { message: 'Failed to generate embedding', messageId: errMsgId });
     return { handled: true };
   }
 
@@ -236,7 +236,7 @@ export async function handleEarlyGates(
     });
     const sources = parseSources(cached.sources);
     const elapsed = performance.now() - startTime;
-    publishPersistent(chatId, 'done', {
+    await publishPersistent(chatId, 'done', {
       answer: cached.answer,
       sources,
       messageId: msgId,
