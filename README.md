@@ -140,8 +140,8 @@ Content lives in markdown files. Here's where everything is:
 
 | What           | Where                                | Format                                                |
 | -------------- | ------------------------------------ | ----------------------------------------------------- |
-| Blog posts     | `src/content/posts/*.md`             | Markdown + frontmatter (title, date, tags, excerpt)   |
-| Resume entries | `src/content/experience/*.md`        | Markdown + frontmatter (company, role, dates, skills) |
+| Blog posts     | `content/posts/*.md`                 | Markdown + frontmatter (title, date, tags, excerpt)   |
+| Resume entries | `content/experience/*.md`            | Markdown + frontmatter (company, role, dates, skills) |
 | Site config    | `src/lib/config.ts`                  | TypeScript (Macula nickname, defaults)                |
 | Branding       | `static/favicon.ico`, `src/app.html` | Favicon, HTML shell                                   |
 | Pages          | `src/routes/`                        | SvelteKit file-based routing                          |

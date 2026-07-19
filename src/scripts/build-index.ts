@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import GithubSlugger from 'github-slugger';
-import { parseFrontmatter } from '../content/index.js';
+import { parseFrontmatter } from '../../content/index.js';
 import { load as parseYaml } from 'js-yaml';
 import { SurrealDatabaseService } from '../lib/server/db/surreal-service';
 import type { IDatabaseService } from '../lib/server/db/interfaces';
@@ -53,8 +53,8 @@ export function parseFrontmatterSlug(raw: string): string | null {
 // Constants
 // ---------------------------------------------------------------------------
 
-const POSTS_DIR = join(process.cwd(), 'src', 'content', 'posts');
-const EXPERIENCE_DIR = join(process.cwd(), 'src', 'content', 'experience');
+const POSTS_DIR = join(process.cwd(), 'content', 'posts');
+const EXPERIENCE_DIR = join(process.cwd(), 'content', 'experience');
 
 const args = process.argv.slice(2);
 const update = args.includes('--update');
@@ -442,7 +442,7 @@ export async function buildIndex(): Promise<void> {
   const fileEntries = readFileEntries();
 
   if (fileEntries.length === 0) {
-    log.info`No content files found in src/content/posts/ or src/content/experience/`;
+    log.info`No content files found in content/posts/ or content/experience/`;
     await db.close();
     return;
   }

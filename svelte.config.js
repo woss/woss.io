@@ -12,7 +12,7 @@ const config = {
       relative: false,
     },
     alias: {
-      $content: 'src/content',
+      $content: 'content',
     },
     experimental: {
       tracing: {
