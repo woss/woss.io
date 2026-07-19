@@ -292,9 +292,10 @@ export interface IDatabaseService {
 }
 ```
 
-SurrealDB transactions use SurrealQL `BEGIN TRANSSACTION; ... COMMIT;` via
-raw query. The transaction callback receives a scoped service instance that
-shares the same SurrealDB connection.
+SurrealDB transactions use SurrealQL `BEGIN; ... COMMIT;` (or `CANCEL;` to
+roll back) via raw query. The transaction callback receives a scoped service
+instance that shares the same SurrealDB connection. Health checks use
+`RETURN 1` (SurrealDB 3.x syntax).
 
 ## Phase 4 — Consumer Refactoring (3-4 hrs)
 

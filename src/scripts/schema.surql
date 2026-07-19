@@ -33,7 +33,9 @@ DEFINE TABLE users SCHEMAFULL;
 
 DEFINE FIELD email      ON TABLE users TYPE option<string> | null;
 DEFINE FIELD name       ON TABLE users TYPE option<string> | null;
-DEFINE FIELD created_at ON TABLE users TYPE datetime DEFAULT time::now();
+DEFINE FIELD created_at     ON TABLE users TYPE datetime DEFAULT time::now();
+DEFINE FIELD dismissed_tours ON TABLE users TYPE option<array> DEFAULT [];
+DEFINE FIELD dismissed_tours.* ON TABLE users TYPE string;
 
 DEFINE INDEX idx_users_email ON TABLE users FIELDS email UNIQUE;
 
@@ -181,6 +183,9 @@ DEFINE FIELD type       ON TABLE chat_events TYPE option<string> | null;
 DEFINE FIELD data       ON TABLE chat_events TYPE option<string> | null;
 DEFINE FIELD created_at ON TABLE chat_events TYPE datetime DEFAULT time::now();
 
+-- Cleanup: remove legacy chat_id field (replaced by has_event edge relation)
+REMOVE FIELD IF EXISTS chatId ON TABLE chat_events;
+
 -- has_event edge: chats → chat_events
 DEFINE TABLE has_event SCHEMAFULL TYPE RELATION IN chats OUT chat_events;
 DEFINE FIELD created_at ON TABLE has_event TYPE datetime DEFAULT time::now();
@@ -249,17 +254,7 @@ DEFINE FIELD timestamp ON TABLE rate_limits TYPE option<datetime> | null;
 DEFINE INDEX idx_rate_limits_ip ON TABLE rate_limits FIELDS ip;
 DEFINE INDEX idx_rate_limits_ip_timestamp ON TABLE rate_limits FIELDS ip, timestamp;
 
--- =============================================================================
--- 16. feature_tours — Dismissed feature tours per user
--- =============================================================================
-DEFINE TABLE feature_tours SCHEMAFULL;
-
-DEFINE FIELD feature_id   ON TABLE feature_tours TYPE string ASSERT $value != NONE;
-DEFINE FIELD dismissed_at ON TABLE feature_tours TYPE datetime DEFAULT time::now();
-
--- has_tour edge: users → feature_tours
-DEFINE TABLE has_tour SCHEMAFULL TYPE RELATION IN users OUT feature_tours;
-DEFINE FIELD created_at ON TABLE has_tour TYPE datetime DEFAULT time::now();
+-- Removed: feature_tours table and has_tour edge — dismissed_tours now on users table
 
 -- =============================================================================
 -- 17. centroids — Query classifier centroid vectors (tool, rag, meta)

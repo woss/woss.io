@@ -102,7 +102,6 @@ export interface AddMessageParams {
 
 export interface ChatEvent {
   id: number;
-  chatId: string;
   type: string;
   data: unknown;
   createdAt: string;

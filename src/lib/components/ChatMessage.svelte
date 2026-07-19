@@ -3,10 +3,9 @@
   import relativeTime from 'dayjs/plugin/relativeTime.js';
   import utc from 'dayjs/plugin/utc.js';
   import 'highlight.js/styles/atom-one-dark.css';
-  import { toast } from 'svelte-sonner';
   import type { ChatMessage } from '$lib/chat/types';
   import { page } from '$app/state';
-  import { Button, Input } from 'sv5ui';
+  import { Button } from 'sv5ui';
   import ActionBar from './ActionBar.svelte';
   import ToolCallList from './ToolCallList.svelte';
 
@@ -39,11 +38,10 @@
     userId?: string;
     chatId?: string;
     onretry?: () => void;
-    onreport?: (id: string) => void;
+    onreport?: (id: string, reason: string) => void;
     onToggleSidebar?: (tab: 'sources' | 'tools') => void;
   } = $props();
 
-  let downReason = $state('');
   let showReasoning = $state(false);
 
   let reasoningEl = $state<HTMLDivElement | undefined>(undefined);
@@ -84,25 +82,6 @@
       cancelled = true;
     };
   });
-
-  async function submitDownReason(message: ChatMessage, reason: string): Promise<void> {
-    try {
-      const fd = new FormData();
-      fd.set('messageId', message.id);
-      fd.set('userId', userId);
-      fd.set('reason', reason.trim());
-      const res = await fetch(`/chat/${chatId}?/report`, {
-        method: 'POST',
-        body: fd,
-      });
-      if (res.ok) {
-        onreport(message.id);
-        toast.success('Thanks for the feedback');
-      }
-    } catch {
-      /* ignore */
-    }
-  }
 
   const proseCls =
     'prose prose-invert max-w-none text-on-surface/90 leading-relaxed ' +
@@ -195,7 +174,7 @@
             <div
               class="flex items-center gap-0.5 pt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
             >
-              <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} />
+              <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} {onreport} />
             </div>
             <!-- User message bubble -->
             <div class="max-w-[85%] md:max-w-[75%] rounded-2xl rounded-br-md bg-surface-container-low/30 px-4 py-3">
@@ -282,7 +261,7 @@
         <!-- ActionBar -->
         {#if !(isLast && isLoading) && message.text && !message.deletedAt}
           <div class="mt-4 flex items-center gap-2 text-xs text-outline font-mono">
-            <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} />
+            <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} {onreport} />
             <!-- {#if message.durationMs}
  <span class="shrink-0">·</span>
  <span class="shrink-0">{formatDuration(message.durationMs)}</span>
@@ -297,37 +276,6 @@
           </div>
         {/if}
 
-        <!-- Reason input (thumbs down) -->
-        {#if message.reaction?.type === 'down'}
-          <div class="mt-3">
-            <div class="flex gap-2">
-              <Input
-                type="text"
-                variant="outline"
-                size="sm"
-                placeholder="What was missing or incorrect?"
-                bind:value={downReason}
-                onkeydown={(e: KeyboardEvent) => {
-                  if (e.key === 'Enter' && downReason.trim() !== '') {
-                    submitDownReason(message, downReason);
-                  }
-                }}
-              />
-              <Button
-                variant="solid"
-                color="primary"
-                disabled={downReason.trim() === ''}
-                onclick={() => {
-                  if (downReason.trim() !== '') {
-                    submitDownReason(message, downReason);
-                  }
-                }}
-              >
-                Send feedback & remove
-              </Button>
-            </div>
-          </div>
-        {/if}
       </div>
     </div>
   {/if}

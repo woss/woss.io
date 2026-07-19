@@ -1,6 +1,9 @@
 import { db } from '$lib/server/db';
 import { checkRateLimit } from '$lib/server/rate-limiter';
+import { CAT, createLogger } from '$lib/server/logger';
 import type { RequestEvent } from '@sveltejs/kit';
+
+const log = createLogger(CAT.api);
 
 export async function POST(event: RequestEvent): Promise<Response> {
   const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
@@ -40,7 +43,8 @@ export async function POST(event: RequestEvent): Promise<Response> {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
-  } catch {
+  } catch (e) {
+    log.error(`Failed to dismiss feature tours: ${e}`);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

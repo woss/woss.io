@@ -529,40 +529,67 @@ async function migrateLlmCache(db: Database.Database, surreal: Surreal) {
 
 async function migrateFeatureTours(db: Database.Database, surreal: Surreal) {
   const result: MigrationResult = { table: 'feature_tours', attempted: 0, succeeded: 0, failed: 0, errors: [] };
-  const rows = db.prepare('SELECT * FROM feature_tours').all();
-  result.attempted = rows.length;
 
-  for (const row of rows) {
-    const r = row as Record<string, unknown>;
-    try {
-      const compositeId = `${r.user_id}:${r.feature_id}`;
-      await surreal.create(new RecordId('feature_tours', compositeId)).content({
-        feature_id: String(r.feature_id),
-        dismissed_at: toDate(r.dismissed_at) ?? new Date(),
-      });
+  // Try to read old feature_tours and has_tour edges. If they don't exist (fresh DB), silently succeed.
+  let tourRows: Record<string, unknown>[];
+  try {
+    tourRows = await surreal.select<Record<string, unknown>[]>(new Table('feature_tours'));
+  } catch {
+    return result;
+  }
 
-      // Create has_tour edge: users → feature_tours
-      if (r.user_id) {
-        try {
-          await surreal.relate(
-            new RecordId('users', String(r.user_id)),
-            new Table('has_tour'),
-            new RecordId('feature_tours', compositeId),
-            { created_at: new Date() },
-          );
-        } catch (edgeErr) {
-          console.warn(
-            `Failed to create has_tour edge for user ${r.user_id}, tour ${r.feature_id}: ${(edgeErr as Error).message}`,
-          );
-        }
-      }
+  let edgeRows: Record<string, unknown>[];
+  try {
+    edgeRows = await surreal.select<Record<string, unknown>[]>(new Table('has_tour'));
+  } catch {
+    edgeRows = [];
+  }
 
-      result.succeeded++;
-    } catch (e) {
-      result.failed++;
-      result.errors.push(`user=${r.user_id},feature=${r.feature_id}: ${(e as Error).message}`);
+  // Build a map: user RecordId -> list of tour RecordIds
+  const userTours = new Map<string, string[]>();
+  for (const edge of edgeRows) {
+    const userId = String(edge.in);
+    const tourId = String(edge.out);
+    if (!userTours.has(userId)) {
+      userTours.set(userId, []);
+    }
+    userTours.get(userId)!.push(tourId);
+  }
+
+  // Resolve tour RecordIds to feature_ids
+  const tourIdToFeature = new Map<string, string>();
+  for (const tour of tourRows) {
+    const tourId = tour.id instanceof RecordId ? tour.id.toString() : String(tour.id);
+    const featureId = tour.feature_id ? String(tour.feature_id) : null;
+    if (featureId) {
+      tourIdToFeature.set(tourId, featureId);
     }
   }
+
+  // Update each user's dismissed_tours
+  for (const [userId, tourIds] of userTours) {
+    const featureIds: string[] = [];
+    for (const tid of tourIds) {
+      const resolved = tourIdToFeature.get(tid);
+      if (resolved) {
+        featureIds.push(resolved);
+      }
+    }
+    if (featureIds.length > 0) {
+      try {
+        await surreal.query('UPDATE users SET dismissed_tours = $tours WHERE id = $id', {
+          tours: featureIds,
+          id: new RecordId('users', userId),
+        });
+        result.succeeded++;
+      } catch (e) {
+        result.failed++;
+        result.errors.push(`user=${userId}: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  result.attempted = userTours.size;
   return result;
 }
 
@@ -576,14 +603,12 @@ async function migrateChunks(db: Database.Database, surreal: Surreal) {
     try {
       const data: SurrealRow = {
         chunk_id: r.chunk_id ?? null,
-        slug: r.chunk_id ?? null,
         text: r.text ?? null,
         title: r.title ?? null,
         date: r.date ?? null,
         tags: toJSON<string[]>(r.tags),
         section: r.section ?? null,
         embedding: toJSON<number[]>(r.embedding),
-        type: r.type ?? null,
       };
       await surreal.create(new RecordId('chunks', String(r.chunk_id ?? r.id))).content(data);
       result.succeeded++;

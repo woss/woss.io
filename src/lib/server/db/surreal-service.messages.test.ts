@@ -103,7 +103,7 @@ describe('MessageRepo.createMessageForStreaming', () => {
     expect(contentArg.duration_ms).toBe(0);
     expect(contentArg.max_tokens).toBe(0);
     expect(contentArg.irrecoverable).toBe(false);
-    expect(contentArg.error).toBe(null);
+    expect(contentArg.error).toBeUndefined();
     expect(contentArg.from_cache).toBe(false);
 
     // Verify user_id is a RecordId link
@@ -194,7 +194,7 @@ describe('MessageRepo.createMessageForStreaming', () => {
     });
 
     const contentArg = mockSurreal.db.create.mock.results[0].value.content.mock.calls[0][0];
-    expect(contentArg.query_type).toBe(null);
+    expect(contentArg.query_type).toBeUndefined();
   });
 });
 

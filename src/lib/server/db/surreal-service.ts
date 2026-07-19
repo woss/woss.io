@@ -654,7 +654,7 @@ class MessageRepo implements IMessageRepo {
     const o = offset ?? 0;
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM $chatId->has_message->messages ORDER BY created_at ASC LIMIT $limit START $offset`,
+      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM $chatId->has_message->messages WHERE deleted_at IS NONE ORDER BY created_at ASC LIMIT $limit START $offset`,
       { chatId: new RecordId('chats', chatId), limit: l, offset: o },
     );
     return rows.map(toStoredMessage);
@@ -666,7 +666,7 @@ class MessageRepo implements IMessageRepo {
     const o = offset ?? 0;
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM messages WHERE user_id = $userId ORDER BY created_at ASC LIMIT $limit START $offset`,
+      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM messages WHERE user_id = $userId AND deleted_at IS NONE ORDER BY created_at ASC LIMIT $limit START $offset`,
       { userId: new RecordId('users', userId), limit: l, offset: o },
     );
     return rows.map(toStoredMessage);
@@ -676,7 +676,7 @@ class MessageRepo implements IMessageRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM $chatId->has_message->messages ORDER BY created_at DESC LIMIT $count`,
+      `SELECT *, meta::id(id) AS id, (SELECT VALUE meta::id(out) FROM ->used_model LIMIT 1)[0] AS model_id FROM $chatId->has_message->messages WHERE deleted_at IS NONE ORDER BY created_at DESC LIMIT $count`,
       { chatId: new RecordId('chats', chatId), count },
     );
     // Reverse to return in chronological order
@@ -730,10 +730,17 @@ class EventRepo implements IEventRepo {
       {
         type,
         data: JSON.stringify(data),
-        chat_id: chatId,
         created_at: new Date(),
       },
       eventId,
+    );
+
+    // Create has_event edge: chats:chatId -> has_event -> chat_events:eventId
+    await db.relate(
+      new RecordId('chats', chatId),
+      new Table('has_event'),
+      new RecordId('chat_events', String(eventId)),
+      { created_at: new Date() },
     );
 
     log.debug`[EventsRepo.insertChatEvent] db.create completed, id=${eventId}`;
@@ -744,15 +751,15 @@ class EventRepo implements IEventRepo {
     const db = this.db();
     const rows = await queryDb<Array<Record<string, unknown>>>(
       db,
-      `SELECT meta::id(id) AS id, type, data, chat_id, created_at AS createdAt
+      `SELECT meta::id(id) AS id, type, data, created_at AS createdAt
        FROM chat_events
-       WHERE chat_id = $chatId AND <int> meta::id(id) > $lastEventId
+       WHERE id INSIDE (SELECT out FROM has_event WHERE in = $chatId)
+         AND <int> meta::id(id) > $lastEventId
        ORDER BY id ASC`,
-      { chatId, lastEventId },
+      { chatId: new RecordId('chats', chatId), lastEventId },
     );
     return rows.map((r) => ({
       id: Number(r.id),
-      chatId: String(r.chat_id),
       type: String(r.type),
       data: JSON.parse(String(r.data)),
       createdAt: String(r.createdAt),
@@ -1655,49 +1662,7 @@ class ModelRepo implements IModelRepo {
   }
 }
 
-class FeatureTourRepo implements IFeatureTourRepo {
-  constructor(private db: () => Surreal) {}
-
-  async getDismissedFeatureTours(userId: string): Promise<string[]> {
-    const db = this.db();
-    const rows = await queryDb<Array<Record<string, unknown>>>(
-      db,
-      `SELECT feature_id FROM feature_tours WHERE id IN $users->has_tour->feature_tours`,
-      { users: new RecordId('users', userId) },
-    );
-    return rows.map((r) => String(r.feature_id));
-  }
-
-  async dismissFeatureTours(userId: string, featureIds: string[]): Promise<void> {
-    const db = this.db();
-    for (const featureId of featureIds) {
-      const recordId = new RecordId('feature_tours', `${userId}:${featureId}`);
-      await queryDb(db, `UPSERT $recordId SET feature_id = $featureId, dismissed_at = time::now()`, {
-        recordId,
-        featureId,
-      });
-      try {
-        await db.relate(new RecordId('users', userId), new Table('has_tour'), recordId, { created_at: new Date() });
-      } catch (edgeErr) {
-        log.warn`[FeatureTourRepo.completeTour] Failed to create has_tour edge for user ${userId}, tour ${featureId}: ${(edgeErr as Error).message}`;
-      }
-    }
-  }
-
-  async resetFeatureTours(userId: string): Promise<void> {
-    const db = this.db();
-    const rows = await queryDb<Array<Record<string, unknown>>>(
-      db,
-      `SELECT id FROM feature_tours WHERE id IN $users->has_tour->feature_tours`,
-      { users: new RecordId('users', userId) },
-    );
-    await queryDb(db, `DELETE has_tour WHERE in = $users`, { users: new RecordId('users', userId) });
-    if (rows.length > 0) {
-      const ids = rows.map((r) => r.id);
-      await queryDb(db, `DELETE feature_tours WHERE id INSIDE $ids`, { ids });
-    }
-  }
-}
+// Feature tour methods are implemented directly on SurrealDatabaseService (IFeatureTourRepo)
 
 // ===========================================================================
 // CentroidRepo
@@ -1757,7 +1722,7 @@ export class SurrealDatabaseService implements IDatabaseService {
     this.llmCache = new LlmCacheRepo(this.db);
     this.vector = new VectorRepo(this.db);
     this.models = new ModelRepo(this.db);
-    this.featureTours = new FeatureTourRepo(this.db);
+    this.featureTours = this as unknown as IFeatureTourRepo;
     this.centroids = new CentroidRepo(this.db);
   }
 
@@ -1768,7 +1733,7 @@ export class SurrealDatabaseService implements IDatabaseService {
   async healthCheck(): Promise<boolean> {
     try {
       const db = this.db();
-      await queryDb(db, 'SELECT 1 FROM users LIMIT 1');
+      await queryDb(db, 'RETURN 1');
       return true;
     } catch {
       return false;
@@ -1781,19 +1746,51 @@ export class SurrealDatabaseService implements IDatabaseService {
 
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
     const db = this.db();
-    await queryDb(db, 'BEGIN TRANSACTION');
+    await queryDb(db, 'BEGIN');
     try {
       const result = await fn();
-      await queryDb(db, 'COMMIT TRANSACTION');
+      await queryDb(db, 'COMMIT');
       return result;
     } catch (err) {
       try {
-        await queryDb(db, 'CANCEL TRANSACTION');
+        await queryDb(db, 'CANCEL');
       } catch {
         /* no transaction to cancel */
       }
       throw err;
     }
+  }
+
+  // Feature tour methods (IFeatureTourRepo)
+
+  async getDismissedFeatureTours(userId: string): Promise<string[]> {
+    const db = this.db();
+    const result = await queryDb<Array<Record<string, unknown>>>(
+      db,
+      'SELECT dismissed_tours FROM users WHERE id = $id',
+      { id: new RecordId('users', userId) },
+    );
+    const record = result?.[0];
+    return (record?.dismissed_tours as string[]) ?? [];
+  }
+
+  async dismissFeatureTours(userId: string, featureIds: string[]): Promise<void> {
+    const db = this.db();
+    await this.users.ensureUser(userId);
+    const existing = await this.getDismissedFeatureTours(userId);
+    const merged = [...new Set([...existing, ...featureIds])];
+    await queryDb(db, 'UPDATE users SET dismissed_tours = $tours WHERE id = $id', {
+      id: new RecordId('users', userId),
+      tours: merged,
+    });
+  }
+
+  async resetFeatureTours(userId: string): Promise<void> {
+    const db = this.db();
+    await this.users.ensureUser(userId);
+    await queryDb(db, 'UPDATE users SET dismissed_tours = [] WHERE id = $id', {
+      id: new RecordId('users', userId),
+    });
   }
 
   readonly users: IUserRepo;

@@ -104,7 +104,7 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
         chatId,
         dataLength: fallbackText.length,
       });
-      publishPersistent(chatId, 'error', {
+      await publishPersistent(chatId, 'error', {
         message: 'Failed to generate answer after retries',
         messageId: msgId,
         irrecoverable: irrecoverable === true,
@@ -142,7 +142,7 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
     log.debug`[saveAndEmitResult] fallback finalizeMessage completed, starting publishPersistent(error)`;
     log.info('Sending SSE event', { event: 'error', chatId, dataLength: 'Failed to save response'.length });
     log.debug`[saveAndEmitResult] fallback error path done`;
-    publishPersistent(chatId, 'error', { message: 'Failed to save response', messageId: msgId });
+    await publishPersistent(chatId, 'error', { message: 'Failed to save response', messageId: msgId });
     return;
   }
 
@@ -161,7 +161,7 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
 
   const elapsed = performance.now() - startTime;
   log.info('Sending SSE event', { event: 'done', chatId, dataLength: answerText.length });
-  publishPersistent(chatId, 'done', {
+  await publishPersistent(chatId, 'done', {
     answer: answerText,
     reasoning: reasoningText,
     sources,

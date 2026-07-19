@@ -26,10 +26,3 @@ export function isText(node: unknown): node is Text {
 export function isElement(node: unknown): node is Element {
   return typeof node === 'object' && node !== null && (node as { type: string }).type === 'element';
 }
-
-function findFirstChild(node: Element, tagName: string): Element | undefined {
-  for (const child of node.children) {
-    if (isElement(child) && child.tagName === tagName) return child;
-  }
-  return undefined;
-}

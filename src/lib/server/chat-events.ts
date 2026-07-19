@@ -46,9 +46,16 @@ export function publishLive(chatId: string, type: string, data: unknown): void {
  * Returns the event ID from DB.
  */
 export async function publishPersistent(chatId: string, type: string, data: unknown): Promise<number> {
-  log.debug('[publishPersistent] insertChatEvent starting', { chatId, type });
-  const id = await db.events.insertChatEvent(chatId, type, data);
-  log.debug('[publishPersistent] insertChatEvent completed', { chatId, type, id });
+  let id: number;
+  try {
+    log.debug('[publishPersistent] insertChatEvent starting', { chatId, type });
+    id = await db.events.insertChatEvent(chatId, type, data);
+    log.debug('[publishPersistent] insertChatEvent completed', { chatId, type, id });
+  } catch (err) {
+    log.error('[publishPersistent] DB insert failed, falling back to publishLive', { err, chatId, type });
+    publishLive(chatId, type, data);
+    return 0;
+  }
   const event: ChatEventPayload = { id, chatId, type, data };
   subscribers.get(chatId)?.forEach((cb) => {
     try {

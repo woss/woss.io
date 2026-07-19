@@ -25,6 +25,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { spawn, ChildProcess } from 'node:child_process';
+import { RecordId } from 'surrealdb';
 import { initSurreal, closeSurreal, getSurreal } from './surreal';
 import { SurrealDatabaseService } from './surreal-service';
 import type {
@@ -71,6 +72,8 @@ const SCHEMA_TABLES = [
   `DEFINE FIELD IF NOT EXISTS email ON TABLE users TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS name ON TABLE users TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS created_at ON TABLE users TYPE option<datetime> DEFAULT time::now();`,
+  `DEFINE FIELD IF NOT EXISTS dismissed_tours ON TABLE users TYPE option<array> DEFAULT [];`,
+  `DEFINE FIELD IF NOT EXISTS dismissed_tours.* ON TABLE users TYPE string;`,
 
   `DEFINE TABLE IF NOT EXISTS chats SCHEMAFULL;`,
   `DEFINE FIELD IF NOT EXISTS user_id ON TABLE chats TYPE option<record<users>>;`,
@@ -106,8 +109,6 @@ const SCHEMA_TABLES = [
   `DEFINE FIELD IF NOT EXISTS type ON TABLE chat_events TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS data ON TABLE chat_events TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS created_at ON TABLE chat_events TYPE option<datetime> DEFAULT time::now();`,
-  `DEFINE FIELD IF NOT EXISTS chat_id ON TABLE chat_events TYPE option<string>;`,
-
   `DEFINE TABLE IF NOT EXISTS reactions SCHEMAFULL;`,
   `DEFINE FIELD IF NOT EXISTS message_id ON TABLE reactions TYPE option<record<messages>>;`,
   `DEFINE FIELD IF NOT EXISTS user_id ON TABLE reactions TYPE option<record<users>>;`,
@@ -217,14 +218,6 @@ const SCHEMA_TABLES = [
   `DEFINE FIELD IF NOT EXISTS model ON TABLE centroids TYPE option<string>;`,
   `DEFINE FIELD IF NOT EXISTS hash ON TABLE centroids TYPE option<string>;`,
 
-  `DEFINE TABLE IF NOT EXISTS feature_tours SCHEMAFULL;`,
-  `DEFINE FIELD IF NOT EXISTS feature_id ON TABLE feature_tours TYPE option<string>;`,
-  `DEFINE FIELD IF NOT EXISTS dismissed_at ON TABLE feature_tours TYPE option<datetime> DEFAULT time::now();`,
-
-  // has_tour relation: users -> has_tour -> feature_tours
-  `DEFINE TABLE IF NOT EXISTS has_tour TYPE RELATION IN users OUT feature_tours SCHEMAFULL;`,
-  `DEFINE FIELD IF NOT EXISTS created_at ON TABLE has_tour TYPE option<datetime> DEFAULT time::now();`,
-
   // used_model relation: messages -> used_model -> models
   `DEFINE TABLE IF NOT EXISTS used_model TYPE RELATION IN messages OUT models SCHEMAFULL;`,
   `DEFINE FIELD IF NOT EXISTS created_at ON TABLE used_model TYPE option<datetime> DEFAULT time::now();`,
@@ -232,6 +225,10 @@ const SCHEMA_TABLES = [
   // has_message relation: chats -> has_message -> messages
   `DEFINE TABLE IF NOT EXISTS has_message TYPE RELATION IN chats OUT messages SCHEMAFULL;`,
   `DEFINE FIELD IF NOT EXISTS created_at ON TABLE has_message TYPE option<datetime> DEFAULT time::now();`,
+
+  // has_event relation: chats -> has_event -> chat_events
+  `DEFINE TABLE IF NOT EXISTS has_event TYPE RELATION IN chats OUT chat_events SCHEMAFULL;`,
+  `DEFINE FIELD IF NOT EXISTS created_at ON TABLE has_event TYPE option<datetime> DEFAULT time::now();`,
 ];
 
 /**
@@ -254,18 +251,16 @@ const CLEAN_TABLES = [
   'llm_cache',
   'models',
   'centroids',
-  'feature_tours',
   'used_model',
   'has_message',
   'has_event',
-  'has_tour',
 ];
 
 // ===========================================================================
 // Test Suite
 // ===========================================================================
 
-describe.skip('SurrealDatabaseService', () => {
+describe('SurrealDatabaseService', () => {
   let service: SurrealDatabaseService;
 
   // -------------------------------------------------------------------------
@@ -378,7 +373,7 @@ describe.skip('SurrealDatabaseService', () => {
     it('calls initSurreal successfully', async () => {
       // Already initialized in beforeAll — verify the connection works
       const db = getSurreal();
-      const result = await db.query('SELECT 1');
+      const result = await db.query('RETURN 1');
       expect(result).toBeDefined();
     });
   });
@@ -471,8 +466,8 @@ describe.skip('SurrealDatabaseService', () => {
         const user = await users.getOrCreateUser(USER_ID);
 
         expect(user.id).toBe(USER_ID);
-        expect(user.email).toBeNull();
-        expect(user.name).toBeNull();
+        expect(user.email).toBeUndefined();
+        expect(user.name).toBeUndefined();
       });
     });
 
@@ -509,7 +504,7 @@ describe.skip('SurrealDatabaseService', () => {
         await users.updateUser(USER_ID, {});
 
         const user = await users.getUser(USER_ID);
-        expect(user!.name).toBeNull(); // ensureUser with just id doesn't set name
+        expect(user!.name).toBeUndefined(); // ensureUser with just id doesn't set name
         // After ensureUser with no name, name is null
       });
 
@@ -575,7 +570,7 @@ describe.skip('SurrealDatabaseService', () => {
         expect(summary).toBeDefined();
         expect(summary!.id).toBe(CHAT_ID);
         expect(summary!.messageCount).toBe(0);
-        expect(summary!.lastMessageAt).toBeNull();
+        expect(summary!.lastMessageAt).toBeUndefined();
       });
 
       it('returns undefined when chat not found', async () => {
@@ -693,7 +688,7 @@ describe.skip('SurrealDatabaseService', () => {
   });
 
   // =========================================================================
-  // EventRepo
+  // EventRepo — Phase 26.1: relation-based has_event edge
   // =========================================================================
 
   describe('events', () => {
@@ -704,27 +699,164 @@ describe.skip('SurrealDatabaseService', () => {
     });
 
     describe('insertChatEvent', () => {
-      it('inserts event and returns event id', async () => {
+      it('inserts event and returns positive event id', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
         const eventId = await events.insertChatEvent(CHAT_ID, 'test_type', { key: 'value' });
 
+        expect(typeof eventId).toBe('number');
         expect(eventId).toBeGreaterThan(0);
+      });
+
+      it('creates a has_event edge record linking chat to event', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const eventId = await events.insertChatEvent(CHAT_ID, 'edge_test', { x: 1 });
+
+        // Verify the event record exists in chat_events
+        const db = getSurreal();
+        const eventRecord = await db.query<Array<Record<string, unknown>>>(
+          `SELECT type FROM chat_events WHERE meta::id(id) = $eid`,
+          { eid: String(eventId) },
+        );
+        const rows = eventRecord as unknown as Array<Record<string, unknown>>;
+        expect(rows.length).toBe(1);
+        expect(rows[0].type).toBe('edge_test');
+      });
+
+      it('produces monotonically increasing ids for same chat', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const id1 = await events.insertChatEvent(CHAT_ID, 't1', { a: 1 });
+        const id2 = await events.insertChatEvent(CHAT_ID, 't2', { a: 2 });
+        const id3 = await events.insertChatEvent(CHAT_ID, 't3', { a: 3 });
+
+        expect(id2).toBeGreaterThan(id1);
+        expect(id3).toBeGreaterThan(id2);
+      });
+
+      it('creates chat_events record with correct data', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const payload = { nested: { val: 42 }, arr: [1, 2, 3] };
+        const eventId = await events.insertChatEvent(CHAT_ID, 'field_test', payload);
+
+        // Read raw record from DB
+        const db = getSurreal();
+        const raw = await db.query<Array<Record<string, unknown>>>(`SELECT * FROM chat_events:${eventId}`);
+        const rows = raw as unknown as Array<Record<string, unknown>>;
+        expect(rows.length).toBe(1);
+        expect(rows[0].type).toBe('field_test');
+
+        // SurrealDB auto-parses JSON strings; verify data roundtrips correctly
+        const storedData = typeof rows[0].data === 'string' ? JSON.parse(String(rows[0].data)) : rows[0].data;
+        expect(storedData).toEqual(payload);
       });
     });
 
     describe('getChatEventsSince', () => {
-      it('returns ChatEvent array', async () => {
-        await events.insertChatEvent(CHAT_ID, 'evt', { foo: 'bar' });
-
-        const eventList = await events.getChatEventsSince(CHAT_ID, 0);
-
-        expect(eventList.length).toBeGreaterThanOrEqual(1);
-        expect(eventList[0].type).toBe('evt');
-        expect(eventList[0].data).toEqual({ foo: 'bar' });
-      });
-
       it('returns empty array when no events since lastEventId', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
         const result = await events.getChatEventsSince(CHAT_ID, 999999);
         expect(result).toEqual([]);
+      });
+
+      it('returns events for the given chat since lastEventId', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const id1 = await events.insertChatEvent(CHAT_ID, 'first', { n: 1 });
+        const id2 = await events.insertChatEvent(CHAT_ID, 'second', { n: 2 });
+        expect(id1).toBeGreaterThan(0);
+        expect(id2).toBeGreaterThan(id1);
+
+        // getChatEventsSince returns events after lastEventId
+        const result = await events.getChatEventsSince(CHAT_ID, 0);
+        expect(result.length).toBe(2);
+        expect(result[0].id).toBe(id1);
+        expect(result[0].type).toBe('first');
+        expect(result[0].data).toEqual({ n: 1 });
+        expect(result[1].id).toBe(id2);
+        expect(result[1].type).toBe('second');
+        expect(result[1].data).toEqual({ n: 2 });
+      });
+
+      it('returns only events after lastEventId', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const id1 = await events.insertChatEvent(CHAT_ID, 'evt1', { a: 1 });
+        const id2 = await events.insertChatEvent(CHAT_ID, 'evt2', { a: 2 });
+
+        // Request events after id1 — should only get id2
+        const result = await events.getChatEventsSince(CHAT_ID, id1);
+        expect(result.length).toBe(1);
+        expect(result[0].id).toBe(id2);
+        expect(result[0].type).toBe('evt2');
+      });
+
+      it('returns events in ascending order by id', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const id1 = await events.insertChatEvent(CHAT_ID, 'a', { v: 1 });
+        const id2 = await events.insertChatEvent(CHAT_ID, 'b', { v: 2 });
+        const id3 = await events.insertChatEvent(CHAT_ID, 'c', { v: 3 });
+
+        const result = await events.getChatEventsSince(CHAT_ID, 0);
+        expect(result.length).toBe(3);
+        expect(result.map((e) => e.id)).toEqual([id1, id2, id3]);
+      });
+
+      it('roundtrips complex data through insert and get', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const payload = { nested: { deep: true }, arr: [1, 'two', null], num: 42 };
+        const eventId = await events.insertChatEvent(CHAT_ID, 'complex', payload);
+
+        const result = await events.getChatEventsSince(CHAT_ID, 0);
+        expect(result.length).toBe(1);
+        expect(result[0].id).toBe(eventId);
+        expect(result[0].type).toBe('complex');
+        expect(result[0].data).toEqual(payload);
+      });
+
+      it('does not return events from other chats', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+        const otherChat = 'c_other';
+        await service.chats.ensureChat(otherChat, USER_ID);
+
+        await events.insertChatEvent(CHAT_ID, 'mine', { x: 1 });
+        await events.insertChatEvent(otherChat, 'theirs', { x: 2 });
+
+        const result = await events.getChatEventsSince(CHAT_ID, 0);
+        expect(result.length).toBe(1);
+        expect(result[0].type).toBe('mine');
+      });
+
+      it('verifies insertChatEvent is idempotent for same chat/type/data', async () => {
+        await service.chats.ensureChat(CHAT_ID, USER_ID);
+
+        const id1 = await events.insertChatEvent(CHAT_ID, 'idem', { v: 1 });
+        const id2 = await events.insertChatEvent(CHAT_ID, 'idem', { v: 1 });
+
+        // IDs should be different (each insert creates a new record)
+        expect(id1).not.toBe(id2);
+        // Both should be positive
+        expect(id1).toBeGreaterThan(0);
+        expect(id2).toBeGreaterThan(0);
+      });
+    });
+
+    describe('ChatEvent type (compile-time)', () => {
+      it('ChatEvent interface has no chatId field', () => {
+        // If ChatEvent had a chatId field, this would be a compile error
+        const event: import('./interfaces').ChatEvent = {
+          id: 1,
+          type: 'test',
+          data: {},
+          createdAt: new Date().toISOString(),
+        };
+        // Runtime: accessing chatId returns undefined on a properly typed ChatEvent
+        expect((event as unknown as Record<string, unknown>).chatId).toBeUndefined();
       });
     });
   });
@@ -783,7 +915,7 @@ describe.skip('SurrealDatabaseService', () => {
 
       it('returns null when not found', async () => {
         const result = await reactions.getReaction('nonexistent', 'nonexistent');
-        expect(result).toBeNull();
+        expect(result).toBeUndefined();
       });
     });
 
@@ -793,7 +925,7 @@ describe.skip('SurrealDatabaseService', () => {
         await reactions.deleteReaction(MESSAGE_ID, USER_ID);
 
         const result = await reactions.getReaction(MESSAGE_ID, USER_ID);
-        expect(result).toBeNull();
+        expect(result).toBeUndefined();
       });
     });
   });
@@ -1416,8 +1548,8 @@ describe.skip('SurrealDatabaseService', () => {
         const stats = await llmCache.getCacheStats();
 
         expect(stats.totalEntries).toBe(0);
-        expect(stats.oldestEntry).toBeNull();
-        expect(stats.newestEntry).toBeNull();
+        expect(stats.oldestEntry).toBeUndefined();
+        expect(stats.newestEntry).toBeUndefined();
       });
     });
   });

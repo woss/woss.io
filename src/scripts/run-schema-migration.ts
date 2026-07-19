@@ -31,6 +31,7 @@ for (let i = 0; i < statements.length; i++) {
     await db.query(stmt);
     console.log(`OK   [${i + 1}] ${preview}`);
     passed++;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
     const msg = err.message || String(err);
     // REMOVE TABLE is idempotent — "not exist" is fine

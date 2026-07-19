@@ -1,5 +1,5 @@
 import { db } from '$lib/server/db';
-import { subscribe } from '$lib/server/chat-events';
+import { subscribe, type ChatEventPayload } from '$lib/server/chat-events';
 import type { RequestEvent } from '@sveltejs/kit';
 import { CAT, createLogger } from '$lib/server/logger';
 
@@ -30,13 +30,34 @@ export async function GET(event: RequestEvent): Promise<Response> {
 
   const stream = new ReadableStream({
     start(controller) {
-      // Replay persisted events since lastEventId
+      // Subscribe FIRST — buffer events that arrive during DB replay
+      const buffer: ChatEventPayload[] = [];
+      let replayDone = false;
+
+      const unsub = subscribe(chatId, (evt) => {
+        if (!replayDone) {
+          // During replay phase — buffer events
+          buffer.push(evt);
+          return;
+        }
+        try {
+          if (evt.id > 0) {
+            writeSSE(controller, evt.type, evt.data, evt.id);
+          } else {
+            writeSSE(controller, evt.type, evt.data);
+          }
+        } catch (e) {
+          log.warn`SSE write failed, unsubscribing from chat ${chatId}: ${e}`;
+          unsub();
+        }
+      });
+
+      // Replay persisted events since lastEventId, then flush buffer
       (async () => {
         try {
           const events = await db.events.getChatEventsSince(chatId, lastEventId);
           const filtered: Array<(typeof events)[number]> = [];
           for (const evt of events) {
-            // Don't replay irrecoverable errors if chat is no longer locked
             if (
               evt.type === 'error' &&
               typeof evt.data === 'object' &&
@@ -48,8 +69,29 @@ export async function GET(event: RequestEvent): Promise<Response> {
             }
             filtered.push(evt);
           }
+
+          // Mark replay as done BEFORE flushing buffer
+          replayDone = true;
+
+          // Flush DB events
           for (const evt of filtered) {
             writeSSE(controller, evt.type, evt.data, evt.id);
+          }
+
+          // Flush buffered live events with dedup by event ID
+          const seenIds = new Set(filtered.map((e) => e.id).filter((id) => id > 0));
+          for (const evt of buffer) {
+            if (evt.id > 0 && seenIds.has(evt.id)) continue;
+            try {
+              if (evt.id > 0) {
+                writeSSE(controller, evt.type, evt.data, evt.id);
+              } else {
+                writeSSE(controller, evt.type, evt.data);
+              }
+            } catch (e) {
+              log.warn`SSE write failed during buffer flush: ${e}`;
+              break;
+            }
           }
         } catch (err) {
           log.error`Failed to replay events: ${err}`;
@@ -57,23 +99,6 @@ export async function GET(event: RequestEvent): Promise<Response> {
           controller.close();
           return;
         }
-
-        // Subscribe to live events
-        const unsub = subscribe(chatId, (evt) => {
-          try {
-            if (evt.id > 0) {
-              // Persisted event — include event id for reconnect tracking
-              writeSSE(controller, evt.type, evt.data, evt.id);
-            } else {
-              // Live event (token, status) — no id
-              writeSSE(controller, evt.type, evt.data);
-            }
-          } catch (e) {
-            log.warn`SSE write failed, unsubscribing from chat ${chatId}: ${e}`;
-            // Stream closed, unsubscribe
-            unsub();
-          }
-        });
 
         // Cleanup on client disconnect
         event.request.signal.addEventListener(

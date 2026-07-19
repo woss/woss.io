@@ -20,7 +20,7 @@ company_tags:
   - cloud infrastructure
 startDate: 2015-08
 endDate: 2022-01
-duration: 08/2015 - 01/2022
+duration: 08/2015 - 01/2018
 skills:
   - software development
   - devops
