@@ -1,5 +1,5 @@
 import { db } from '$lib/server/db';
-import type { ExperienceEntry } from '$content/index';
+import type { ExperienceEntry } from '$lib/types';
 
 export async function load() {
   const records = await db.content.getExperience();

@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { renderMarkdown } from '$lib/server/markdown';
 import { db } from '$lib/server/db';
-import type { ExperienceEntry } from '$content/index';
+import type { ExperienceEntry } from '$lib/types';
 
 export async function load({ params }: { params: Record<string, string> }) {
   const { slug } = params;
