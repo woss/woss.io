@@ -1,7 +1,4 @@
-// content/index.ts
 // Content collection types
-
-import { parseMarkdownFrontmatter } from './src/lib/server/markdown.ts';
 
 export interface ExperienceEntry {
   slug: string;
@@ -40,6 +37,3 @@ export interface BlogPost {
   partOfSeries?: number;
   workflowFiles?: WorkflowFileEntry[];
 }
-
-// Re-export for backward compatibility
-export { parseMarkdownFrontmatter as parseFrontmatter };

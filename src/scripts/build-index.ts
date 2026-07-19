@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import GithubSlugger from 'github-slugger';
-import { parseFrontmatter } from '../../content/index.js';
+import { parseMarkdownFrontmatter as parseFrontmatter } from '../lib/server/markdown.ts';
 import { load as parseYaml } from 'js-yaml';
 import { SurrealDatabaseService } from '../lib/server/db/surreal-service';
 import type { IDatabaseService } from '../lib/server/db/interfaces';
