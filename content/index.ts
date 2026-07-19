@@ -1,7 +1,7 @@
-// src/content/index.ts
+// content/index.ts
 // Content collection types
 
-import { parseMarkdownFrontmatter } from '../lib/server/markdown.ts';
+import { parseMarkdownFrontmatter } from './src/lib/server/markdown.ts';
 
 export interface ExperienceEntry {
   slug: string;

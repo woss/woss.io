@@ -306,7 +306,7 @@ Users can click any entry for full details, or use "Copy as Markdown" or "Copy a
 
 ## The Blog System
 
-Blog posts are markdown files in `src/content/posts/` with YAML frontmatter:
+Blog posts are markdown files in `content/posts/` with YAML frontmatter:
 
 ```yaml
 ---
