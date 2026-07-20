@@ -40,11 +40,10 @@ docker run -p 3000:3000 --env-file .env -v ./data:/app/data woss/woss-io
 
 ### Docker Compose stacks
 
-| Service   | Purpose                       | Port        |
-| --------- | ----------------------------- | ----------- |
-| `woss`    | Main SvelteKit app            | 5173 → 3000 |
-| `init`    | One-shot search index builder | —           |
-| `zinalog` | Log aggregation dashboard     | 4000        |
+| Service | Purpose                       | Port        |
+| ------- | ----------------------------- | ----------- |
+| `woss`  | Main SvelteKit app            | 5173 → 3000 |
+| `init`  | One-shot search index builder | —           |
 
 ## SurrealDB (Development — Migration Target)
 

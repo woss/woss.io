@@ -17,7 +17,7 @@ Beyond the chat, there's:
 - **Dark and light mode**: follows your system preference, handled by sv5ui theming
 - **Rate limiting**: SQLite-backed, 10 requests per minute per IP
 - **GeoIP**: country detection via geoip-country so I know roughly where visitors are
-- **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing
+- **Structured logging**: LogTape with file rotation
 - **Webhooks**: events pushed to external URLs when interesting things happen
 - **Message reactions**: upvote, downvote, or heart AI responses
 - **Contact and intent detection**: the AI can figure out if you're trying to hire me or just browsing
@@ -100,7 +100,6 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 | `PUBLIC_DD_RUM_APP_ID`        | -                          | Datadog RUM application ID             |
 | `PUBLIC_DD_RUM_CLIENT_TOKEN`  | -                          | Datadog RUM client token               |
 | `PUBLIC_APP_VERSION`          | `0.0.0`                    | App version tag for Datadog            |
-| `ZINALOG_ENCRYPTION_KEY`      | -                          | Encryption key for ZinaLog container   |
 | `SURREAL_DB_URL`              | `ws://localhost:10101`     | SurrealDB WebSocket endpoint           |
 | `SURREAL_DB_USER`             | `admin`                    | SurrealDB user                         |
 | `SURREAL_DB_PASS`             | `admin`                    | SurrealDB password                     |
@@ -192,7 +191,6 @@ Docker Compose stacks:
 
 - **woss**: Main SvelteKit app (port 5173 → 3000)
 - **init**: One-shot search index builder
-- **zinalog**: Log aggregation dashboard (port 4000)
 
 ### SurrealDB (Development — Migration Target)
 
@@ -235,7 +233,7 @@ The tech side in one shot:
 - **Embeddings**: HuggingFace Transformers.js (ONNX), in-process, no external API
 - **MCP Client**: @modelcontextprotocol/sdk
 - **OG Images**: Satori + resvg-js
-- **Logging**: LogTape + ZinaLog
+- **Logging**: LogTape
 - **Container**: Docker + Docker Compose
 
 ## License

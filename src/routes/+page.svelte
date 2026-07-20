@@ -44,8 +44,8 @@
   let ready = $state(false);
   let showContactForm = $state(true);
 
-  let createFormEl: HTMLFormElement;
-  let deleteFormEl: HTMLFormElement;
+  let createFormEl = $state<HTMLFormElement>();
+  let deleteFormEl = $state<HTMLFormElement>();
   let deleteChatId = $state('');
   let pendingCreateMessage = $state('');
 

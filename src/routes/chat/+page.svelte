@@ -24,8 +24,8 @@ const MAX_CHARS = 500;
 let messageText = $state('');
 let isLoading = $state(false);
 let inputEl = $state<HTMLElement | null>(null);
-let createFormEl: HTMLFormElement;
-let deleteFormEl: HTMLFormElement;
+let createFormEl = $state<HTMLFormElement>();
+let deleteFormEl = $state<HTMLFormElement>();
 let deleteTargetChatId = $state('');
 let pendingQuery = $state('');
 
