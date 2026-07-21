@@ -9,7 +9,7 @@
 
   let error = $state<string | null>(null);
   let userId = $state<string | null>(null);
-  let formEl: HTMLFormElement;
+  let formEl: HTMLFormElement = $state.raw()!;
 
   $effect(() => {
     if (!browser) return;

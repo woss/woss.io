@@ -78,7 +78,7 @@ async function migrateUserAgents(db: Database.Database, surreal: Surreal) {
   for (const row of rows) {
     const r = row as Record<string, unknown>;
     try {
-      const created = await surreal.create(new Table('user_agents')).content({
+      const created = await surreal.upsert(new Table('user_agents')).content({
         ua: r.ua ?? null,
         ip: r.ip ?? null,
         device_type: r.device_type ?? null,
@@ -102,7 +102,7 @@ async function migrateModels(db: Database.Database, surreal: Surreal) {
   for (const row of rows) {
     const r = row as Record<string, unknown>;
     try {
-      const created = await surreal.create(new Table('models')).content({
+      const created = await surreal.upsert(new Table('models')).content({
         provider: r.provider ?? null,
         model_name: r.model_name ?? null,
         actual_model_name: r.actual_model_name ?? null,
@@ -126,7 +126,7 @@ async function migrateUsers(db: Database.Database, surreal: Surreal) {
   for (const row of rows) {
     const r = row as Record<string, unknown>;
     try {
-      await surreal.create(new RecordId('users', String(r.id))).content({
+      await surreal.upsert(new RecordId('users', String(r.id))).content({
         email: r.email ?? null,
         name: r.name ?? null,
         created_at: toDate(r.created_at) ?? new Date(),
@@ -148,7 +148,7 @@ async function migratePageExperience(db: Database.Database, surreal: Surreal) {
   for (const row of rows) {
     const r = row as Record<string, unknown>;
     try {
-      await surreal.create(new RecordId('page_experience', String(r.slug))).content({
+      await surreal.upsert(new RecordId('page_experience', String(r.slug))).content({
         slug: r.slug ?? null,
         hash: r.hash ?? null,
         content: r.content ?? null,
@@ -180,7 +180,7 @@ async function migratePagePosts(db: Database.Database, surreal: Surreal) {
   // First pass: insert all page_posts without part_of_series (self-ref)
   for (const r of rows) {
     try {
-      await surreal.create(new RecordId('page_posts', String(r.slug))).content({
+      await surreal.upsert(new RecordId('page_posts', String(r.slug))).content({
         slug: r.slug ?? null,
         hash: r.hash ?? null,
         content: r.content ?? null,
@@ -251,7 +251,7 @@ async function migrateChats(db: Database.Database, surreal: Surreal) {
         const mapped = userAgentIdMap.get(Number(r.user_agent_id));
         if (mapped) data.user_agent_id = mapped;
       }
-      await surreal.create(new RecordId('chats', String(r.id))).content(data);
+      await surreal.upsert(new RecordId('chats', String(r.id))).content(data);
 
       // Create has_chat edge: users → chats
       if (r.user_id) {
@@ -308,7 +308,7 @@ async function migrateMessages(db: Database.Database, surreal: Surreal) {
         if (mapped) data.user_agent_id = mapped;
       }
 
-      await surreal.create(new RecordId('messages', String(r.id))).content(data);
+      await surreal.upsert(new RecordId('messages', String(r.id))).content(data);
 
       // Create used_model edge if model_id present
       const modelId = toNum(r.model_id);
@@ -350,7 +350,7 @@ async function migrateToolCalls(db: Database.Database, surreal: Surreal) {
         started_at: r.started_at ?? null,
         finished_at: r.finished_at ?? null,
       };
-      await surreal.create(new RecordId('tool_calls', String(r.id))).content(data);
+      await surreal.upsert(new RecordId('tool_calls', String(r.id))).content(data);
       // Create has_tool_call edge: messages → tool_calls
       if (r.message_id) {
         try {
@@ -387,7 +387,7 @@ async function migrateReactions(db: Database.Database, surreal: Surreal) {
         created_at: toDate(r.created_at) ?? new Date(),
       };
       if (r.user_id) data.user_id = new RecordId('users', String(r.user_id));
-      const created = await surreal.create(new Table('reactions')).content(data);
+      const created = await surreal.upsert(new Table('reactions')).content(data);
       // Create has_reaction edge: messages → reactions
       if (r.message_id) {
         try {
@@ -425,7 +425,7 @@ async function migrateChatEvents(db: Database.Database, surreal: Surreal) {
         data: r.data ?? null,
         created_at: toDate(r.created_at) ?? new Date(),
       };
-      await surreal.create(new RecordId('chat_events', String(r.id))).content(data);
+      await surreal.upsert(new RecordId('chat_events', String(r.id))).content(data);
       // Create has_event edge: chats → chat_events
       if (r.chat_id) {
         try {
@@ -466,7 +466,7 @@ async function migrateLeads(db: Database.Database, surreal: Surreal) {
         created_at: toDate(r.created_at) ?? new Date(),
       };
       if (r.user_id) data.user_id = new RecordId('users', String(r.user_id));
-      await surreal.create(new Table('leads')).content(data);
+      await surreal.upsert(new Table('leads')).content(data);
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -490,7 +490,7 @@ async function migrateContactIntents(db: Database.Database, surreal: Surreal) {
       };
       if (r.user_id) data.user_id = new RecordId('users', String(r.user_id));
       if (r.chat_id) data.chat_id = new RecordId('chats', String(r.chat_id));
-      await surreal.create(new Table('contact_intents')).content(data);
+      await surreal.upsert(new Table('contact_intents')).content(data);
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -517,7 +517,7 @@ async function migrateLlmCache(db: Database.Database, surreal: Surreal) {
         created_at: toDate(r.created_at) ?? new Date(),
       };
       if (r.message_id) data.message_id = new RecordId('messages', String(r.message_id));
-      await surreal.create(new Table('llm_cache')).content(data);
+      await surreal.upsert(new Table('llm_cache')).content(data);
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -610,28 +610,7 @@ async function migrateChunks(db: Database.Database, surreal: Surreal) {
         section: r.section ?? null,
         embedding: toJSON<number[]>(r.embedding),
       };
-      await surreal.create(new RecordId('chunks', String(r.chunk_id ?? r.id))).content(data);
-      result.succeeded++;
-    } catch (e) {
-      result.failed++;
-      result.errors.push(`id=${r.id}: ${(e as Error).message}`);
-    }
-  }
-  return result;
-}
-
-async function migrateRateLimits(db: Database.Database, surreal: Surreal) {
-  const result: MigrationResult = { table: 'rate_limits', attempted: 0, succeeded: 0, failed: 0, errors: [] };
-  const rows = db.prepare('SELECT * FROM rate_limits').all();
-  result.attempted = rows.length;
-
-  for (const row of rows) {
-    const r = row as Record<string, unknown>;
-    try {
-      await surreal.create(new Table('rate_limits')).content({
-        ip: r.ip ?? null,
-        timestamp: toDate(r.timestamp) ?? new Date(),
-      });
+      await surreal.upsert(new RecordId('chunks', String(r.chunk_id ?? r.id))).content(data);
       result.succeeded++;
     } catch (e) {
       result.failed++;
@@ -711,7 +690,6 @@ const MIGRATION_ORDER = [
   migrateLlmCache,
   migrateFeatureTours,
   migrateChunks,
-  migrateRateLimits,
   migrateCentroids,
 ] as const;
 

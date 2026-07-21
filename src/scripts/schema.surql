@@ -61,6 +61,7 @@ DEFINE FIELD deleted_at   ON TABLE messages TYPE option<datetime> | null;
 DEFINE FIELD user_agent_id ON TABLE messages TYPE option<record<user_agents>>;
 DEFINE FIELD trace_id     ON TABLE messages TYPE option<string> | null;
 DEFINE FIELD from_cache   ON TABLE messages TYPE bool DEFAULT false;
+DEFINE FIELD chat_id     ON TABLE messages TYPE option<record<chats>>;
 
 DEFINE INDEX idx_messages_user ON TABLE messages FIELDS user_id;
 
@@ -242,17 +243,6 @@ DEFINE FIELD finished_at  ON TABLE tool_calls TYPE option<string> | null;
 -- has_tool_call edge: messages → tool_calls
 DEFINE TABLE has_tool_call SCHEMAFULL TYPE RELATION IN messages OUT tool_calls;
 DEFINE FIELD created_at ON TABLE has_tool_call TYPE datetime DEFAULT time::now();
-
--- =============================================================================
--- 15. rate_limits — IP-based rate limiting
--- =============================================================================
-DEFINE TABLE rate_limits SCHEMAFULL;
-
-DEFINE FIELD ip        ON TABLE rate_limits TYPE option<string> | null;
-DEFINE FIELD timestamp ON TABLE rate_limits TYPE option<datetime> | null;
-
-DEFINE INDEX idx_rate_limits_ip ON TABLE rate_limits FIELDS ip;
-DEFINE INDEX idx_rate_limits_ip_timestamp ON TABLE rate_limits FIELDS ip, timestamp;
 
 -- Removed: feature_tours table and has_tour edge — dismissed_tours now on users table
 
