@@ -1,4 +1,4 @@
-import { getDismissedFeatureTours } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import type { RequestEvent } from '@sveltejs/kit';
 
 export async function GET(event: RequestEvent): Promise<Response> {
@@ -11,7 +11,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    const dismissed = getDismissedFeatureTours(userId);
+    const dismissed = await db.featureTours.getDismissedFeatureTours(userId);
     return new Response(JSON.stringify({ dismissed }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

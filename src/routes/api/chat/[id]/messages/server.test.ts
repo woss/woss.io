@@ -2,8 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 vi.mock('$lib/server/db', () => ({
-  getMessages: vi.fn(),
-  getToolCallsForMessages: vi.fn(),
+  db: {
+    messages: {
+      getMessages: vi.fn(),
+    },
+    toolCalls: {
+      getToolCallsForMessages: vi.fn(),
+    },
+  },
 }));
 
 vi.mock('$lib/server/logger', () => ({
@@ -19,7 +25,7 @@ vi.mock('$lib/server/logger', () => ({
 }));
 
 import type { StoredMessage } from '$lib/server/db';
-import { getMessages, getToolCallsForMessages } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { GET } from './+server';
 
 function buildEvent(chatId: string | null): RequestEvent {
@@ -64,7 +70,7 @@ describe('GET /api/chat/[id]/messages', () => {
         content: 'Hi there',
         sources: '[{"title":"Source 1","score":0.95,"slug":"test","url":"/test","type":"post"}]',
       },
-    ];
+    ] as StoredMessage[];
     const mockToolCalls = {
       'msg-2': [
         {
@@ -78,8 +84,8 @@ describe('GET /api/chat/[id]/messages', () => {
       ],
     };
 
-    vi.mocked(getMessages).mockReturnValue(mockMessages as unknown as StoredMessage[]);
-    vi.mocked(getToolCallsForMessages).mockReturnValue(mockToolCalls);
+    vi.mocked(db.messages.getMessages).mockResolvedValue(mockMessages);
+    vi.mocked(db.toolCalls.getToolCallsForMessages).mockResolvedValue(mockToolCalls);
 
     const event = buildEvent('chat-1');
     const res = await GET(event);
@@ -94,14 +100,14 @@ describe('GET /api/chat/[id]/messages', () => {
         toolCalls: mockToolCalls['msg-2'],
       },
     ]);
-    expect(getMessages).toHaveBeenCalledWith('chat-1', 50, 0);
-    expect(getToolCallsForMessages).toHaveBeenCalledWith(['msg-1', 'msg-2']);
+    expect(db.messages.getMessages).toHaveBeenCalledWith('chat-1', 50, 0);
+    expect(db.toolCalls.getToolCallsForMessages).toHaveBeenCalledWith(['msg-1', 'msg-2']);
   });
 
   it('returns 200 with empty toolCalls when getToolCallsForMessages returns empty', async () => {
-    const mockMessages = [{ id: 'msg-1', role: 'user', content: 'Hello' }];
-    vi.mocked(getMessages).mockReturnValue(mockMessages as unknown as StoredMessage[]);
-    vi.mocked(getToolCallsForMessages).mockReturnValue({});
+    const mockMessages = [{ id: 'msg-1', role: 'user', content: 'Hello' }] as StoredMessage[];
+    vi.mocked(db.messages.getMessages).mockResolvedValue(mockMessages);
+    vi.mocked(db.toolCalls.getToolCallsForMessages).mockResolvedValue({});
 
     const event = buildEvent('chat-1');
     const res = await GET(event);
@@ -112,10 +118,12 @@ describe('GET /api/chat/[id]/messages', () => {
   });
 
   it('returns sources as undefined for invalid JSON', async () => {
-    const mockMessages = [{ id: 'msg-1', role: 'user', content: 'Hello', sources: 'not-valid-json' }];
+    const mockMessages = [
+      { id: 'msg-1', role: 'user', content: 'Hello', sources: 'not-valid-json' },
+    ] as StoredMessage[];
 
-    vi.mocked(getMessages).mockReturnValue(mockMessages as unknown as StoredMessage[]);
-    vi.mocked(getToolCallsForMessages).mockReturnValue({});
+    vi.mocked(db.messages.getMessages).mockResolvedValue(mockMessages);
+    vi.mocked(db.toolCalls.getToolCallsForMessages).mockResolvedValue({});
 
     const event = buildEvent('chat-1');
     const res = await GET(event);
@@ -126,9 +134,7 @@ describe('GET /api/chat/[id]/messages', () => {
   });
 
   it('returns 500 when getMessages throws', async () => {
-    vi.mocked(getMessages).mockImplementation(() => {
-      throw new Error('DB connection lost');
-    });
+    vi.mocked(db.messages.getMessages).mockRejectedValue(new Error('DB connection lost'));
 
     const event = buildEvent('chat-1');
     const res = await GET(event);
@@ -139,10 +145,8 @@ describe('GET /api/chat/[id]/messages', () => {
   });
 
   it('returns 500 when getToolCallsForMessages throws', async () => {
-    vi.mocked(getMessages).mockReturnValue([{ id: 'msg-1' }] as unknown as StoredMessage[]);
-    vi.mocked(getToolCallsForMessages).mockImplementation(() => {
-      throw new Error('DB connection lost');
-    });
+    vi.mocked(db.messages.getMessages).mockResolvedValue([{ id: 'msg-1' }] as unknown as StoredMessage[]);
+    vi.mocked(db.toolCalls.getToolCallsForMessages).mockRejectedValue(new Error('DB connection lost'));
 
     const event = buildEvent('chat-1');
     const res = await GET(event);

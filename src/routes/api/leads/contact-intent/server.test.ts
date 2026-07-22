@@ -3,7 +3,9 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
 vi.mock('$lib/server/db', () => ({
-  insertContactIntent: vi.fn(),
+  db: {
+    contactIntents: { insertContactIntent: vi.fn() },
+  },
 }));
 
 vi.mock('$lib/server/rate-limiter', () => ({
@@ -22,7 +24,7 @@ vi.mock('$lib/server/logger', () => ({
   }),
 }));
 
-import { insertContactIntent } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { POST } from './+server';
 
@@ -64,7 +66,7 @@ function buildEvent(overrides: {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
+  vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
 });
 
 describe('POST /api/leads/contact-intent', () => {
@@ -164,7 +166,7 @@ describe('POST /api/leads/contact-intent', () => {
     });
 
     it('returns 429 when general rate limit exceeded', async () => {
-      vi.mocked(checkRateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt: Date.now() + 60_000 });
+      vi.mocked(checkRateLimit).mockResolvedValue({ allowed: false, remaining: 0, resetAt: Date.now() + 60_000 });
 
       const event = buildEvent({ origin: 'https://woss.io', ip: 'rate-general-test', body: validBody });
       const res = await POST(event);
@@ -183,13 +185,13 @@ describe('POST /api/leads/contact-intent', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
 
-      expect(insertContactIntent).toHaveBeenCalledWith('user-1', 'chat-1', '/contact');
+      expect(db.contactIntents.insertContactIntent).toHaveBeenCalledWith('user-1', 'chat-1', '/contact');
     });
   });
 
   describe('error handling', () => {
     it('returns 200 even when insertContactIntent throws (fire-and-forget)', async () => {
-      vi.mocked(insertContactIntent).mockImplementation(() => {
+      vi.mocked(db.contactIntents.insertContactIntent).mockImplementation(() => {
         throw new Error('DB connection lost');
       });
 
@@ -209,7 +211,7 @@ describe('POST /api/leads/contact-intent', () => {
       });
       await POST(event);
 
-      expect(insertContactIntent).toHaveBeenCalledWith('user-42', 'chat-99', '/contact');
+      expect(db.contactIntents.insertContactIntent).toHaveBeenCalledWith('user-42', 'chat-99', '/contact');
     });
   });
 });

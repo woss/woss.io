@@ -1,7 +1,7 @@
-import { getExperience } from '$lib/server/db';
+import { db } from '$lib/server/db';
 
 export async function GET(): Promise<Response> {
-  const entries = getExperience();
+  const entries = await db.content.getExperience();
 
   return new Response(
     JSON.stringify({

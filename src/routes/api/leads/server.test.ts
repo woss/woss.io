@@ -3,8 +3,10 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
 vi.mock('$lib/server/db', () => ({
-  insertLead: vi.fn(),
-  updateUserContact: vi.fn(),
+  db: {
+    leads: { insertLead: vi.fn() },
+    contactIntents: { updateUserContact: vi.fn() },
+  },
 }));
 
 vi.mock('$lib/server/geo', () => ({
@@ -36,7 +38,7 @@ vi.mock('$lib/server/sanitize', () => ({
 }));
 
 // Import mocked modules for assertions
-import { insertLead, updateUserContact } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { lookupCountry } from '$lib/server/geo';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { callWebhook } from '$lib/server/webhooks';
@@ -82,7 +84,7 @@ function buildEvent(overrides: {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
+  vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
   vi.mocked(lookupCountry).mockReturnValue('US');
 });
 
@@ -204,7 +206,7 @@ describe('POST /api/leads', () => {
     });
 
     it('returns 429 when general rate limit exceeded', async () => {
-      vi.mocked(checkRateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt: Date.now() + 60_000 });
+      vi.mocked(checkRateLimit).mockResolvedValue({ allowed: false, remaining: 0, resetAt: Date.now() + 60_000 });
 
       const event = buildEvent({ origin: 'https://woss.io', ip: 'rate-general-test', body: validBody });
       const res = await POST(event);
@@ -228,8 +230,8 @@ describe('POST /api/leads', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
 
-      expect(updateUserContact).toHaveBeenCalledWith('user-1', 'Alice', 'alice@example.com');
-      expect(insertLead).toHaveBeenCalledWith(
+      expect(db.contactIntents.updateUserContact).toHaveBeenCalledWith('user-1', 'Alice', 'alice@example.com');
+      expect(db.leads.insertLead).toHaveBeenCalledWith(
         'user-1',
         'Alice',
         'alice@example.com',
@@ -256,13 +258,21 @@ describe('POST /api/leads', () => {
       const res = await POST(event);
       expect(res.status).toBe(200);
 
-      expect(insertLead).toHaveBeenCalledWith('user-1', 'Alice', 'alice@example.com', '', '', '', 'success-test-2');
+      expect(db.leads.insertLead).toHaveBeenCalledWith(
+        'user-1',
+        'Alice',
+        'alice@example.com',
+        '',
+        '',
+        '',
+        'success-test-2',
+      );
     });
   });
 
   describe('error handling', () => {
     it('returns 500 when DB call throws', async () => {
-      vi.mocked(insertLead).mockImplementation(() => {
+      vi.mocked(db.leads.insertLead).mockImplementation(() => {
         throw new Error('DB connection lost');
       });
 

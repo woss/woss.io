@@ -4,7 +4,7 @@ import { generateTraceId, generateSpanId, withTrace } from '$lib/server/trace-co
 import { getActiveOtelContext } from '$lib/server/trace-context';
 import type { Handle } from '@sveltejs/kit';
 import { dev } from '$app/environment';
-
+import { db } from '$lib/server/db';
 import { env } from '$env/dynamic/private';
 
 const APP_ORIGIN = config().app.origin;
@@ -30,7 +30,6 @@ let logInitialized = false;
 export const handle: Handle = async ({ event, resolve }) => {
   // Init logger on first request
   if (!logInitialized) {
-    logInitialized = true;
     const VALID_LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error'] as const;
     type LogLevel = (typeof VALID_LOG_LEVELS)[number];
     const rawLevel = env.LOG_LEVEL;
@@ -38,6 +37,13 @@ export const handle: Handle = async ({ event, resolve }) => {
     await initLogger(logLevel);
     const log = createLogger(CAT.hooks);
     log.info(`Logger initialized. App origin: ${APP_ORIGIN}`);
+    try {
+      await db.init();
+      logInitialized = true;
+      log.info('SurrealDB connection initialized');
+    } catch (err) {
+      log.warn(`SurrealDB connection failed (will retry on next request): ${(err as Error).message}`);
+    }
   }
 
   const log = createLogger(CAT.hooks);

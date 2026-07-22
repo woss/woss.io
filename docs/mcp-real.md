@@ -81,14 +81,14 @@ The streaming refactor is complete:
 
 ## Files to Change
 
-| File                                         | Change                                                                          |
-| -------------------------------------------- | ------------------------------------------------------------------------------- |
-| `src/lib/server/openai-provider.ts`          | Add doom loop guard, step boundary tracking, maxSteps=5→2                       |
-| `src/lib/server/mcp/tools.ts`                | Add tool allowlist filtering (done), add tool selection hierarchy prompt (done) |
-| `src/routes/api/ask/+server.ts`              | Keep empty-answer retry (done)                                                  |
-| `src/routes/chat/[id]/+page.svelte`          | Remove stripToolCallXml after legacy entries settled                            |
-| `src/content/experience/anagolay-network.md` | Remove Grants & Funding section once doom loop fixed                            |
-| `package.json`                               | Already updated — deps added in previous refactor                               |
+| File                                     | Change                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| `src/lib/server/openai-provider.ts`      | Add doom loop guard, step boundary tracking, maxSteps=5→2                       |
+| `src/lib/server/mcp/tools.ts`            | Add tool allowlist filtering (done), add tool selection hierarchy prompt (done) |
+| `src/routes/api/ask/+server.ts`          | Keep empty-answer retry (done)                                                  |
+| `src/routes/chat/[id]/+page.svelte`      | Remove stripToolCallXml after legacy entries settled                            |
+| `content/experience/anagolay-network.md` | Remove Grants & Funding section once doom loop fixed                            |
+| `package.json`                           | Already updated — deps added in previous refactor                               |
 
 ### Files That Stay Untouched
 

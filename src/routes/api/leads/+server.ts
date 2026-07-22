@@ -1,5 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { insertLead, updateUserContact } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { lookupCountry } from '$lib/server/geo';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { callWebhook } from '$lib/server/webhooks';
@@ -117,7 +117,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
       headers: { 'Content-Type': 'application/json' },
     });
   }
-  const generalRl = checkRateLimit(ip);
+  const generalRl = await checkRateLimit(ip);
   if (!generalRl.allowed) {
     return new Response(JSON.stringify({ error: 'Too many requests. Please slow down.' }), {
       status: 429,
@@ -126,8 +126,16 @@ export async function POST(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    updateUserContact(userId, sanitizedName, sanitizedEmail);
-    insertLead(userId, sanitizedName, sanitizedEmail, sanitizedCompany, sanitizedRole, sanitizedMessage, ip);
+    await db.contactIntents.updateUserContact(userId, sanitizedName, sanitizedEmail);
+    await db.leads.insertLead(
+      userId,
+      sanitizedName,
+      sanitizedEmail,
+      sanitizedCompany,
+      sanitizedRole,
+      sanitizedMessage,
+      ip,
+    );
     const ua = event.request.headers.get('user-agent') ?? 'unknown';
     const country = lookupCountry(ip);
     callWebhook({

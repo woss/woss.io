@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { getPosts } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { renderMarkdown } from '$lib/server/markdown';
 import { CAT, createLogger } from '$lib/server/logger';
 
@@ -19,7 +19,7 @@ export async function load({ params, fetch }: { params: Record<string, string>; 
   const { slug } = params;
   const log = createLogger(CAT.content);
 
-  const allPosts = getPosts();
+  const allPosts = await db.content.getPosts();
   const currentRaw = allPosts.find((p) => p.slug === slug);
   if (!currentRaw) {
     throw error(404, 'Post not found');

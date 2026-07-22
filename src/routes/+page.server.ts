@@ -1,12 +1,12 @@
 import { fail } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
-import { getPosts, createChat, getChat, deleteChat, getUserChatCount, getOrCreateUserAgent } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { callWebhook } from '$lib/server/webhooks';
 import { CAT, createLogger } from '$lib/server/logger';
 import { config } from '$lib/config';
 
 export async function load() {
-  const allPosts = getPosts();
+  const allPosts = await db.content.getPosts();
 
   const heroPage = allPosts.find((p) => p.slug === 'building-woss-io');
   const hero = heroPage
@@ -42,17 +42,18 @@ export const actions = {
 
     if (!userId) return fail(400, { error: 'userId is required' });
 
-    const count = getUserChatCount(userId);
+    const count = await db.chats.getUserChatCount(userId);
     if (count >= config.public.maxChats) {
       log.warn`Create chat rejected: user ${userId} has ${count} chats (max ${config.public.maxChats})`;
       return fail(400, { error: `Maximum ${config.public.maxChats} chats allowed` });
     }
 
     try {
+      console.log('trying', data);
       const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
       const userAgent = event.request.headers.get('user-agent');
-      const userAgentId = userAgent ? getOrCreateUserAgent(userAgent, ip) : undefined;
-      const id = createChat(userId, undefined, userAgentId);
+      const userAgentId = userAgent ? await db.userAgents.getOrCreateUserAgent(userAgent, ip) : undefined;
+      const id = await db.chats.createChat(userId, undefined, userAgentId);
       return { id };
     } catch (e) {
       log.error`Failed to create chat: ${e}`;
@@ -71,11 +72,11 @@ export const actions = {
     if (!chatId) return fail(400, { error: 'chatId is required' });
 
     try {
-      const chat = getChat(chatId);
+      const chat = await db.chats.getChat(chatId);
       if (!chat) return fail(404, { error: 'Chat not found' });
       if (chat.userId !== userId) return fail(403, { error: 'Forbidden' });
 
-      deleteChat(chatId);
+      await db.chats.deleteChat(chatId);
       callWebhook({ type: 'chatDeleted', chatId }).catch((e) => log.warn`Webhook failed: ${e}`);
       return { success: true, chatId };
     } catch (e) {

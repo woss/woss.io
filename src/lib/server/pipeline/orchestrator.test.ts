@@ -14,18 +14,21 @@ vi.mock('$lib/server/webhooks', () => ({
   callWebhook: vi.fn(),
 }));
 
-vi.mock('$lib/server/db', () => ({
-  addMessage: vi.fn(() => 'msg-42'),
-  getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      run: vi.fn(),
-      all: vi.fn(() => []),
-      get: vi.fn(),
-      iterate: vi.fn(function* () {}),
-    })),
-    transaction: vi.fn((fn: (rows: unknown[]) => void) => fn),
-  })),
-  searchChunks: vi.fn(() => []),
+vi.mock('$lib/server/db/index', () => ({
+  db: {
+    messages: {
+      addMessage: vi.fn(() => 'msg-42'),
+      createMessageForStreaming: vi.fn(() => 'msg-42'),
+      finalizeMessage: vi.fn(),
+      setMessageQueryType: vi.fn(),
+    },
+    vector: {
+      searchChunks: vi.fn(() => []),
+    },
+    content: {
+      getPosts: vi.fn(() => []),
+    },
+  },
 }));
 
 vi.mock('$lib/server/openai-provider', () => ({
@@ -73,7 +76,7 @@ vi.mock('$lib/server/logger', () => {
 });
 
 vi.mock('$lib/query-classifier', () => ({
-  classifyQuery: vi.fn(() => 'rag'),
+  classifyQuery: vi.fn().mockResolvedValue('rag'),
 }));
 
 vi.mock('$lib/server/chat-helpers', () => ({
@@ -116,7 +119,7 @@ import { handleEarlyGates } from './early-gates';
 import { streamWithRetry } from './stream';
 import { saveAndEmitResult } from './save-result';
 import { publishPersistent } from '$lib/server/chat-events';
-import { addMessage, searchChunks } from '$lib/server/db';
+import { db } from '$lib/server/db/index';
 import { CAT, createLogger } from '$lib/server/logger';
 
 // ===========================================================================
@@ -178,7 +181,7 @@ describe('startGeneration', () => {
     vi.mocked(streamWithRetry).mockResolvedValueOnce({
       answerText: 'Hello back!',
       reasoningText: '',
-      currentModelId: 42,
+      currentModelId: '42',
       tokenUsage: { promptTokens: 10, completionTokens: 20 },
       responseMs: 100,
       maxTokens: 4096,
@@ -210,7 +213,7 @@ describe('startGeneration', () => {
     vi.mocked(streamWithRetry).mockResolvedValueOnce({
       answerText: '',
       reasoningText: '',
-      currentModelId: 0,
+      currentModelId: '',
       tokenUsage: { promptTokens: 0, completionTokens: 0 },
       responseMs: 0,
       maxTokens: 0,
@@ -238,7 +241,7 @@ describe('startGeneration', () => {
 
     await startGeneration('Broken', 'chat-3', 'user-1', 5);
 
-    expect(addMessage).toHaveBeenCalledWith(
+    expect(db.messages.addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         role: 'assistant',
         content: '',
@@ -249,7 +252,7 @@ describe('startGeneration', () => {
     expect(publishPersistent).toHaveBeenCalledWith(
       'chat-3',
       'error',
-      expect.objectContaining({ message: 'Unexpected DB failure', irrecoverable: true }),
+      expect.objectContaining({ message: 'Unexpected DB failure', irrecoverable: false }),
     );
   });
 });
@@ -275,7 +278,7 @@ describe('source score threshold', () => {
     vi.mocked(streamWithRetry).mockResolvedValueOnce({
       answerText: 'Hello back!',
       reasoningText: '',
-      currentModelId: 42,
+      currentModelId: '42',
       tokenUsage: { promptTokens: 10, completionTokens: 20 },
       responseMs: 100,
       maxTokens: 4096,
@@ -289,7 +292,7 @@ describe('source score threshold', () => {
 
     const makeChunk = (title: string, slug: string, text = '...') => ({
       id: `id-${slug}`,
-      date: null,
+      date: '',
       tags: [],
       section: '',
       embedding: [],
@@ -299,7 +302,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    vi.mocked(searchChunks).mockReturnValueOnce([
+    vi.mocked(db.vector.searchChunks).mockResolvedValueOnce([
       { score: 0.1, chunk: makeChunk('Good', 'good') },
       { score: 0.6, chunk: makeChunk('Bad', 'bad') },
       { score: 0.4, chunk: makeChunk('Edge', 'edge') },
@@ -325,7 +328,7 @@ describe('source score threshold', () => {
     vi.mocked(streamWithRetry).mockResolvedValueOnce({
       answerText: 'Hello back!',
       reasoningText: '',
-      currentModelId: 42,
+      currentModelId: '42',
       tokenUsage: { promptTokens: 10, completionTokens: 20 },
       responseMs: 100,
       maxTokens: 4096,
@@ -339,7 +342,7 @@ describe('source score threshold', () => {
 
     const makeChunk = (title: string, slug: string) => ({
       id: `id-${slug}`,
-      date: null,
+      date: '',
       tags: [],
       section: '',
       embedding: [],
@@ -349,7 +352,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    vi.mocked(searchChunks).mockReturnValueOnce([
+    vi.mocked(db.vector.searchChunks).mockResolvedValueOnce([
       { score: 0.6, chunk: makeChunk('A', 'a') },
       { score: 0.8, chunk: makeChunk('B', 'b') },
     ]);
@@ -376,7 +379,7 @@ describe('source score threshold', () => {
     vi.mocked(streamWithRetry).mockResolvedValueOnce({
       answerText: 'Hello back!',
       reasoningText: '',
-      currentModelId: 42,
+      currentModelId: '42',
       tokenUsage: { promptTokens: 10, completionTokens: 20 },
       responseMs: 100,
       maxTokens: 4096,
@@ -390,7 +393,7 @@ describe('source score threshold', () => {
 
     const makeChunk = (title: string, slug: string) => ({
       id: `id-${slug}`,
-      date: null,
+      date: '',
       tags: [],
       section: '',
       embedding: [],
@@ -400,7 +403,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    vi.mocked(searchChunks).mockReturnValueOnce([
+    vi.mocked(db.vector.searchChunks).mockResolvedValueOnce([
       { score: 0.1, chunk: makeChunk('X', 'x') },
       { score: 0.4, chunk: makeChunk('Y', 'y') },
     ]);

@@ -80,7 +80,7 @@ function loadConfig(): Config {
     },
     llmCache: {
       enabled: LLM_CACHE_ENABLED === 'true' || LLM_CACHE_ENABLED === '1',
-      ttlSec: Number(LLM_CACHE_TTL) > 0 ? Number(LLM_CACHE_TTL) : 86400,
+      ttlSec: Number(LLM_CACHE_TTL) > 0 ? Number(LLM_CACHE_TTL) : 3600,
     },
     report: {
       webhookUrl: WOSS_USER_WEBHOOK_URL ?? '',

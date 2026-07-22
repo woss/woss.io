@@ -33,5 +33,16 @@ sw.addEventListener('activate', async () => {
 
 sw.addEventListener('fetch', (event) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (event as any).respondWith(fetch((event as any).request));
+  const request = (event as any).request as Request;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (event as any).respondWith(
+    fetch(request).catch(
+      () =>
+        new Response('Offline', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+    ),
+  );
 });

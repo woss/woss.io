@@ -1,4 +1,4 @@
-import { insertContactIntent } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import type { RequestEvent } from '@sveltejs/kit';
 import { CAT, createLogger } from '$lib/server/logger';
@@ -72,7 +72,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
       headers: { 'Content-Type': 'application/json' },
     });
   }
-  const generalRl = checkRateLimit(ip);
+  const generalRl = await checkRateLimit(ip);
   if (!generalRl.allowed) {
     return new Response(JSON.stringify({ error: 'Too many requests. Please slow down.' }), {
       status: 429,
@@ -81,7 +81,7 @@ export async function POST(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    insertContactIntent(userId, chatId, '/contact');
+    await db.contactIntents.insertContactIntent(userId, chatId, '/contact');
   } catch (e) {
     log.error`Failed to log contact intent: ${e}`;
   }

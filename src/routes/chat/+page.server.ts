@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { createChat, getChats, getUserChatCount, getOrCreateUserAgent, getChat, deleteChat } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { callWebhook } from '$lib/server/webhooks';
 import { config as clientConfig } from '$lib/config';
 import { CAT, createLogger } from '$lib/server/logger';
@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ url }) => {
   const userId = url.searchParams.get('userId');
   if (!userId) return { chats: [] };
 
-  const chats = getChats(userId);
+  const chats = await db.chats.getChats(userId);
   return { chats };
 };
 
@@ -26,7 +26,7 @@ export const actions: Actions = {
       const userId = fd.get('userId')?.toString();
       if (!userId) return fail(400, { error: 'userId is required' });
 
-      const chatCount = getUserChatCount(userId);
+      const chatCount = await db.chats.getUserChatCount(userId);
       if (chatCount >= clientConfig.public.maxChats) {
         log.warn`Create chat rejected: user ${userId} has ${chatCount} chats (max ${clientConfig.public.maxChats})`;
         return fail(400, { error: `Maximum of ${clientConfig.public.maxChats} chats reached` });
@@ -34,9 +34,9 @@ export const actions: Actions = {
 
       const ip = getClientIP(event);
       const userAgentStr = event.request.headers.get('user-agent');
-      const userAgentId = userAgentStr ? getOrCreateUserAgent(userAgentStr, ip) : undefined;
+      const userAgentId = userAgentStr ? await db.userAgents.getOrCreateUserAgent(userAgentStr, ip) : undefined;
 
-      const id = createChat(userId, undefined, userAgentId);
+      const id = await db.chats.createChat(userId, undefined, userAgentId);
       log.debug`Created chat ${id} for user ${userId}`;
 
       return { id };
@@ -53,10 +53,10 @@ export const actions: Actions = {
     if (!userId) return fail(400, { error: 'userId is required' });
     if (!chatId) return fail(400, { error: 'chatId is required' });
     try {
-      const chat = getChat(chatId);
+      const chat = await db.chats.getChat(chatId);
       if (!chat) return fail(404, { error: 'Chat not found' });
       if (chat.userId !== userId) return fail(403, { error: 'Forbidden' });
-      deleteChat(chatId);
+      await db.chats.deleteChat(chatId);
       callWebhook({ type: 'chatDeleted', chatId }).catch((e) => log.warn`Webhook failed: ${e}`);
       return { success: true, chatId };
     } catch (e) {

@@ -34,7 +34,6 @@
   --animate-fade-in: fade-in 500ms ease-out both;
   --animate-orbit: orbit 2s linear infinite;
   --animate-pulse-center: pulse-center 2s ease-in-out infinite;
-  --animate-tool-fade-out: tool-fade-out 1.2s ease-out both;
 }
 
 @keyframes blink {

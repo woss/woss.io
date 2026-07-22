@@ -1,5 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit';
-import { getChats } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { CAT, createLogger } from '$lib/server/logger';
 
 const log = createLogger(CAT.chat);
@@ -21,7 +21,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    const chats = getChats(userId);
+    const chats = await db.chats.getChats(userId);
     return new Response(JSON.stringify({ chats }), {
       status: 200,
       headers: JSON_HEADERS,

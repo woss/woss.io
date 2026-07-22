@@ -3,7 +3,9 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 // Mock all external dependencies
 vi.mock('$lib/server/db', () => ({
-  searchChunks: vi.fn(),
+  db: {
+    vector: { searchChunks: vi.fn() },
+  },
 }));
 
 vi.mock('$lib/server/embed', () => ({
@@ -30,7 +32,7 @@ vi.mock('$lib/server/logger', () => ({
   }),
 }));
 
-import { searchChunks } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { embedText } from '$lib/server/embed';
 import { isAvailable } from '$lib/server/openai-provider';
 import { checkRateLimit } from '$lib/server/rate-limiter';
@@ -99,10 +101,10 @@ const mockSearchResult = (overrides: Partial<MockSearchResult> = {}): MockSearch
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
+  vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
   vi.mocked(isAvailable).mockResolvedValue(true);
   vi.mocked(embedText).mockResolvedValue({ data: [0.1, 0.2, 0.3], dimensions: 3 });
-  vi.mocked(searchChunks).mockReturnValue([mockSearchResult()]);
+  vi.mocked(db.vector.searchChunks).mockResolvedValue([mockSearchResult()]);
 });
 
 describe('GET /api/search', () => {
@@ -140,7 +142,7 @@ describe('GET /api/search', () => {
   describe('rate limiting', () => {
     it('returns 429 when rate limit exceeded', async () => {
       const now = Date.now();
-      vi.mocked(checkRateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt: now + 60_000 });
+      vi.mocked(checkRateLimit).mockResolvedValue({ allowed: false, remaining: 0, resetAt: now + 60_000 });
 
       const res = await GET(buildEvent({ q: 'test' }));
       expect(res.status).toBe(429);
@@ -179,24 +181,24 @@ describe('GET /api/search', () => {
   describe('type filtering', () => {
     it('passes type filter when type=post', async () => {
       await GET(buildEvent({ q: 'test', type: 'post' }));
-      expect(searchChunks).toHaveBeenCalledWith(expect.any(Array), 216, 'post');
+      expect(db.vector.searchChunks).toHaveBeenCalledWith(expect.any(Array), 216, 'post');
     });
 
     it('passes type filter when type=experience', async () => {
       await GET(buildEvent({ q: 'test', type: 'experience' }));
-      expect(searchChunks).toHaveBeenCalledWith(expect.any(Array), 216, 'experience');
+      expect(db.vector.searchChunks).toHaveBeenCalledWith(expect.any(Array), 216, 'experience');
     });
 
     it('omits type filter for invalid type values', async () => {
       await GET(buildEvent({ q: 'test', type: 'invalid' }));
-      expect(searchChunks).toHaveBeenCalledWith(expect.any(Array), 216, undefined);
+      expect(db.vector.searchChunks).toHaveBeenCalledWith(expect.any(Array), 216, undefined);
     });
   });
 
   describe('response formatting', () => {
     it('filters out results with score >= 1.5', async () => {
       const highScoreResult = mockSearchResult({ score: 2.0 });
-      vi.mocked(searchChunks).mockReturnValue([
+      vi.mocked(db.vector.searchChunks).mockResolvedValue([
         mockSearchResult({ score: 0.5 }),
         highScoreResult,
         mockSearchResult({ score: 1.0 }),
@@ -228,7 +230,7 @@ describe('GET /api/search', () => {
     });
 
     it('returns 200 with empty results when no matches', async () => {
-      vi.mocked(searchChunks).mockReturnValue([]);
+      vi.mocked(db.vector.searchChunks).mockResolvedValue([]);
 
       const res = await GET(buildEvent({ q: 'nonexistent' }));
       expect(res.status).toBe(200);

@@ -73,21 +73,27 @@ function parseMcpContent(content: unknown[]): Array<{ type?: string; text?: stri
 }
 
 /**
- * Wraps native fetch to log MCP rate-limit headers from server responses.
- * Headers read: x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset,
- * x-slow-down-limit, x-slow-down-remaining.
+ * Wraps native fetch to log all MCP response headers at debug level.
+ * Also extracts rate-limit headers for dedicated log lines.
  * Non-destructive — response passes through unchanged.
  */
 function withRateLimitLogging(): typeof fetch {
   return async (input, init) => {
     const response = await fetch(input, init);
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input?.url ?? 'unknown');
+    // Log all response headers at debug — critical for diagnosing MCP server issues
+    const headers: Record<string, string> = {};
+    response.headers.forEach((v, k) => {
+      headers[k] = v;
+    });
+    log.debug`MCP ${init?.method ?? 'GET'} ${url} — ${response.status} ${response.statusText} headers=${JSON.stringify(headers)}`;
     const limit = response.headers.get('x-ratelimit-limit');
     const remaining = response.headers.get('x-ratelimit-remaining');
     const reset = response.headers.get('x-ratelimit-reset');
     const slowLimit = response.headers.get('x-slow-down-limit');
     const slowRemaining = response.headers.get('x-slow-down-remaining');
     if (limit || remaining || reset || slowLimit || slowRemaining) {
-      log.debug`MCP rate-limit headers: limit=${limit} remaining=${remaining} reset=${reset} slow-limit=${slowLimit} slow-remaining=${slowRemaining}`;
+      log.debug`MCP rate-limit: limit=${limit} remaining=${remaining} reset=${reset} slow-limit=${slowLimit} slow-remaining=${slowRemaining}`;
     }
     return response;
   };
@@ -115,11 +121,14 @@ class NoopValidator implements jsonSchemaValidator {
 
 /** @group Manager */
 
+const LIST_TOOLS_TIMEOUT = 30_000; // per-server listTools timeout — retried in background on failure
+
 export class McpManager {
   private connections = new Map<string, McpConnection>();
   private toolIndex = new Map<string, string>(); // resolvedName → serverId
   private toolDefs: McpToolDefinition[] = [];
   private initialized = false;
+  private pendingListTools = new Set<string>(); // servers whose listTools failed
 
   constructor(private configs: readonly McpServerConfig[]) {}
 
@@ -149,6 +158,8 @@ export class McpManager {
               }
               if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
               if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
+              if (!headers['User-Agent']) headers['User-Agent'] = 'woss-ai-portfolio/1.0.0';
+              if (!headers['X-MCP-Agent']) headers['X-MCP-Agent'] = 'woss-ai-portfolio';
 
               const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
                 requestInit: { headers },
@@ -172,9 +183,13 @@ export class McpManager {
 
     log.info`init: all connections done in ${Date.now() - connectStart}ms (${this.connections.size}/${this.configs.length} connected)`;
 
+    log.info`init: connections done — starting refreshToolIndex (fetching tool list from ${this.connections.size} servers)`;
+
     // Mark initialized before fetching tool index so getServerStatus works even if refreshToolIndex is slow or fails
     this.initialized = true;
+    log.info`init: connections done in ${Date.now() - connectStart}ms — starting tool discovery`;
     await this.refreshToolIndex();
+    log.info`init: refreshToolIndex complete — ${this.toolDefs.length} tools loaded`;
   }
 
   /* ── Server Status ────────────────────────────────────────────── */
@@ -205,7 +220,8 @@ export class McpManager {
         await tracer.startActiveSpan('mcp.listTools', { attributes: { serverId } }, async (toolSpan) => {
           try {
             const cfg = this.configs.find((c) => c.id === serverId);
-            const result = await client.listTools({}, cfg?.timeout ? { timeout: cfg.timeout } : {});
+            log.info`listTools: ${serverId} — starting (timeout=${cfg?.timeout ?? LIST_TOOLS_TIMEOUT}ms)`;
+            const result = await client.listTools({}, { timeout: cfg?.timeout ?? LIST_TOOLS_TIMEOUT });
 
             for (const tool of result.tools) {
               all.push({
@@ -230,9 +246,10 @@ export class McpManager {
       }),
     );
 
-    // Remove failed servers
+    // Don't delete connections — keep them alive for retry
     for (const sid of failedServers) {
-      this.connections.delete(sid);
+      this.pendingListTools.add(sid);
+      log.warn`refreshToolIndex: ${sid} listTools failed — keeping connection for retry`;
     }
 
     // Build tool index with collision resolution
@@ -247,9 +264,58 @@ export class McpManager {
     log.info`refreshToolIndex: ${this.toolDefs.length} tools from ${this.connections.size} servers in ${Date.now() - start}ms`;
   }
 
+  /* ── Pending listTools retry ───────────────────────────────────── */
+
+  /**
+   * Retry listTools for servers that previously failed.
+   * If any server succeeds, rebuilds the full tool index.
+   * Call this from background retry logic when tools are missing.
+   */
+  async retryPendingListTools(): Promise<number> {
+    if (this.pendingListTools.size === 0) return 0;
+    const retryStart = Date.now();
+    const toRetry = Array.from(this.pendingListTools);
+    const stillFailing: string[] = [];
+
+    await Promise.all(
+      toRetry.map(async (serverId) => {
+        const conn = this.connections.get(serverId);
+        if (!conn) {
+          this.pendingListTools.delete(serverId);
+          return;
+        }
+        const cfg = this.configs.find((c) => c.id === serverId);
+        try {
+          const result = await conn.client.listTools({}, { timeout: cfg?.timeout ?? LIST_TOOLS_TIMEOUT });
+          this.pendingListTools.delete(serverId);
+          log.info`retryPendingListTools: ${serverId} — ${result.tools.length} tools loaded (was pending)`;
+        } catch (err) {
+          stillFailing.push(serverId);
+          log.warn`retryPendingListTools: ${serverId} failed again — ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }),
+    );
+
+    if (stillFailing.length > 0) {
+      log.warn`retryPendingListTools: ${stillFailing.join(', ')} still failing after ${Date.now() - retryStart}ms`;
+    }
+
+    // Rebuild full index if any pending server succeeded
+    if (toRetry.length > stillFailing.length) {
+      await this.refreshToolIndex();
+    }
+
+    return toRetry.length - stillFailing.length;
+  }
+
   /* ── Tool Listing ─────────────────────────────────────────────── */
 
   listAllTools(): McpToolDefinition[] {
+    if (this.toolDefs.length === 0 && this.pendingListTools.size > 0) {
+      this.retryPendingListTools().catch((err) => {
+        log.warn`listAllTools triggered retry: ${err instanceof Error ? err.message : String(err)}`;
+      });
+    }
     return this.toolDefs;
   }
 
@@ -290,6 +356,8 @@ export class McpManager {
               if (!headers.Authorization && cfg.token) headers.Authorization = `Bearer ${cfg.token}`;
               if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
               if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
+              if (!headers['User-Agent']) headers['User-Agent'] = 'woss-ai-portfolio/1.0.0';
+              if (!headers['X-MCP-Agent']) headers['X-MCP-Agent'] = 'woss-ai-portfolio';
               const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
                 requestInit: { headers },
                 fetch: withRateLimitLogging(),

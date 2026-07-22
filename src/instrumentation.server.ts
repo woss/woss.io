@@ -7,7 +7,7 @@ import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { dev } from '$app/environment';
 
 if (!dev) {
-  const agentHost = process.env.DD_AGENT_HOST ?? '172.17.0.1';
+  const agentHost = process.env.DD_AGENT_HOST ?? 'datadog-agent';
   const url = `http://${agentHost}:4318/v1/traces`;
   const metricsUrl = `http://${agentHost}:4318/v1/metrics`;
 
@@ -30,7 +30,7 @@ if (!dev) {
           ignoreOutgoingRequestHook: (req) => {
             const host = req.hostname ?? '';
             const port = req.port ?? '';
-            return (!host && !port) || (host === '127.0.0.1' && port === '8126');
+            return (!host && !port) || host === 'datadog-agent' || (host === '127.0.0.1' && port === '8126');
           },
         },
       }),

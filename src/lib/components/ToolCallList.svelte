@@ -19,6 +19,8 @@
     return `${(ms / 1000).toFixed(1)}s`;
   }
 
+  let visibleTools = $derived(tools.filter((t) => !t.finishedAt));
+
   function toolIcon(name: string): string {
     if (name.includes('search') || name.includes('fetch')) return '🔍';
     if (name.includes('read') || name.includes('list')) return '📄';
@@ -27,18 +29,14 @@
   }
 </script>
 
-{#if tools.length > 0}
+{#if visibleTools.length > 0}
   <div class="mt-4 space-y-1 overflow-hidden">
-    {#each tools as tool (tool.id)}
+    {#each visibleTools as tool (tool.id)}
       <div
-        class="flex items-center gap-2.5 px-3 py-2 rounded-lg border {tool.finishedAt
-          ? 'bg-surface-container/20 border-outline-variant/10 animate-tool-fade-out'
-          : 'bg-surface-container/40 border-primary/10'}"
+        class="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-surface-container/40 border-primary/10"
       >
         <span
-          class="shrink-0 size-2 rounded-full {tool.finishedAt
-            ? 'bg-success'
-            : 'bg-warning animate-pulse-dot'}"
+          class="shrink-0 size-2 rounded-full bg-warning animate-pulse-dot"
           aria-hidden="true"
         ></span>
         <span class="shrink-0 text-xs">{toolIcon(tool.name)}</span>
@@ -46,15 +44,11 @@
           >{tool.serverId}/{tool.name}</span
         >
         <span class="tabular-nums text-xs font-mono text-outline/60 ml-auto shrink-0"
-          >{formatDuration(
-            Math.abs((tool.finishedAt ?? now) - tool.startedAt),
-          )}</span
+          >{formatDuration(now - tool.startedAt)}</span
         >
         <span
-          class="text-[10px] font-mono {tool.finishedAt
-            ? 'text-success/60'
-            : 'text-warning'} shrink-0"
-          >{tool.finishedAt ? 'done' : '…'}</span
+          class="text-[10px] font-mono text-warning shrink-0"
+          >…</span
         >
       </div>
     {/each}

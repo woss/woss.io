@@ -1,5 +1,5 @@
 import { publishLive } from '$lib/server/chat-events';
-import { ensureModel, getDb } from '$lib/server/db';
+import { db } from '$lib/server/db/index';
 import { chatStreamWithTools } from '$lib/server/openai-provider';
 import type { LLMEvent } from '$lib/server/llm/types';
 import type { McpToolDef } from '$lib/server/mcp/tools';
@@ -90,7 +90,7 @@ export class ToolCallXmlStripper {
 interface StreamResult {
   answerText: string;
   reasoningText: string;
-  currentModelId: number;
+  currentModelId: string;
   tokenUsage: { promptTokens: number; completionTokens: number };
   responseMs: number;
   maxTokens: number;
@@ -127,6 +127,7 @@ export async function streamWithRetry(
   chatId: string,
   abortController: AbortController,
   toolServerMap: Map<string, string>,
+  existingMsgId?: string,
 ): Promise<StreamResult> {
   publishLive(chatId, 'status', { step: 'generating' });
   let lastError: Error | null = null;
@@ -134,7 +135,7 @@ export async function streamWithRetry(
   let answerText = '';
   let reasoningText = '';
 
-  let currentModelId = 0;
+  let currentModelId = '';
   let tokenUsage = { promptTokens: 0, completionTokens: 0 };
   let responseMs = 0;
   let maxTokens = 0;
@@ -146,16 +147,14 @@ export async function streamWithRetry(
   let doomLoopDetectedInRound = false;
   const collectedToolCalls: { name: string; serverId: string }[] = [];
 
+  // Data collection buffers — flushed to DB after stream completes
+  const toolCallStarts: { id: string; name: string; serverId: string; input: unknown }[] = [];
+  const toolCallFinishes: { id: string; result: string; resultSize: number }[] = [];
+  let finishModelInfo: { provider: string; modelName: string; actualModelName: string; maxTokens: number } | undefined;
+
   // Pre-generate message ID for tool-call FK tracking
-  const db = getDb();
-  const msgId = randomUUID();
+  const msgId = existingMsgId ?? randomUUID();
   setMsgId(msgId);
-  const toolCallStmt = db.prepare(
-    `INSERT INTO tool_calls (id, message_id, name, server_id, tool_input, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-  );
-  const toolCallFinishStmt = db.prepare(
-    `UPDATE tool_calls SET finished_at = datetime('now'), tool_output = ?, result_size = ? WHERE id = ?`,
-  );
 
   // change from 3 to 10 attempts after adding retry-on-doom-loop logic, to give the model more chances to recover with tools disabled
   const baseSystemPrompt = messages[0].content;
@@ -189,15 +188,16 @@ export async function streamWithRetry(
                 break;
               case 'reasoning-delta':
                 reasoningText += event.text;
+                publishLive(chatId, 'reasoning', { token: event.text });
                 break;
               case 'finish': {
                 if (event.actualModelName || event.modelName) {
-                  currentModelId = ensureModel(
-                    event.provider ?? String(config().openai.baseUrl),
-                    event.modelName ?? config().openai.model,
-                    event.actualModelName ?? event.modelName ?? config().openai.model,
-                    event.maxTokens ?? config().openai.maxTokens,
-                  );
+                  finishModelInfo = {
+                    provider: event.provider ?? String(config().openai.baseUrl),
+                    modelName: event.modelName ?? config().openai.model,
+                    actualModelName: event.actualModelName ?? event.modelName ?? config().openai.model,
+                    maxTokens: event.maxTokens ?? config().openai.maxTokens,
+                  };
                 }
                 if (event.usage) {
                   tokenUsage = {
@@ -227,46 +227,68 @@ export async function streamWithRetry(
                   serverId: toolServerMap.get(event.name) ?? 'unknown',
                   startedAt: Date.now(),
                 });
-                try {
-                  toolCallStmt.run(
-                    event.id,
-                    msgId,
-                    event.name,
-                    toolServerMap.get(event.name) ?? 'unknown',
-                    JSON.stringify(event.input ?? {}),
-                  );
-                } catch (e) {
-                  log.error`Failed to record tool call: ${e}`;
-                }
+                toolCallStarts.push({
+                  id: event.id,
+                  name: event.name,
+                  serverId: toolServerMap.get(event.name) ?? 'unknown',
+                  input: event.input ?? {},
+                });
                 break;
-              case 'tool-result':
+              case 'tool-result': {
                 log.debug`Tool result: ${event.name}`;
                 publishLive(chatId, 'tool_call_end', { id: event.id, name: event.name });
-                try {
-                  const resultStr = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
-                  const resultSize = resultStr.length;
-                  toolCallFinishStmt.run(resultStr, resultSize, event.id);
-                  // Track successful (non-error) tool results for doom loop detection
-                  if (!resultStr.includes('Tool returned an error')) {
-                    anySuccessfulToolCalls = true;
-                  }
-                } catch (e) {
-                  log.error`Failed to record tool result: ${e}`;
+                const resultStr = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
+                const resultSize = resultStr.length;
+                toolCallFinishes.push({ id: event.id, result: resultStr, resultSize });
+                // Track successful (non-error) tool results for doom loop detection
+                if (!resultStr.includes('Tool returned an error')) {
+                  anySuccessfulToolCalls = true;
                 }
                 break;
+              }
             }
           }),
         ),
       );
       log.debug`RAW_LLM_OUTPUT:\n${answerText}`;
+      log.debug`[post-stream] streaming complete, entering post-stream phase (toolCalls=${toolCallStarts.length} starts, ${toolCallFinishes.length} finishes)`;
+
+      // Flush tool call records to service layer
+      for (const tc of toolCallStarts) {
+        try {
+          await db.toolCalls.insertToolCall(tc.id, msgId, tc.name, tc.serverId, JSON.stringify(tc.input));
+        } catch (e) {
+          log.error`Failed to record tool call: ${e}`;
+        }
+      }
+      for (const tc of toolCallFinishes) {
+        try {
+          await db.toolCalls.setToolCallResult(tc.id, tc.result, tc.resultSize);
+        } catch (e) {
+          log.error`Failed to record tool result: ${e}`;
+        }
+      }
+      if (finishModelInfo) {
+        log.debug`[post-stream] ensureModel starting: ${finishModelInfo.provider}/${finishModelInfo.modelName}`;
+        currentModelId = await db.models.ensureModel(
+          finishModelInfo.provider,
+          finishModelInfo.modelName,
+          finishModelInfo.actualModelName,
+          finishModelInfo.maxTokens,
+        );
+        log.debug`[post-stream] ensureModel completed: id=${currentModelId}`;
+      }
+      // Clear buffers so retries don't re-insert stale IDs
+      toolCallStarts.length = 0;
+      toolCallFinishes.length = 0;
 
       // DSML handling: strip DeepSeek DSML tool call blocks from output
       {
-        const modelRow = db
-          .prepare('SELECT model_name, actual_model_name FROM models WHERE id = ?')
-          .get(currentModelId) as { model_name: string; actual_model_name: string } | undefined;
+        log.debug`[post-stream] getModelById starting: currentModelId=${currentModelId}`;
+        const modelRow = await db.models.getModelById(currentModelId);
+        log.debug`[post-stream] getModelById completed`;
         const isDeepSeekModel =
-          modelRow && (/deepseek/i.test(modelRow.model_name) || /deepseek/i.test(modelRow.actual_model_name));
+          modelRow && (/deepseek/i.test(modelRow.modelName) || /deepseek/i.test(modelRow.actualModelName));
 
         if (isDeepSeekModel && hasDsmlBlocks(answerText)) {
           answerText = stripDsmlBlocks(answerText).trim();

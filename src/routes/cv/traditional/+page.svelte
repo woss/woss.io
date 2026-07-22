@@ -86,11 +86,6 @@
     margin: 0;
   }
 
-  /* ─── Accent ─── */
-  .accent {
-    color: oklch(0.72 0.19 162.5);
-  }
-
   /* ─── Layout ─── */
   .print-wrapper {
     @apply bg-surface flex justify-center py-12 px-4;
@@ -136,12 +131,6 @@
     margin-top: 6px;
   }
 
-  .link-label {
-    color: var(--color-on-surface-variant);
-    font-style: italic;
-    font-weight: 700;
-  }
-
   .link-traditional {
     color: var(--color-on-surface-variant);
     text-decoration: none;
@@ -181,41 +170,6 @@
     margin-bottom: 24px;
     padding-bottom: 24px;
     border-bottom: 1px solid var(--color-outline-variant);
-  }
-
-  /* ─── Skills ─── */
-  .skills {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 28px;
-    padding-bottom: 28px;
-    border-bottom: 1px solid var(--color-outline-variant);
-  }
-
-  .skill {
-    @apply font-body text-sm font-semibold;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: 100px;
-    background: oklch(0.72 0.19 162.5 / 0.15);
-    color: oklch(0.72 0.19 162.5);
-  }
-
-  .skill-count {
-    @apply font-body text-[11px] font-bold;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    border-radius: 9px;
-    background: oklch(0.72 0.19 162.5 / 0.35);
-    padding: 0 6px;
-    color: oklch(0.65 0.19 162.5);
   }
 
 
@@ -311,9 +265,6 @@
     .links {
       color: #999 !important;
     }
-    .link-label {
-      color: #999 !important;
-    }
     .link-traditional {
       color: #999 !important;
     }
@@ -333,24 +284,8 @@
     .summary.secondary {
       border-bottom-color: #eee !important;
     }
-    .skills {
-      border-bottom-color: #eee !important;
-    }
     .section-heading {
       margin-bottom: 8px;
-    }
-    .skill {
-      background: #e8e8e8 !important;
-      color: #1a1a1a !important;
-      padding: 3px 10px !important;
-      font-size: 9pt !important;
-    }
-    .skill-count {
-      background: #d0d0d0 !important;
-      color: #555 !important;
-      min-width: 16px !important;
-      height: 16px !important;
-      font-size: 8pt !important;
     }
     .section-heading {
       color: #00a36c !important;

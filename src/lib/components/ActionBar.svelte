@@ -4,23 +4,31 @@
  import { copyToClipboard } from '$lib/utils/clipboard';
  import { nameToColor, nameToInitial } from '$lib/utils/avatar';
  import type { ChatMessage } from '$lib/chat/types';
+ import FeedbackModal from './FeedbackModal.svelte';
 
  let {
  message,
  userId = '',
  chatId = '',
   onOpenSidebar = () => {},
- }: {
- message: ChatMessage;
- userId?: string;
- chatId?: string;
- onOpenSidebar?: (tab: 'sources' | 'tools') => void;
- } = $props();
+  onreport = () => {},
+}: {
+  message: ChatMessage;
+  userId?: string;
+  chatId?: string;
+  onOpenSidebar?: (tab: 'sources' | 'tools') => void;
+  onreport?: (messageId: string, reason: string) => void;
+} = $props();
 
  let hasSources = $derived(!!(message.sources?.length));
  let sourceCount = $derived(message.sources?.length || 0);
  let hasTools = $derived(!!(message.toolCalls?.length));
  let toolCalls = $derived(message.toolCalls || []);
+
+ /* ─── Feedback Modal State ─── */
+ let feedbackOpen = $state(false);
+ let feedbackReactionType = $state<'up' | 'down'>('up');
+ let pendingReactionMessage = $state<ChatMessage | null>(null);
 
   function shareMessage(): void {
  const url = `${window.location.origin}${window.location.pathname}#msg-${message.id}`;
@@ -36,6 +44,7 @@
  async function setMessageReaction(
  messageId: string,
  type: 'up' | 'down' | 'heart',
+ reason = '',
  ): Promise<void> {
  try {
  const fd = new FormData();
@@ -43,7 +52,7 @@
  fd.set('userId', userId);
  fd.set('mode', 'set');
  fd.set('reactionType', type);
- fd.set('reason', '');
+ fd.set('reason', reason);
  await fetch(`/chat/${chatId}?/reaction`, {
  method: 'POST',
  body: fd,
@@ -86,14 +95,43 @@
  return;
  }
 
- if (type === 'down') {
- msg.reaction = { type: 'down', reason: '' };
- } else {
- msg.reaction = { type: 'up', reason: '' };
+ /* Thumbs up/down: open feedback modal */
+ pendingReactionMessage = msg;
+ feedbackReactionType = type;
+ feedbackOpen = true;
  }
- await setMessageReaction(msg.id, type);
- toast.success('Thanks for the feedback!');
- }
+
+  async function handleFeedbackSubmit(reason: string): Promise<void> {
+  const msg = pendingReactionMessage;
+  const type = feedbackReactionType;
+  if (!msg) return;
+
+  msg.reaction = { type, reason };
+
+  if (type === 'down' && reason) {
+    try {
+      const formData = new FormData();
+      formData.set('messageId', msg.id);
+      formData.set('userId', userId);
+      formData.set('reason', reason);
+      const res = await fetch(`/chat/${chatId}?/report`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) throw new Error('Server error');
+      onreport(msg.id, reason);
+      toast.success('Feedback submitted');
+    } catch {
+      toast.error('Failed to submit feedback');
+    }
+  } else {
+    await setMessageReaction(msg.id, type, reason);
+    if (reason) toast.success('Thanks for the feedback!');
+  }
+
+  pendingReactionMessage = null;
+  feedbackOpen = false;
+  }
 </script>
 
 <div class="flex items-center justify-between flex-1 text-xs text-outline h-8">
@@ -221,3 +259,9 @@
  </div>
  {/if}
 </div>
+
+<FeedbackModal
+ bind:open={feedbackOpen}
+ reactionType={feedbackReactionType}
+ onSubmit={handleFeedbackSubmit}
+/>

@@ -1,9 +1,9 @@
-import { getPosts } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { config } from '$lib/server/config';
 
 export async function GET() {
   const origin = config().app.origin;
-  const posts = getPosts()
+  const posts = (await db.content.getPosts())
     .filter((p) => p.status === 'published')
     .sort((a, b) => {
       if (!a.date && !b.date) return 0;

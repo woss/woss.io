@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
+import type { Chat } from '$lib/server/db';
 
 vi.mock('$lib/server/db', () => ({
-  getChats: vi.fn(),
+  db: {
+    chats: {
+      getChats: vi.fn(),
+    },
+  },
 }));
 
 vi.mock('$lib/server/logger', () => ({
@@ -17,8 +22,7 @@ vi.mock('$lib/server/logger', () => ({
   })),
 }));
 
-import type { Chat } from '$lib/server/db';
-import { getChats } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { GET } from './+server';
 
 function buildEvent(userId: string | null): RequestEvent {
@@ -59,10 +63,10 @@ describe('GET /api/chat', () => {
 
   it('returns 200 with chats array on success', async () => {
     const mockChats = [
-      { id: 'chat-1', title: 'Chat 1', created_at: '2024-01-01' },
-      { id: 'chat-2', title: 'Chat 2', created_at: '2024-01-02' },
-    ];
-    vi.mocked(getChats).mockReturnValue(mockChats as unknown as Chat[]);
+      { id: 'chat-1', title: 'Chat 1', createdAt: '2024-01-01T00:00:00.000Z', messageCount: 5, userId: 'user-1' },
+      { id: 'chat-2', title: 'Chat 2', createdAt: '2024-01-02T00:00:00.000Z', messageCount: 3, userId: 'user-1' },
+    ] as Chat[];
+    vi.mocked(db.chats.getChats).mockResolvedValue(mockChats);
 
     const event = buildEvent('user-1');
     const res = await GET(event);
@@ -70,13 +74,11 @@ describe('GET /api/chat', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.chats).toEqual(mockChats);
-    expect(getChats).toHaveBeenCalledWith('user-1');
+    expect(db.chats.getChats).toHaveBeenCalledWith('user-1');
   });
 
   it('returns 500 when getChats throws', async () => {
-    vi.mocked(getChats).mockImplementation(() => {
-      throw new Error('DB connection lost');
-    });
+    vi.mocked(db.chats.getChats).mockRejectedValue(new Error('DB connection lost'));
 
     const event = buildEvent('user-1');
     const res = await GET(event);
@@ -84,5 +86,16 @@ describe('GET /api/chat', () => {
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json.error).toBe('Internal server error');
+  });
+
+  it('returns 200 with empty array when user has no chats', async () => {
+    vi.mocked(db.chats.getChats).mockResolvedValue([]);
+
+    const event = buildEvent('user-empty');
+    const res = await GET(event);
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.chats).toEqual([]);
   });
 });

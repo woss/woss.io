@@ -1,7 +1,7 @@
 <script lang="ts">
  import { resolve } from '$app/paths';
  import { page } from '$app/state';
- import type { ExperienceEntry } from '$lib/../content/index';
+  import type { ExperienceEntry } from '$lib/types';
  import Seo from '$lib/components/Seo.svelte';
   import { Separator, Badge } from 'sv5ui';
   import CopyComponent from '$lib/components/CopyComponent.svelte';

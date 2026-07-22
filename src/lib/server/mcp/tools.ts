@@ -3,15 +3,11 @@
  * Converts MCP tool definitions to OpenAI tool format and executes calls.
  */
 import { mcp } from './client.ts';
-import { config } from '$lib/server/config';
 import { CAT, createLogger } from '$lib/server/logger';
 import type { McpToolCallResult } from './client.ts';
 import { toRecord } from './utils.ts';
 
 const log = createLogger(CAT.mcp);
-
-/** Tracks in-flight background reconnect to avoid duplicate attempts */
-let _reconnectPromise: Promise<void> | null = null;
 
 /** Description overrides for tools needing critical LLM usage hints */
 const TOOL_DESCRIPTION_OVERRIDES: Record<string, string> = {
@@ -83,24 +79,6 @@ export async function getMcpToolDefs(): Promise<McpToolDef[]> {
     description: TOOL_DESCRIPTION_OVERRIDES[t.name] ?? t.description ?? '',
     inputSchema: toRecord(t.inputSchema),
   }));
-
-  // Background reconnect: if Macula is configured but no tools loaded, fire-and-forget
-  const hasMaculaTools = mapped.some((t) => t.serverId === 'macula');
-  const maculaConfigured = config().mcp.servers.some((s) => s.id === 'macula');
-  if (maculaConfigured && !hasMaculaTools && !_reconnectPromise) {
-    log.warn`Macula configured but no tools loaded — queuing background reconnect`;
-    _reconnectPromise = (async () => {
-      await new Promise((r) => setTimeout(r, 3000));
-      log.info`Macula: reconnect attempt starting...`;
-      await mcp.reconnectTools();
-      // Invalidate caches so next request refetches with Macula tools
-      _mcpToolDefsCache = null;
-      log.warn`Macula: reconnect completed — tools may now be available`;
-    })();
-    _reconnectPromise.finally(() => {
-      _reconnectPromise = null;
-    });
-  }
 
   _mcpToolDefsCache = { data: mapped, ts: Date.now() };
   log.info`🔧 tools: ${mapped.map((t) => t.name).join(', ')} (${mapped.length})`;

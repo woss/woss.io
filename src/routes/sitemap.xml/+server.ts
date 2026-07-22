@@ -1,12 +1,11 @@
-import { getPosts } from '$lib/server/db';
-import { getExperience } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { config } from '$lib/server/config';
 
 export async function GET() {
   const origin = config().app.origin; // e.g. https://woss.io
 
-  const posts = getPosts().filter((p) => p.status === 'published');
-  const experience = getExperience().filter((e) => e.published !== false);
+  const posts = (await db.content.getPosts()).filter((p) => p.status === 'published');
+  const experience = (await db.content.getExperience()).filter((e) => e.published !== false);
 
   const staticPages = [
     { loc: '/', priority: '1.0', changefreq: 'weekly' },

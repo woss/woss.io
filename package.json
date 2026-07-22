@@ -95,6 +95,7 @@
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
     "satori": "^0.26.0",
+    "surrealdb": "^2.0.4",
     "sv5ui": "^2.1.0",
     "svelte-sonner": "^1.1.1",
     "ua-parser-js": "^2.0.10",

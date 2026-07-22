@@ -16,8 +16,7 @@
   import { CONTACT_DISMISSED_KEY } from '$lib/chat/constants';
   import { Button, Banner } from 'sv5ui';
   import FeatureTour from '$lib/components/FeatureTour.svelte';
-  import { TOUR_DEFINITIONS } from '$lib/chat/tour-config';
-  import type { TourDefinition } from '$lib/chat/tour-config';
+  import { tourState, initTourState, handleDismissTour } from '$lib/chat/tour-state.svelte';
 
   import type { ChatMessage, Chat, ToolCallInfo, Source } from '$lib/chat/types';
   import { matchSlashCommand } from '$lib/chat/slash-commands';
@@ -59,8 +58,6 @@
   /* ─── State ─── */
 
   let userId = $state('');
-  let dismissedFeatures: string[] = $state([]);
-  let activeTour: TourDefinition | undefined = $state();
   // svelte-ignore state_referenced_locally
   const initialMessages = Array.isArray(data?.messages) ? data.messages : [];
   let messages: ChatMessage[] = $state(initialMessages);
@@ -218,6 +215,7 @@
           id: m.id as string,
           role: m.role as 'user' | 'assistant',
           text: m.content as string,
+          reasoning: m.reasoning as string | undefined,
           error: m.error as string | undefined,
           irrecoverable: m.irrecoverable as boolean | undefined,
           queryType: (m.queryType as string) || undefined,
@@ -240,8 +238,8 @@
 
   async function createChat(): Promise<void> {
     if (!canCreateChat) return;
-    const id = await createChatApi(userId, '/chat');
-    if (id) goto(resolve(`/chat/${id}`));
+    const result = await createChatApi(userId, '/chat');
+    if (result.id) goto(resolve(`/chat/${result.id}`));
   }
 
   function confirmDeleteChat(id: string): void {
@@ -267,6 +265,7 @@
   }
 
   async function sendMessage(text: string): Promise<void> {
+    if (currentChat?.locked) return;
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 500 || isLoading) return;
     if (userMessageCount >= config.public.maxMessages) return;
@@ -516,34 +515,8 @@
     }
     userId = id;
     isOwner = id === data.chatOwnerId;
+    initTourState(userId, isOwner);
   });
-
-  // Fetch dismissed tours once userId is set — skip for read-only shared chats
-  $effect(() => {
-    if (!browser || !userId || !isOwner) return;
-    fetch(`/api/tours?userId=${encodeURIComponent(userId)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        dismissedFeatures = data.dismissed ?? [];
-        // Find first undismissed tour
-        activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
-      })
-      .catch(() => {
-        // Silently fail — tours are non-critical
-      });
-  });
-
-  function handleDismissTour(): void {
-    if (!activeTour || !userId) return;
-    fetch('/api/tours/dismiss', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, featureIds: [activeTour.featureId] }),
-    }).catch(() => {});
-    dismissedFeatures = [...dismissedFeatures, activeTour.featureId];
-    // Find next undismissed tour
-    activeTour = TOUR_DEFINITIONS.find((t) => !dismissedFeatures.includes(t.featureId));
-  }
 
   let isOwner = $state<boolean | undefined>(undefined);
 
@@ -563,10 +536,6 @@
   $effect(() => {
     if (!browser || !userId || !chatId) return;
     if (chatsLoaded) return;
-    if (chats.length > 0) {
-      chatsLoaded = true;
-      return;
-    }
     loadChats();
   });
 
@@ -727,6 +696,7 @@
               id: randomUUID(),
               role: 'assistant' as const,
               text: '',
+              reasoning: '',
               timestamp: Date.now(),
               createdAt: '',
             },
@@ -736,8 +706,28 @@
         messages[idx] = { ...messages[idx], text: messages[idx].text + token };
       },
 
+      onReasoning(token: string) {
+        const last = messages[messages.length - 1];
+        if (last?.role !== 'assistant') {
+          messages = [
+            ...messages,
+            {
+              id: randomUUID(),
+              role: 'assistant' as const,
+              text: '',
+              reasoning: token,
+              timestamp: Date.now(),
+              createdAt: '',
+            },
+          ];
+          return;
+        }
+        const idx = messages.length - 1;
+        messages[idx] = { ...messages[idx], reasoning: (messages[idx].reasoning ?? '') + token };
+      },
+
       onDone(data) {
-        const { messageId, answer, queryType, sources, usage, completedToolCalls } = data;
+        const { messageId, answer, reasoning, queryType, sources, usage, completedToolCalls } = data;
 
         // Skip replayed done events (already loaded from DB on page refresh)
         const existingIdx = messages.findIndex((m) => m.id === messageId);
@@ -757,6 +747,7 @@
               role: 'assistant' as const,
               queryType: queryType || '',
               text: answer || '',
+              reasoning: reasoning || '',
               timestamp: Date.now(),
               createdAt: '',
               sources: sources as Source[],
@@ -770,6 +761,7 @@
             ...messages[idx],
             id: messageId || messages[idx].id,
             text: answer || messages[idx].text,
+            reasoning: reasoning || messages[idx].reasoning,
             sources: (sources as Source[]) || messages[idx].sources,
             tokensIn: usage?.tokensIn || 0,
             tokensOut: usage?.tokensOut || 0,
@@ -1042,6 +1034,7 @@
               {activeToolCount}
               {completedToolCount}
               currentStatus={sseState.currentStatus}
+              locked={currentChat?.locked ?? false}
               bind:inputEl
               onsend={(text: string) => sendMessage(text)}
               onstop={handleStop}
@@ -1060,11 +1053,11 @@
   <RightSidebar {sidebarVisible} {sidebarMessage} bind:sidebarTab onclose={closeSidebar} />
 </div>
 
-{#if activeTour}
+{#if tourState.activeTour}
   <FeatureTour
-    targetSelector={activeTour.targetSelector}
-    title={activeTour.title}
-    content={activeTour.content}
-    ondismiss={handleDismissTour}
+    targetSelector={tourState.activeTour.targetSelector}
+    title={tourState.activeTour.title}
+    content={tourState.activeTour.content}
+    ondismiss={() => handleDismissTour(userId)}
   />
 {/if}

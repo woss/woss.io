@@ -1,6 +1,6 @@
 import { publishLive, publishPersistent } from '$lib/server/chat-events';
 import { callErrorWebhook } from '$lib/server/webhooks';
-import { addMessage, getDb, getPosts, searchChunks } from '$lib/server/db';
+import { db } from '$lib/server/db/index';
 import { buildRagPrompt } from '$lib/server/openai-provider';
 import { getMcpToolDefs, type McpToolDef } from '$lib/server/mcp/tools';
 import { getToolSystemPrompt } from '../prompts.ts';
@@ -9,6 +9,7 @@ import { CAT, createLogger } from '$lib/server/logger';
 import { classifyQuery, type QueryClass } from '$lib/query-classifier';
 import { needsGithubTools, needsMaculaTools, parseSources, tryRenameChat } from '$lib/server/chat-helpers';
 import { generateTraceId, withTrace } from '$lib/server/trace-context';
+import { randomUUID } from '$lib/utils/random-uuid';
 
 import { handleEarlyGates } from './early-gates';
 import { streamWithRetry } from './stream';
@@ -68,6 +69,7 @@ export async function startGeneration(
 
   const abortController = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let streamingMsgId: string | undefined;
   activeGenerations.set(chatId, abortController);
 
   const startTime = performance.now();
@@ -84,11 +86,11 @@ export async function startGeneration(
     const { embedding, cacheEmbeddingData, cacheText, ctxMessages, history, classifyResult } = earlyResult;
 
     // 4. Classify query — skip RAG for tool-only, skip tools for rag
-    const queryType: QueryClass = classifyQuery(embedding.data);
+    const queryType: QueryClass = await classifyQuery(embedding.data);
     log.info`🎯 queryType=${queryType} "${text.slice(0, 80)}"`;
     // Persist query_type on the user message
     if (userMsgId) {
-      getDb().prepare('UPDATE messages SET query_type = ? WHERE id = ?').run(queryType, userMsgId);
+      await db.messages.setMessageQueryType(userMsgId, queryType);
     }
 
     // 5. RAG search (skip for tool-only queries)
@@ -105,11 +107,11 @@ export async function startGeneration(
     if (queryType !== 'tool') {
       publishLive(chatId, 'status', { step: 'searching' });
       // Search more candidates for type-balanced selection
-      const results = searchChunks(embedding.data, maxChunks * 3);
+      const results = await db.vector.searchChunks(embedding.data, maxChunks * 3);
 
       // Future: cross-encoder re-ranker re-orders results (src/lib/server/reranker.ts).
       // bge-reranker-base produced near-zero scores for this domain, so it couldn't gate.
-      // Cosine threshold alone does the filtering.
+      // Cosine distance threshold alone does the filtering.
       const filtered = results.filter((r) => r.score < SOURCE_SCORE_THRESHOLD);
       searchLog.info`RAG sources: [${filtered.map((r) => `${r.chunk.title} (${r.score.toFixed(3)})`).join(', ')}]`;
 
@@ -177,7 +179,7 @@ export async function startGeneration(
       // Post-metadata fallback: when RAG returns empty and query asks about posts,
       // inject post titles directly from SQL (vector similarity fails for metadata queries)
       if (ragChunks.length === 0 && /\b(post|blog|writing|article)\b/i.test(text)) {
-        const allPosts = getPosts();
+        const allPosts = await db.content.getPosts();
         const published = allPosts
           .filter((p) => p.status === 'published')
           .sort((a, b) => {
@@ -298,12 +300,29 @@ export async function startGeneration(
       toolServerMap.set(def.name, def.serverId ?? 'unknown');
     }
 
+    // Create message record BEFORE streaming so insertToolCall() FK edges can reference it
+    streamingMsgId = randomUUID();
+    await db.messages.createMessageForStreaming({
+      userId,
+      chatId,
+      role: 'assistant',
+      msgId: streamingMsgId,
+      queryType,
+    });
+
     // 7. Stream from OpenRouter with retry
     log.info('Starting LLM stream', { round: 1, totalRounds: 1, chatId });
     // Start generation timeout right before the real LLM call to exclude early-gate overhead
     timeoutId = setTimeout(() => abortController.abort(), 300_000);
     timeoutId?.unref?.();
-    const streamResult = await streamWithRetry(messages, mcpToolDefs, chatId, abortController, toolServerMap);
+    const streamResult = await streamWithRetry(
+      messages,
+      mcpToolDefs,
+      chatId,
+      abortController,
+      toolServerMap,
+      streamingMsgId,
+    );
     const {
       answerText,
       reasoningText,
@@ -345,46 +364,105 @@ export async function startGeneration(
     }
 
     // 8. Save result, store cache, emit done
-    await saveAndEmitResult({
-      userId,
-      chatId,
-      userAgentId,
-      answerText,
-      reasoningText,
-      sources,
-      currentModelId,
-      tokenUsage,
-      responseMs,
-      maxTokens,
-      partial,
-      lastError,
-      msgId,
-      cacheEmbeddingData,
-      cacheText,
-      ragChunks,
-      queryType,
-      startTime,
-      irrecoverable,
-      toolCalls,
-    });
+    const SAVE_TIMEOUT_MS = 30_000;
+    try {
+      await Promise.race([
+        saveAndEmitResult({
+          userId,
+          chatId,
+          userAgentId,
+          answerText,
+          reasoningText,
+          sources,
+          currentModelId,
+          tokenUsage,
+          responseMs,
+          maxTokens,
+          partial,
+          lastError,
+          msgId,
+          cacheEmbeddingData,
+          cacheText,
+          ragChunks,
+          queryType,
+          startTime,
+          irrecoverable,
+          toolCalls,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`saveAndEmitResult timed out after ${SAVE_TIMEOUT_MS}ms`)),
+            SAVE_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+    } catch (saveErr) {
+      log.error`saveAndEmitResult failed or timed out: ${saveErr}`;
+      // Fallback: emit 'done' via in-memory SSE (no DB) so client unfreezes
+      const totalTime = Math.floor(performance.now() - startTime);
+      publishLive(chatId, 'done', {
+        answer: answerText,
+        reasoning: reasoningText,
+        sources,
+        messageId: msgId,
+        queryType,
+        usage: {
+          chunks: ragChunks.length,
+          totalTime,
+          modelId: currentModelId,
+          tokensIn: tokenUsage.promptTokens,
+          tokensOut: tokenUsage.completionTokens,
+          durationMs: responseMs,
+        },
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     log.error`Background generation failed: ${err}`;
+    const ERROR_SAVE_TIMEOUT_MS = 10_000;
     try {
-      const errMsgId = addMessage({
-        userId,
-        role: 'assistant',
-        content: '',
-        chatId,
-        irrecoverable: true,
-        error: message,
-        userAgentId,
-      });
-      publishPersistent(chatId, 'error', { message, messageId: errMsgId, irrecoverable: true });
+      if (streamingMsgId) {
+        // Message already created by createMessageForStreaming — update it with error
+        await Promise.race([
+          db.messages.finalizeMessage(streamingMsgId, {
+            content: '',
+            irrecoverable: true,
+            error: message,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Error save timed out after ${ERROR_SAVE_TIMEOUT_MS}ms`)),
+              ERROR_SAVE_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        publishPersistent(chatId, 'error', { message, messageId: streamingMsgId, irrecoverable: false });
+      } else {
+        // Error before message creation (e.g. early gates failed) — create a new message
+        await Promise.race([
+          db.messages.addMessage({
+            userId,
+            role: 'assistant',
+            content: '',
+            chatId,
+            irrecoverable: true,
+            error: message,
+            userAgentId,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Error save timed out after ${ERROR_SAVE_TIMEOUT_MS}ms`)),
+              ERROR_SAVE_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        publishPersistent(chatId, 'error', { message, messageId: '', irrecoverable: false });
+      }
     } catch (innerErr) {
-      log.error('Failed to publish error SSE event after generation failure', {
+      log.error('Failed to persist error SSE event after generation failure', {
         error: innerErr instanceof Error ? innerErr.message : String(innerErr),
       });
+      publishLive(chatId, 'error', { message, messageId: '', irrecoverable: false });
     }
   } finally {
     activeGenerations.delete(chatId);

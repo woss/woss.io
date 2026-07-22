@@ -1,4 +1,4 @@
-import { addMessage } from '$lib/server/db';
+import { db } from '$lib/server/db/index';
 import { publishPersistent } from '$lib/server/chat-events';
 import { CAT, createLogger } from '$lib/server/logger';
 import { storeCache } from '$lib/server/llm-cache';
@@ -17,7 +17,7 @@ export interface SaveResultParams {
   answerText: string;
   reasoningText: string;
   sources: { title: string; score: number; slug: string; url: string; type?: string; chunkCount?: number }[];
-  currentModelId: number;
+  currentModelId: string;
   tokenUsage: { promptTokens: number; completionTokens: number };
   responseMs: number;
   maxTokens: number;
@@ -61,9 +61,7 @@ function linkContextRefs(text: string, chunks: { slug: string; type: string }[])
 
 export async function saveAndEmitResult(params: SaveResultParams): Promise<void> {
   const {
-    userId,
     chatId,
-    userAgentId,
     answerText: rawAnswerText,
     reasoningText,
     sources,
@@ -88,32 +86,27 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
       ? rawAnswerText
       : "I'm sorry, I wasn't able to generate a response. Please try rephrasing your question.";
     try {
-      const errMsgId = addMessage({
-        userId,
-        role: 'assistant',
+      await db.messages.finalizeMessage(msgId, {
         content: fallbackText,
         sources: JSON.stringify(sources),
         reasoning: reasoningText,
-        chatId,
-        modelId: currentModelId,
         tokensIn: tokenUsage.promptTokens,
         tokensOut: tokenUsage.completionTokens,
         durationMs: responseMs,
         maxTokens,
-        queryType,
         irrecoverable: irrecoverable || undefined,
         error: 'Failed to generate answer after retries',
-        userAgentId,
         fromCache: false,
       });
+      await db.messages.setMessageModel(msgId, currentModelId);
       log.info('Sending SSE event', {
         event: 'error',
         chatId,
         dataLength: fallbackText.length,
       });
-      publishPersistent(chatId, 'error', {
+      await publishPersistent(chatId, 'error', {
         message: 'Failed to generate answer after retries',
-        messageId: errMsgId,
+        messageId: msgId,
         irrecoverable: irrecoverable === true,
       });
     } catch (e) {
@@ -126,54 +119,51 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
 
   // Save assistant message
   try {
-    addMessage({
-      userId,
-      role: 'assistant',
+    log.debug`[saveAndEmitResult] finalizeMessage call starting`;
+    await db.messages.finalizeMessage(msgId, {
       content: answerText,
       sources: JSON.stringify(sources),
       reasoning: reasoningText,
-      chatId,
-      modelId: currentModelId,
       tokensIn: tokenUsage.promptTokens,
       tokensOut: tokenUsage.completionTokens,
       durationMs: responseMs,
       maxTokens,
-      queryType,
-      msgId,
-      userAgentId,
       fromCache: false,
     });
+    await db.messages.setMessageModel(msgId, currentModelId);
+    log.debug`[saveAndEmitResult] finalizeMessage call completed`;
   } catch (err) {
-    log.error`addMessage failed: ${err}`;
-    const errMsgId = addMessage({
-      userId,
-      role: 'assistant',
+    log.error`finalizeMessage failed: ${err}`;
+    log.debug`[saveAndEmitResult] finalizeMessage failed, starting fallback finalizeMessage`;
+    await db.messages.finalizeMessage(msgId, {
       content: '',
-      chatId,
-      queryType,
       error: 'Failed to save response',
-      userAgentId,
-      fromCache: false,
     });
+    log.debug`[saveAndEmitResult] fallback finalizeMessage completed, starting publishPersistent(error)`;
     log.info('Sending SSE event', { event: 'error', chatId, dataLength: 'Failed to save response'.length });
-    publishPersistent(chatId, 'error', { message: 'Failed to save response', messageId: errMsgId });
+    log.debug`[saveAndEmitResult] fallback error path done`;
+    await publishPersistent(chatId, 'error', { message: 'Failed to save response', messageId: msgId });
     return;
   }
 
   // Store cache (skip if disabled via env)
+  log.debug`[saveAndEmitResult] storeCache starting`;
   if (config().llmCache.enabled && !partial) {
     try {
-      storeCache(cacheEmbeddingData, cacheText, answerText, JSON.stringify(sources), msgId, toolCalls);
+      await storeCache(cacheEmbeddingData, cacheText, answerText, JSON.stringify(sources), msgId, toolCalls);
     } catch (err) {
       log.error`storeCache failed: ${err}`;
     }
+    log.debug`[saveAndEmitResult] storeCache completed`;
   }
+  log.debug`[saveAndEmitResult] publishPersistent(done) starting`;
   log.info`✅ done: tokensIn=${tokenUsage.promptTokens} tokensOut=${tokenUsage.completionTokens} durationMs=${responseMs} answerLen=${answerText.length} partial=${partial}`;
 
   const elapsed = performance.now() - startTime;
   log.info('Sending SSE event', { event: 'done', chatId, dataLength: answerText.length });
-  publishPersistent(chatId, 'done', {
+  await publishPersistent(chatId, 'done', {
     answer: answerText,
+    reasoning: reasoningText,
     sources,
     messageId: msgId,
     queryType,
@@ -186,4 +176,5 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
       durationMs: responseMs,
     },
   });
+  log.debug`[saveAndEmitResult] publishPersistent(done) completed`;
 }

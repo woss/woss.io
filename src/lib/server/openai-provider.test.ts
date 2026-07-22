@@ -198,8 +198,8 @@ describe('buildRagPrompt', () => {
     const messages = buildRagPrompt('Tell me about Daniel', chunks);
     expect(messages).toHaveLength(2);
     expect(messages[0].content).toContain('Context:');
-    expect(messages[0].content).toContain('[1] From "About"');
-    expect(messages[0].content).toContain('[2] From "Projects"');
+    expect(messages[0].content).toContain('[1] "About" (relevance: 0.95):');
+    expect(messages[0].content).toContain('[2] "Projects" (relevance: 0.85):');
     expect(messages[0].content).toContain('Daniel is a developer.');
     expect(messages[0].content).toContain('He built woss.io.');
   });

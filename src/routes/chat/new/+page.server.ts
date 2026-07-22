@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions } from './$types';
-import { createChat, getUserChatCount, getOrCreateUserAgent } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { config as clientConfig } from '$lib/config';
 import { CAT, createLogger } from '$lib/server/logger';
 
@@ -17,7 +17,7 @@ export const actions: Actions = {
       const userId = fd.get('userId')?.toString();
       if (!userId) return fail(400, { error: 'userId is required' });
 
-      const chatCount = getUserChatCount(userId);
+      const chatCount = await db.chats.getUserChatCount(userId);
       if (chatCount >= clientConfig.public.maxChats) {
         log.warn`Create chat rejected: user ${userId} has ${chatCount} chats (max ${clientConfig.public.maxChats})`;
         return fail(400, { error: `Maximum of ${clientConfig.public.maxChats} chats reached` });
@@ -25,9 +25,9 @@ export const actions: Actions = {
 
       const ip = getClientIP(event);
       const userAgentStr = event.request.headers.get('user-agent');
-      const userAgentId = userAgentStr ? getOrCreateUserAgent(userAgentStr, ip) : undefined;
+      const userAgentId = userAgentStr ? await db.userAgents.getOrCreateUserAgent(userAgentStr, ip) : undefined;
 
-      const id = createChat(userId, undefined, userAgentId);
+      const id = await db.chats.createChat(userId, undefined, userAgentId);
       log.debug`Created chat ${id} for user ${userId}`;
 
       return { id };

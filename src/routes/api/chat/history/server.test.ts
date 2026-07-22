@@ -2,8 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
 vi.mock('$lib/server/db', () => ({
-  getMessages: vi.fn(),
-  getMessagesByUserId: vi.fn(),
+  db: {
+    messages: {
+      getMessages: vi.fn(),
+      getMessagesByUserId: vi.fn(),
+    },
+  },
 }));
 
 vi.mock('$lib/server/logger', () => ({
@@ -19,7 +23,7 @@ vi.mock('$lib/server/logger', () => ({
 }));
 
 import type { StoredMessage } from '$lib/server/db';
-import { getMessages, getMessagesByUserId } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { GET } from './+server';
 
 function buildEvent(params: Record<string, string>): RequestEvent {
@@ -65,8 +69,8 @@ describe('GET /api/chat/history', () => {
       const mockMessages = [
         { id: 'msg-1', role: 'user', content: 'Hello' },
         { id: 'msg-2', role: 'assistant', content: 'Hi there' },
-      ];
-      vi.mocked(getMessages).mockReturnValue(mockMessages as unknown as StoredMessage[]);
+      ] as StoredMessage[];
+      vi.mocked(db.messages.getMessages).mockResolvedValue(mockMessages);
 
       const event = buildEvent({ chatId: 'chat-1' });
       const res = await GET(event);
@@ -74,14 +78,12 @@ describe('GET /api/chat/history', () => {
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.messages).toEqual(mockMessages);
-      expect(getMessages).toHaveBeenCalledWith('chat-1', 50, 0);
-      expect(getMessagesByUserId).not.toHaveBeenCalled();
+      expect(db.messages.getMessages).toHaveBeenCalledWith('chat-1', 50, 0);
+      expect(db.messages.getMessagesByUserId).not.toHaveBeenCalled();
     });
 
     it('returns 500 when getMessages throws', async () => {
-      vi.mocked(getMessages).mockImplementation(() => {
-        throw new Error('DB connection lost');
-      });
+      vi.mocked(db.messages.getMessages).mockRejectedValue(new Error('DB connection lost'));
 
       const event = buildEvent({ chatId: 'chat-1' });
       const res = await GET(event);
@@ -94,8 +96,8 @@ describe('GET /api/chat/history', () => {
 
   describe('userId fallback path', () => {
     it('returns 200 with messages when userId is provided', async () => {
-      const mockMessages = [{ id: 'msg-1', role: 'user', content: 'Hello' }];
-      vi.mocked(getMessagesByUserId).mockReturnValue(mockMessages as unknown as StoredMessage[]);
+      const mockMessages = [{ id: 'msg-1', role: 'user', content: 'Hello' }] as StoredMessage[];
+      vi.mocked(db.messages.getMessagesByUserId).mockResolvedValue(mockMessages);
 
       const event = buildEvent({ userId: 'user-1' });
       const res = await GET(event);
@@ -103,14 +105,12 @@ describe('GET /api/chat/history', () => {
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.messages).toEqual(mockMessages);
-      expect(getMessagesByUserId).toHaveBeenCalledWith('user-1', 50, 0);
-      expect(getMessages).not.toHaveBeenCalled();
+      expect(db.messages.getMessagesByUserId).toHaveBeenCalledWith('user-1', 50, 0);
+      expect(db.messages.getMessages).not.toHaveBeenCalled();
     });
 
     it('returns 500 when getMessagesByUserId throws', async () => {
-      vi.mocked(getMessagesByUserId).mockImplementation(() => {
-        throw new Error('DB connection lost');
-      });
+      vi.mocked(db.messages.getMessagesByUserId).mockRejectedValue(new Error('DB connection lost'));
 
       const event = buildEvent({ userId: 'user-1' });
       const res = await GET(event);
@@ -122,14 +122,14 @@ describe('GET /api/chat/history', () => {
   });
 
   it('prefers chatId over userId when both are provided', async () => {
-    vi.mocked(getMessages).mockReturnValue([]);
-    vi.mocked(getMessagesByUserId).mockReturnValue([]);
+    vi.mocked(db.messages.getMessages).mockResolvedValue([]);
+    vi.mocked(db.messages.getMessagesByUserId).mockResolvedValue([]);
 
     const event = buildEvent({ chatId: 'chat-1', userId: 'user-1' });
     const res = await GET(event);
 
     expect(res.status).toBe(200);
-    expect(getMessages).toHaveBeenCalledWith('chat-1', 50, 0);
-    expect(getMessagesByUserId).not.toHaveBeenCalled();
+    expect(db.messages.getMessages).toHaveBeenCalledWith('chat-1', 50, 0);
+    expect(db.messages.getMessagesByUserId).not.toHaveBeenCalled();
   });
 });

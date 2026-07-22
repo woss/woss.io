@@ -3,6 +3,28 @@
 **Goal:** Replace `better-sqlite3` + USearch with SurrealDB JS SDK. Single DB
 service (`$lib/server/db`) with typed interfaces for future swapability.
 
+## Progress
+
+| Phase | Task                           | Status      |
+| ----- | ------------------------------ | ----------- |
+| 1     | Setup + migrate.surql          | ✅ Complete |
+| 2     | Schema definition              | ✅ Complete |
+| 3a    | SurrealDB client singleton     | ✅ Complete |
+| 3b    | Repository interfaces          | ✅ Complete |
+| 3c    | SurrealDatabaseService (30 fn) | ✅ Complete |
+| 3d    | db/index.ts entry point        | ✅ Complete |
+| 4     | Consumer refactoring (26+5)    | ⬜ Pending  |
+| 5     | Data migration + validation    | ⬜ Pending  |
+
+Service layer lives at `src/lib/server/db/` — see [`interfaces.ts`](../src/lib/server/db/interfaces.ts) for the full API surface.
+
+| File                                   | Role                                               |
+| -------------------------------------- | -------------------------------------------------- |
+| `src/lib/server/db/surreal.ts`         | SurrealDB client singleton + env adapter           |
+| `src/lib/server/db/interfaces.ts`      | 15 typed async repo interfaces + aggregate         |
+| `src/lib/server/db/surreal-service.ts` | SurrealDatabaseService (1312 lines, raw SurrealQL) |
+| `src/lib/server/db/index.ts`           | Barrel export: `db` singleton + types              |
+
 ## Current Stack (12 tables, ~910 lines db.ts)
 
 - **DB:** better-sqlite3 (sync, embedded)
@@ -28,19 +50,19 @@ service (`$lib/server/db`) with typed interfaces for future swapability.
 --user root --pass root`
   - Or binary: `surreal start --log trace --user root --pass root`
 - `.env` additions:
-  - `SURREAL_DB_URL=http://localhost:8000`
-  - `SURREAL_DB_USER=root`
-  - `SURREAL_DB_PASS=root`
+  - `SURREAL_DB_URL=ws://localhost:10101`
+  - `SURREAL_DB_USER=admin`
+  - `SURREAL_DB_PASS=admin`
   - `SURREAL_DB_NS=woss`
   - `SURREAL_DB_DB=woss`
 - Create `src/scripts/migrate.surql` — full schema DEFINE TABLE/DEFINE FIELD
-  for all 15 tables with typed fields, record links, and ANN indices
+  for all 16 tables with typed fields, record links, and ANN indices
 
 ## Phase 2 — Schema (1 hr)
 
 ### src/scripts/migrate.surql
 
-15 SurrealDB tables matching SQLite schema:
+16 SurrealDB tables matching SQLite schema (1 new: feature_tours):
 
 | #   | SurrealDB table | FKs (record links)                                                  | Indices                                          |
 | --- | --------------- | ------------------------------------------------------------------- | ------------------------------------------------ |
@@ -59,6 +81,7 @@ service (`$lib/server/db`) with typed interfaces for future swapability.
 | 13  | contact_intents | user_id→users, chat_id→chats                                        | —                                                |
 | 14  | user_agents     | —                                                                   | UNIQUE on ua                                     |
 | 15  | rate_limits     | —                                                                   | —                                                |
+| 16  | feature_tours   | via `has_tour` graph edge (users → feature_tours)                   | — (unique enforced via edge + feature_id)        |
 
 Key SurrealDB type mappings:
 
@@ -93,11 +116,11 @@ DEFINE INDEX idx_chunks_fts ON chunks FIELDS text
   FT WITH analyzation DEFAULT;
 ```
 
-## Phase 3 — Database Service Layer (5-6 hrs)
+## Phase 3 — Database Service Layer (5-6 hrs) ✅ Complete
 
 ### 3a. Connection Manager
 
-`src/lib/server/db/surreal.ts` — SurrealDB client singleton:
+`src/lib/server/db/surreal.ts` — SurrealDB client singleton **(built)**:
 
 - `initSurreal(opts?)` — connect using env vars (NS/DB scope)
 - `getSurreal()` — return singleton, throw if not initialized
@@ -106,8 +129,8 @@ DEFINE INDEX idx_chunks_fts ON chunks FIELDS text
 
 ### 3b. Repository Interfaces
 
-`src/lib/server/db/interfaces.ts` — typed interfaces matching current function
-signatures but async:
+`src/lib/server/db/interfaces.ts` — typed async interfaces matching current function
+signatures **(built — 15 repos, 335 lines)**:
 
 ```typescript
 export interface IUserRepo {
@@ -191,7 +214,7 @@ export interface IDatabaseService
 ### 3c. SurrealDatabaseService Implementation
 
 `src/lib/server/db/surreal-service.ts` — implements IDatabaseService using
-SurrealQL queries via surrealdb.js SDK:
+SurrealQL queries via surrealdb.js SDK **(built — 1312 lines, all 15 repos)**:
 
 ```typescript
 export class SurrealDatabaseService implements IDatabaseService {
@@ -246,7 +269,7 @@ Key SurrealQL patterns:
 
 ### 3d. New db.ts entry point
 
-`src/lib/server/db/index.ts` — re-exports SurrealDatabaseService singleton:
+`src/lib/server/db/index.ts` — re-exports SurrealDatabaseService singleton **(built — 49 lines)**:
 
 ```typescript
 import { SurrealDatabaseService } from './surreal-service';
@@ -269,9 +292,10 @@ export interface IDatabaseService {
 }
 ```
 
-SurrealDB transactions use SurrealQL `BEGIN TRANSSACTION; ... COMMIT;` via
-raw query. The transaction callback receives a scoped service instance that
-shares the same SurrealDB connection.
+SurrealDB transactions use SurrealQL `BEGIN; ... COMMIT;` (or `CANCEL;` to
+roll back) via raw query. The transaction callback receives a scoped service
+instance that shares the same SurrealDB connection. Health checks use
+`RETURN 1` (SurrealDB 3.x syntax).
 
 ## Phase 4 — Consumer Refactoring (3-4 hrs)
 
@@ -359,7 +383,7 @@ async function migrate() {
   const tables = ['users', 'chats', 'messages', 'models', 'reactions',
     'tool_calls', 'chat_events', 'page_posts', 'page_experience',
     'llm_cache', 'leads', 'contact_intents', 'user_agents',
-    'chunks', 'rate_limits'] as const;
+    'chunks', 'rate_limits', 'feature_tours'] as const;
 
   // 2. For each table, SELECT * and translate to SurrealDB document format
   //    - Parse JSON strings (tags, sources, embedding)
@@ -405,17 +429,17 @@ Run: `tsx src/scripts/migrate-to-surreal.ts`
 
 ## Effort Summary
 
-| Phase     | Task                           | Time        | Dependencies       |
-| --------- | ------------------------------ | ----------- | ------------------ |
-| 1         | Setup + migrate.surql          | 1.5 hrs     | —                  |
-| 2         | Schema definition              | 1 hr        | Phase 1            |
-| 3a        | SurrealDB client singleton     | 0.5 hr      | Phase 2            |
-| 3b        | Repository interfaces          | 1 hr        | — (parallel to 3a) |
-| 3c        | SurrealDatabaseService (30 fn) | 3-4 hrs     | Phase 3a + 3b      |
-| 3d        | db/index.ts entry point        | 0.25 hr     | Phase 3c           |
-| 4         | Consumer refactoring (26+5)    | 3-4 hrs     | Phase 3d           |
-| 5         | Data migration + validation    | 1-2 hrs     | Phase 4            |
-| **Total** |                                | **~12 hrs** | (2 full days)      |
+| Phase     | Task                           | Time        | Dependencies       | Status          |
+| --------- | ------------------------------ | ----------- | ------------------ | --------------- |
+| 1         | Setup + migrate.surql          | 1.5 hrs     | —                  | ✅ Done         |
+| 2         | Schema definition              | 1 hr        | Phase 1            | ✅ Done         |
+| 3a        | SurrealDB client singleton     | 0.5 hr      | Phase 2            | ✅ Done         |
+| 3b        | Repository interfaces          | 1 hr        | — (parallel to 3a) | ✅ Done         |
+| 3c        | SurrealDatabaseService (30 fn) | 3-4 hrs     | Phase 3a + 3b      | ✅ Done         |
+| 3d        | db/index.ts entry point        | 0.25 hr     | Phase 3c           | ✅ Done         |
+| 4         | Consumer refactoring (26+5)    | 3-4 hrs     | Phase 3d           | ⬜ Pending      |
+| 5         | Data migration + validation    | 1-2 hrs     | Phase 4            | ⬜ Pending      |
+| **Total** |                                | **~12 hrs** |                    | **~8 hrs done** |
 
 **Parallelizable:** Phases 1-2 linear, Phase 3a+3b parallel, Phase 3c linear,
 Phase 4 parallelizable across files, Phase 5 linear.

@@ -1,24 +1,27 @@
 import 'dotenv/config';
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import GithubSlugger from 'github-slugger';
-import { Index, MetricKind, ScalarKind } from 'usearch';
-import Database from 'better-sqlite3';
-import { parseFrontmatter } from '../content/index.js';
+import { parseMarkdownFrontmatter as parseFrontmatter } from '../lib/server/markdown.ts';
 import { load as parseYaml } from 'js-yaml';
-import { getDb, closeDb } from '../lib/server/db.js';
+import { SurrealDatabaseService } from '../lib/server/db/surreal-service';
+import type { IDatabaseService } from '../lib/server/db/interfaces';
 import { downloadEmbedder, embedTexts, releaseExtractor } from '../lib/server/embed.js';
 // Future: cross-encoder re-ranker (src/lib/server/reranker.ts)
 // import { downloadReranker } from '../lib/server/reranker.js';
 import { chunkContent } from './chunk-content.js';
-import { initDatabase } from '../lib/server/schema.js';
 import { initLogger, CAT, createLogger } from '../lib/server/logger.js';
 import { dispose } from '@logtape/logtape';
-import { centroidDataChanged, embedAndComputeCentroids, saveCentroids } from './seed-data.js';
+import type { Logger } from '@logtape/logtape';
 import { saveEmbeddingVisualizations } from './visualize-embedding-space.js';
+import { SEED_QUERIES, type QueryClass } from '../lib/chat/suggested-questions.ts';
+import { EMBEDDING_DIM, EMBEDDING_MODEL } from '../lib/search-config.ts';
+
+// Create standalone SurrealDB service instance (no SvelteKit $lib dependency)
+const db: IDatabaseService = new SurrealDatabaseService();
 
 // ---------------------------------------------------------------------------
 // Frontmatter helpers
@@ -50,11 +53,8 @@ export function parseFrontmatterSlug(raw: string): string | null {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = './data';
-const INDEX_PATH = `${DATA_DIR}/woss.usearch`;
-
-const POSTS_DIR = join(process.cwd(), 'src', 'content', 'posts');
-const EXPERIENCE_DIR = join(process.cwd(), 'src', 'content', 'experience');
+const POSTS_DIR = join(process.cwd(), 'content', 'posts');
+const EXPERIENCE_DIR = join(process.cwd(), 'content', 'experience');
 
 const args = process.argv.slice(2);
 const update = args.includes('--update');
@@ -69,7 +69,7 @@ const log = createLogger(CAT.search);
 export interface ContentItem {
   slug: string;
   title: string;
-  date: string | null;
+  date: string;
   tags: string[];
   body: string;
   type: 'post' | 'experience';
@@ -79,11 +79,10 @@ export interface ChunkRow {
   chunkId: string;
   text: string;
   title: string;
-  date: string | null;
+  date: string;
   tags: string[];
   section: string;
   embedding: number[];
-  type: string;
 }
 
 export interface ProcessResult {
@@ -256,10 +255,10 @@ export function computeChanges(
 
 /**
  * Process one content item through chunk → filter → embed → row-build.
- * Exported for testing. Returns rows for SQLite + keys for USearch.
+ * Exported for testing. Returns rows + index keys.
  * @param file The content item to process.
  * @param chunkOffset The offset to apply to chunk indices for generating unique IDs.
- * @returns An object containing rows for SQLite and keys for USearch.
+ * @returns An object containing rows and index keys.
  */
 export async function processFile(file: ContentItem, chunkOffset: number): Promise<ProcessResult> {
   const chunks = await chunkContent(file.body, {
@@ -287,7 +286,6 @@ export async function processFile(file: ContentItem, chunkOffset: number): Promi
       tags: chunk.tags?.length ? chunk.tags : file.tags,
       section: chunk.section || '',
       embedding: embedding.data,
-      type: file.type,
     });
     indexKeys.push(BigInt(chunkOffset + i + 1));
   }
@@ -296,10 +294,101 @@ export async function processFile(file: ContentItem, chunkOffset: number): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Centroid helpers — embedded here so all SurrealDB access shares one singleton
+// ---------------------------------------------------------------------------
+
+/** Result of embedding seed queries and computing centroids */
+interface EmbedResult {
+  queries: typeof SEED_QUERIES;
+  vectors: number[][];
+  toolCentroid: number[];
+  ragCentroid: number[];
+  metaCentroid: number[];
+}
+
+const CENTROID_CLASSES: QueryClass[] = ['tool', 'rag', 'meta'];
+
+/** Compute element-wise average of a set of vectors of equal length */
+function averageVector(vecs: number[][]): number[] {
+  const dim = vecs[0].length;
+  const avg = new Array(dim).fill(0);
+  for (const v of vecs) for (let i = 0; i < dim; i++) avg[i] += v[i] / vecs.length;
+  return avg;
+}
+
+/** Compute a hash for a centroid class from its seed queries + model + dims */
+function centroidHashForClass(qclass: QueryClass): string {
+  const qs = SEED_QUERIES.filter((q) => q.class === qclass);
+  const data = JSON.stringify({ queries: qs, model: EMBEDDING_MODEL, dims: EMBEDDING_DIM });
+  return createHash('sha256').update(data).digest('hex');
+}
+
+/** Map of centroid class → current hash */
+function computeAllCentroidHashes(): Record<string, string> {
+  const h: Record<string, string> = {};
+  for (const c of CENTROID_CLASSES) h[c] = centroidHashForClass(c);
+  return h;
+}
+
+/**
+ * Embed all seed queries and compute tool/rag/meta centroids.
+ * Uses BGE large en v1.5 via existing embedText pipeline.
+ */
+async function embedAndComputeCentroids(log: Logger): Promise<EmbedResult> {
+  log.debug`Embedding ${SEED_QUERIES.length} seed queries (${SEED_QUERIES.filter((q) => q.class === 'tool').length} tool, ${SEED_QUERIES.filter((q) => q.class === 'rag').length} rag, ${SEED_QUERIES.filter((q) => q.class === 'hybrid').length} hybrid, ${SEED_QUERIES.filter((q) => q.class === 'meta').length} meta)...`;
+  const vectors = (await embedTexts(SEED_QUERIES.map((q) => q.text))).map((r) => r.data);
+
+  const toolVecs = vectors.filter((_, i) => SEED_QUERIES[i].class === 'tool');
+  const ragVecs = vectors.filter((_, i) => SEED_QUERIES[i].class === 'rag');
+  const metaVecs = vectors.filter((_, i) => SEED_QUERIES[i].class === 'meta');
+
+  log.debug`Embedded ${SEED_QUERIES.length} seed queries...`;
+  const toolCentroid = averageVector(toolVecs);
+  const ragCentroid = averageVector(ragVecs);
+  const metaCentroid = averageVector(metaVecs);
+
+  return { queries: SEED_QUERIES, vectors, toolCentroid, ragCentroid, metaCentroid };
+}
+
+/**
+ * Save centroid data to SurrealDB centroids table.
+ * Each centroid stores its own hash for change detection.
+ */
+async function saveCentroids(result: EmbedResult, db: IDatabaseService, log: Logger): Promise<void> {
+  log.debug`Saving centroids to SurrealDB...`;
+
+  const hashes = computeAllCentroidHashes();
+
+  await db.centroids.upsertCentroid('tool', result.toolCentroid, hashes.tool);
+  await db.centroids.upsertCentroid('rag', result.ragCentroid, hashes.rag);
+  await db.centroids.upsertCentroid('meta', result.metaCentroid, hashes.meta);
+}
+
+/**
+ * Check if any centroid needs recomputing by comparing current hashes
+ * against stored hashes in SurrealDB. Returns true if any changed.
+ */
+async function centroidDataChanged(db: IDatabaseService, log: Logger): Promise<boolean> {
+  const existing = await db.centroids.getAllCentroids();
+
+  const current = computeAllCentroidHashes();
+  for (const c of CENTROID_CLASSES) {
+    const stored = existing.find((r) => r.class === c)?.hash;
+    if (!stored || stored !== current[c]) {
+      log.debug`centroidDataChanged: ${c} changed (stored=${stored?.slice(0, 12) ?? 'none'}, current=${current[c].slice(0, 12)})`;
+      return true;
+    }
+  }
+
+  log.debug`centroidDataChanged: all centroids unchanged`;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-async function buildIndex(): Promise<void> {
+export async function buildIndex(): Promise<void> {
   // 1. Preload ML models before any work — fail fast on download issues
   process.stdout.write('  Downloading embedding model...\n');
   let lastPct = -1;
@@ -333,38 +422,13 @@ async function buildIndex(): Promise<void> {
   // });
   // process.stdout.write('\r  ✓ Cross-encoder model cached\n');
 
-  // 2. Ensure database exists — create schema if missing
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+  // 2. Connect to SurrealDB
+  await db.init();
 
-  const dbPath = 'data/woss.db';
-  if (existsSync(dbPath)) {
-    // Docker: stale journal/WAL/SHM files from prior container kills cause
-    // 'attempt to write a readonly database'. Delete them before opening.
-    for (const ext of ['-journal', '-wal', '-shm']) {
-      const p = dbPath + ext;
-      if (existsSync(p)) {
-        try {
-          rmSync(p);
-          log.debug`Cleaned stale ${dbPath}${ext}`;
-        } catch {
-          /* best effort */
-        }
-      }
-    }
-  } else {
-    log.info`Database not found. Initializing schema...`;
-    const tmp = new Database(dbPath);
-    tmp.exec('PRAGMA journal_mode = TRUNCATE');
-    tmp.exec('PRAGMA foreign_keys = ON');
-    initDatabase(tmp);
-    tmp.close();
-    log.info`Database created successfully.`;
-  }
-
-  if (await centroidDataChanged(log)) {
+  if (await centroidDataChanged(db, log)) {
     log.info`Computing and saving centroids... [centroids]`;
     const { toolCentroid, ragCentroid, metaCentroid, queries, vectors } = await embedAndComputeCentroids(log);
-    await saveCentroids({ toolCentroid, ragCentroid, metaCentroid, queries, vectors }, log);
+    await saveCentroids({ toolCentroid, ragCentroid, metaCentroid, queries, vectors }, db, log);
     await saveEmbeddingVisualizations(queries, vectors, toolCentroid, ragCentroid, './static/misc', metaCentroid);
     log.info`Done. [centroids]`;
   } else {
@@ -374,58 +438,20 @@ async function buildIndex(): Promise<void> {
   // Free BGE model memory (~1.3GB) before chunk embedding phase
   await releaseExtractor();
 
-  // Retry getDb with backoff — transient IOERR on new DB after reset.
-  // If "readonly" error (SQLITE_READONLY), delete DB and retry once —
-  // search index is rebuildable from markdown; chat data is secondary.
-  const maxDbInitRetries = 3;
-  let db: ReturnType<typeof getDb>;
-  for (let dbInitAttempt = 1; ; dbInitAttempt++) {
-    try {
-      db = getDb();
-      break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isReadonly = msg.includes('readonly');
-      const isIoerrShortRead = msg.includes('IOERR_SHORT_READ');
-      if (dbInitAttempt >= maxDbInitRetries || !(isReadonly || isIoerrShortRead)) {
-        throw err;
-      }
-      if (isReadonly) {
-        log.warn`Database readonly — deleting and rebuilding (attempt ${dbInitAttempt}/${maxDbInitRetries})`;
-        for (const ext of ['', '-journal', '-wal', '-shm']) {
-          const p = dbPath + ext;
-          if (existsSync(p)) {
-            try {
-              rmSync(p);
-            } catch {
-              /* best effort */
-            }
-          }
-        }
-      } else {
-        log.debug`getDb attempt ${dbInitAttempt} failed (IOERR_SHORT_READ), retrying...`;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  }
-
-  // 1. Read all content files with per-file SHA-256 hashes
+  // 3. Read all content files with per-file SHA-256 hashes
   const fileEntries = readFileEntries();
 
   if (fileEntries.length === 0) {
-    log.info`No content files found in src/content/posts/ or src/content/experience/`;
-    closeDb();
+    log.info`No content files found in content/posts/ or content/experience/`;
+    await db.close();
     return;
   }
 
   log.info`Content files: ${fileEntries.length}`;
 
-  // 2. Read stored hashes from previous build
+  // 4. Read stored hashes from previous build
   const storedHashes = new Map<string, string>();
-  for (const row of parseSlugHashRows(db.prepare('SELECT slug, hash FROM page_posts').all())) {
-    storedHashes.set(row.slug, row.hash);
-  }
-  for (const row of parseSlugHashRows(db.prepare('SELECT slug, hash FROM page_experience').all())) {
+  for (const row of await db.content.getStoredHashes()) {
     storedHashes.set(row.slug, row.hash);
   }
 
@@ -439,54 +465,25 @@ async function buildIndex(): Promise<void> {
     }
   }
 
-  // 4. Early exit if nothing changed and index exists
+  // 5. Early exit if nothing changed
   if (changedEntries.length === 0 && removedSlugs.length === 0) {
-    if (existsSync(INDEX_PATH)) {
-      log.info`No content changes detected. Skipping rebuild.`;
-      closeDb();
-      return;
-    }
-    log.info`Content unchanged but index file missing. Rebuilding index from database...`;
-  } else {
-    log.info`Changes: ${changedEntries.length} file(s) ${update ? '(forced update)' : 'modified'}, ${removedSlugs.length} file(s) removed`;
+    log.info`No content changes detected. Skipping rebuild.`;
+    await db.close();
+    return;
   }
+  log.info`Changes: ${changedEntries.length} file(s) ${update ? '(forced update)' : 'modified'}, ${removedSlugs.length} file(s) removed`;
 
-  // 5. Delete obsolete chunks
-  const deleteChunks = db.prepare('DELETE FROM chunks WHERE chunk_id LIKE ?');
-  const deletePagePost = db.prepare('DELETE FROM page_posts WHERE slug = ?');
-  const deletePageExperience = db.prepare('DELETE FROM page_experience WHERE slug = ?');
-
+  // 6. Delete obsolete chunks and removed entries
   for (const entry of changedEntries) {
-    deleteChunks.run(`${entry.slug}_chunk_%`);
+    await db.vector.deleteChunksBySlug(entry.slug);
   }
 
   for (const slug of removedSlugs) {
-    deleteChunks.run(`${slug}_chunk_%`);
-    deletePagePost.run(slug);
-    deletePageExperience.run(slug);
+    await db.vector.deleteChunksBySlug(slug);
+    await db.content.deletePost(slug);
+    await db.content.deleteExperience(slug);
     log.debug`  removed: ${slug}`;
   }
-
-  // 6. Process changed/new files — chunk, embed, insert, store hash
-  const insertChunk = db.prepare(`
-    INSERT OR IGNORE INTO chunks (chunk_id, text, title, date, tags, section, embedding, type)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((rows: ChunkRow[]) => {
-    for (const r of rows) {
-      insertChunk.run(
-        r.chunkId,
-        r.text,
-        r.title ?? '',
-        r.date ?? null,
-        JSON.stringify(r.tags ?? []),
-        r.section ?? '',
-        JSON.stringify(r.embedding),
-        r.type,
-      );
-    }
-  });
 
   let newChunks = 0;
   // Track part_of_series slugs for second-pass resolution (slug → series slug)
@@ -514,13 +511,13 @@ async function buildIndex(): Promise<void> {
 
       // Process title, date, tags — handle Date objects from frontmatter
       let title: string;
-      let date: string | null;
+      let date: string;
       let tags: string[];
 
       if (entry.type === 'post') {
         title = String(data.title ?? '') || entry.slug;
         const rawDate = data.date;
-        date = rawDate instanceof Date ? rawDate.toISOString() : rawDate ? String(rawDate) : null;
+        date = rawDate instanceof Date ? rawDate.toISOString() : rawDate ? String(rawDate) : '';
         tags = [...new Set<string>(Array.isArray(data.tags) ? data.tags.map(String) : [])];
         if (entry.dirTag) tags = [...new Set([...tags, entry.dirTag])];
       } else {
@@ -528,7 +525,7 @@ async function buildIndex(): Promise<void> {
         const role = String(data.role ?? '');
         title = company ? `${company} — ${role}` : entry.slug;
         const rawStartDate = data.startDate;
-        date = rawStartDate instanceof Date ? rawStartDate.toISOString() : rawStartDate ? String(rawStartDate) : null;
+        date = rawStartDate instanceof Date ? rawStartDate.toISOString() : rawStartDate ? String(rawStartDate) : '';
         tags = [...new Set<string>(Array.isArray(data.skills) ? data.skills.map(String) : [])];
         if (entry.dirTag) tags = [...new Set([...tags, entry.dirTag])];
       }
@@ -548,29 +545,26 @@ async function buildIndex(): Promise<void> {
       if (entry.type === 'post') {
         // Read part_of_series slug from frontmatter (resolved to ID in second pass)
         const seriesSlug = data.part_of_series ? String(data.part_of_series) : null;
-        db.prepare(
-          `INSERT INTO page_posts (slug, hash, content, toc, title, description, date, tags, status, excerpt, header_image, featured, position, part_of_series, workflow_files, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(slug) DO UPDATE SET hash = excluded.hash, content = excluded.content, toc = excluded.toc, title = excluded.title, description = excluded.description, date = excluded.date, tags = excluded.tags, status = excluded.status, excerpt = excluded.excerpt, header_image = excluded.header_image, featured = excluded.featured, position = excluded.position, part_of_series = excluded.part_of_series, workflow_files = excluded.workflow_files, updated_at = excluded.updated_at`,
-        ).run(
-          entry.slug,
-          entry.hash,
-          content || raw,
+        await db.content.upsertPost({
+          slug: entry.slug,
+          hash: entry.hash,
+          content: content || raw,
           toc,
           title,
-          data.description ?? '',
+          description: String(data.description ?? ''),
           date,
-          JSON.stringify(tags),
-          data.status || (data.published !== false ? 'published' : 'draft'),
-          data.excerpt ?? '',
-          data.header_image ?? null,
-          data.featured ? 1 : 0,
-          data.position ?? null,
-          null, // part_of_series — resolved in second pass below
-          data.workflow_files ? JSON.stringify(data.workflow_files) : null,
-        );
+          tags,
+          status: String(data.status || (data.published !== false ? 'published' : 'draft')),
+          excerpt: String(data.excerpt ?? ''),
+          headerImage: data.header_image ? String(data.header_image) : null,
+          featured: Boolean(data.featured),
+          position: data.position ? Number(data.position) : null,
+          workflowFiles: data.workflow_files ? JSON.stringify(data.workflow_files) : null,
+        });
         seriesMap.set(entry.slug, seriesSlug);
 
         // Determine post status for chunk gating
-        const postStatus = data.status || (data.published !== false ? 'published' : 'draft');
+        const postStatus = String(data.status || (data.published !== false ? 'published' : 'draft'));
 
         // Skip chunking for non-published posts
         if (postStatus !== 'published') {
@@ -578,23 +572,23 @@ async function buildIndex(): Promise<void> {
           continue;
         }
       } else {
+        const rawSkills = data.skills;
+        const skills: string[] = Array.isArray(rawSkills) ? rawSkills.map(String) : [];
         const jobRole = content ? extractJobRole(content) : '';
-        db.prepare(
-          `INSERT OR REPLACE INTO page_experience (slug, hash, content, company, role, start_date, end_date, duration, skills, description, published, updated_at, job_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
-        ).run(
-          entry.slug,
-          entry.hash,
-          content || raw,
-          data.company ?? '',
-          data.role ?? '',
-          processedStartDate,
-          processedEndDate,
-          data.duration ?? '',
-          JSON.stringify(data.skills ?? []),
-          data.description ?? '',
-          data.published !== false ? 1 : 0,
-          jobRole || null,
-        );
+        await db.content.upsertExperience({
+          slug: entry.slug,
+          hash: entry.hash,
+          content: content || raw,
+          company: String(data.company ?? ''),
+          role: String(data.role ?? ''),
+          startDate: processedStartDate,
+          endDate: processedEndDate,
+          duration: String(data.duration ?? ''),
+          skills,
+          description: String(data.description ?? ''),
+          published: data.published !== false,
+          jobRole: jobRole || null,
+        });
       }
       const item: ContentItem = {
         slug: entry.slug,
@@ -611,77 +605,47 @@ async function buildIndex(): Promise<void> {
         continue;
       }
 
-      insertMany(rows);
+      const chunkIds = await db.vector.upsertChunks(rows);
       newChunks += rows.length;
       log.debug`    ↳ ${rows.length} chunks indexed`;
+
+      // Create has_chunk edges connecting parent record to chunks
+      const parentTable = entry.type === 'post' ? 'page_posts' : 'page_experience';
+      await db.vector.createEdges(parentTable, entry.slug, chunkIds);
     } catch (err) {
       const processErr = err instanceof Error ? err : new Error(String(err));
       log.error`  ⚠ Failed to process ${entry.slug}: ${processErr.message}`;
     }
   }
 
-  // Second pass: resolve part_of_series slugs to page_posts.id
-  const seriesUpdate = db.prepare('UPDATE page_posts SET part_of_series = ? WHERE slug = ?');
-  const slugToId = new Map<string, number>();
-  const allRows = db.prepare('SELECT id, slug FROM page_posts').all() as { id: number; slug: string }[];
-  for (const row of allRows) {
-    slugToId.set(row.slug, row.id);
-  }
+  // Second pass: resolve part_of_series slugs to parent record IDs
   let seriesCount = 0;
-  for (const [childSlug, parentSlug] of seriesMap) {
-    if (parentSlug && slugToId.has(parentSlug)) {
-      seriesUpdate.run(slugToId.get(parentSlug)!, childSlug);
-      seriesCount++;
+  if (seriesMap.size > 0) {
+    const slugRows = await db.content.getSlugToIdMap();
+    const slugToId = new Map(slugRows.map((r) => [r.slug, r.id]));
+    for (const [childSlug, parentSlug] of seriesMap) {
+      if (parentSlug && slugToId.has(parentSlug)) {
+        await db.content.updatePartOfSeries(childSlug, parentSlug);
+        seriesCount++;
+      }
+    }
+    if (seriesCount > 0) {
+      log.info`Part of series: ${seriesCount} post(s) linked`;
     }
   }
-  if (seriesCount > 0) {
-    log.info`Part of series: ${seriesCount} post(s) linked`;
-  }
 
-  // Free BGE model memory before USearch index rebuild
+  // Free BGE model memory
   await releaseExtractor();
 
-  // 8. Rebuild USearch index from all SQLite rows (streaming)
-  const index: Index = new Index({
-    dimensions: 1024,
-    metric: MetricKind.Cos,
-    quantization: ScalarKind.BF16,
-    connectivity: 16,
-    expansion_add: 128,
-    expansion_search: 200,
-    multi: false,
-  });
-  let rowCount = 0;
-  const iter: IterableIterator<unknown> = db.prepare('SELECT id, embedding FROM chunks').iterate();
-  for (const rawRow of iter) {
-    if (typeof rawRow !== 'object' || rawRow === null) continue;
-    const id = Number(Reflect.get(rawRow, 'id') ?? 0);
-    const embedding = asNumberArray(JSON.parse(String(Reflect.get(rawRow, 'embedding') ?? '[]')));
-    index.add(BigInt(id), new Float32Array(embedding));
-    rowCount++;
-    // Allow GC to reclaim per-row allocations
-    if (rowCount % 100 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-
-  if (rowCount === 0) {
-    log.debug`No chunks in database. Skipping index save.`;
-    closeDb();
-    return;
-  }
-
-  index.save(INDEX_PATH);
-
-  // Index is persisted to disk; native USearch memory will be released when the process exits
-
-  log.info`\nSaved USearch index (${rowCount} vectors) to ${INDEX_PATH}`;
-
+  // 8. Index rebuilt inline during chunk processing (SurrealDB manages ANN)
+  const totalChunks = newChunks;
   log.info`${JSON.stringify({
-    total: rowCount,
+    total: totalChunks,
     fileCount: fileEntries.length,
     newChunks,
   })}`;
 
-  closeDb();
+  await db.close();
 }
 
 // Only run when executed directly (not when imported by tests)
@@ -696,7 +660,7 @@ if (isMainScript) {
     .catch(async (err) => {
       log.error`Build failed: ${err}`;
       try {
-        closeDb();
+        await db.close();
       } catch {
         /* ignore close errors during crash */
       }

@@ -4,16 +4,19 @@ import type { RequestEvent } from '@sveltejs/kit';
 // ── Module mocks (all deps hoisted by Vite) ──────────────────────────────
 
 vi.mock('$lib/server/db', () => ({
-  addMessage: vi.fn(() => 'msg-id'),
-  ensureModel: vi.fn(),
-  getChat: vi.fn(),
-  getChatMessageCount: vi.fn(() => 0),
-  getDb: vi.fn(),
-  getMessages: vi.fn(),
-  getOrCreateUserAgent: vi.fn(() => 42),
-  isChatLocked: vi.fn(() => false),
-  lockChat: vi.fn(),
-  searchChunks: vi.fn(),
+  db: {
+    chats: {
+      getChatMessageCount: vi.fn(),
+      isChatLocked: vi.fn(),
+      getChat: vi.fn(),
+    },
+    messages: {
+      addMessage: vi.fn(() => 'msg-id'),
+    },
+    userAgents: {
+      getOrCreateUserAgent: vi.fn(() => 42),
+    },
+  },
 }));
 
 vi.mock('$lib/server/embed', () => ({
@@ -31,7 +34,7 @@ vi.mock('$lib/server/llm-cache', () => ({
 }));
 
 vi.mock('$lib/server/rate-limiter', () => ({
-  checkRateLimit: vi.fn().mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 }),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 }),
 }));
 
 vi.mock('$lib/server/mcp/tools', () => ({
@@ -100,7 +103,7 @@ vi.mock('$lib/server/webhooks', () => ({
 
 // ── Imports (after mocks are set up) ─────────────────────────────────────
 
-import { addMessage, getChat, getChatMessageCount, getOrCreateUserAgent, isChatLocked } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { isAvailable } from '$lib/server/openai-provider';
 import { checkRateLimit } from '$lib/server/rate-limiter';
 import { sanitizeText } from '$lib/server/sanitize';
@@ -145,7 +148,11 @@ function buildEvent(overrides: { body?: Record<string, unknown>; ip?: string; us
 describe('POST /api/ask', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
+    // Reset db chat mocks that leak mockResolvedValue between tests
+    vi.mocked(db.chats.getChat).mockReset();
+    vi.mocked(db.chats.getChatMessageCount).mockReset();
+    vi.mocked(db.chats.isChatLocked).mockReset();
+    vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, remaining: 9, resetAt: Date.now() + 60_000 });
     vi.mocked(isAvailable).mockResolvedValue(true);
   });
 
@@ -254,7 +261,7 @@ describe('POST /api/ask', () => {
 
   describe('chat validation', () => {
     it('returns 400 when chat has reached max messages', async () => {
-      vi.mocked(getChatMessageCount).mockReturnValueOnce(10);
+      vi.mocked(db.chats.getChatMessageCount).mockResolvedValue(10);
       const event = buildEvent({ body: VALID_BODY_WITH_CHAT });
       const res = await POST(event);
       expect(res.status).toBe(400);
@@ -263,14 +270,14 @@ describe('POST /api/ask', () => {
     });
 
     it('passes message count check when chat is below max', async () => {
-      vi.mocked(getChatMessageCount).mockReturnValueOnce(5);
+      vi.mocked(db.chats.getChatMessageCount).mockResolvedValue(5);
       const event = buildEvent({ body: VALID_BODY_WITH_CHAT });
       const res = await POST(event);
       expect(res.status).toBe(202);
     });
 
     it('returns 400 when chat is locked', async () => {
-      vi.mocked(isChatLocked).mockReturnValueOnce(true);
+      vi.mocked(db.chats.isChatLocked).mockResolvedValue(true);
       const event = buildEvent({ body: VALID_BODY_WITH_CHAT });
       const res = await POST(event);
       expect(res.status).toBe(400);
@@ -280,13 +287,13 @@ describe('POST /api/ask', () => {
     });
 
     it('returns 403 when userId does not match chat owner', async () => {
-      vi.mocked(getChat).mockReturnValueOnce({
+      vi.mocked(db.chats.getChat).mockResolvedValue({
         userId: 'other-user',
         id: 'chat-1',
         title: 'Test',
         createdAt: new Date().toISOString(),
         messageCount: 5,
-      } as { id: string; title: string; createdAt: string; messageCount: number; userId: string });
+      });
       const event = buildEvent({ body: VALID_BODY_WITH_CHAT });
       const res = await POST(event);
       expect(res.status).toBe(403);
@@ -298,16 +305,16 @@ describe('POST /api/ask', () => {
       // getChatMessageCount and isChatLocked should not be called
       const event = buildEvent({ body: VALID_BODY });
       await POST(event);
-      expect(getChatMessageCount).not.toHaveBeenCalled();
-      expect(isChatLocked).not.toHaveBeenCalled();
-      expect(getChat).not.toHaveBeenCalled();
+      expect(db.chats.getChatMessageCount).not.toHaveBeenCalled();
+      expect(db.chats.isChatLocked).not.toHaveBeenCalled();
+      expect(db.chats.getChat).not.toHaveBeenCalled();
     });
   });
 
   describe('rate limiting', () => {
     it('returns 429 when rate limit exceeded', async () => {
       const resetAt = Date.now() + 60_000;
-      vi.mocked(checkRateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt });
+      vi.mocked(checkRateLimit).mockResolvedValue({ allowed: false, remaining: 0, resetAt });
       const event = buildEvent({ body: VALID_BODY, ip: 'rate-test' });
       const res = await POST(event);
       expect(res.status).toBe(429);
@@ -333,13 +340,13 @@ describe('POST /api/ask', () => {
     it('calls getOrCreateUserAgent when user-agent header is present', async () => {
       const event = buildEvent({ body: VALID_BODY, userAgent: 'TestBot/1.0', ip: '1.2.3.4' });
       await POST(event);
-      expect(getOrCreateUserAgent).toHaveBeenCalledWith('TestBot/1.0', '1.2.3.4');
+      expect(db.userAgents.getOrCreateUserAgent).toHaveBeenCalledWith('TestBot/1.0', '1.2.3.4');
     });
 
     it('skips getOrCreateUserAgent when user-agent header is absent', async () => {
       const event = buildEvent({ body: VALID_BODY });
       await POST(event);
-      expect(getOrCreateUserAgent).not.toHaveBeenCalled();
+      expect(db.userAgents.getOrCreateUserAgent).not.toHaveBeenCalled();
     });
   });
 
@@ -365,7 +372,7 @@ describe('POST /api/ask', () => {
     it('calls addMessage with user message', async () => {
       const event = buildEvent({ body: VALID_BODY_WITH_CHAT, userAgent: 'Bot/1.0', ip: '1.2.3.4' });
       await POST(event);
-      expect(addMessage).toHaveBeenCalledWith({
+      expect(db.messages.addMessage).toHaveBeenCalledWith({
         userId: 'user-1',
         role: 'user',
         content: 'What is your name?',
@@ -377,7 +384,7 @@ describe('POST /api/ask', () => {
     it('passes undefined userAgentId when no user-agent header', async () => {
       const event = buildEvent({ body: VALID_BODY_WITH_CHAT });
       await POST(event);
-      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ userAgentId: undefined }));
+      expect(db.messages.addMessage).toHaveBeenCalledWith(expect.objectContaining({ userAgentId: undefined }));
     });
 
     it('calls startGeneration when chatId is present', async () => {

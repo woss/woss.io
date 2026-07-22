@@ -1,10 +1,13 @@
-import { dismissFeatureTours } from '$lib/server/db';
+import { db } from '$lib/server/db';
 import { checkRateLimit } from '$lib/server/rate-limiter';
+import { CAT, createLogger } from '$lib/server/logger';
 import type { RequestEvent } from '@sveltejs/kit';
+
+const log = createLogger(CAT.api);
 
 export async function POST(event: RequestEvent): Promise<Response> {
   const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
-  const rateCheck = checkRateLimit(ip);
+  const rateCheck = await checkRateLimit(ip);
   if (!rateCheck.allowed) {
     return new Response(JSON.stringify({ error: 'Too many requests' }), {
       status: 429,
@@ -35,12 +38,13 @@ export async function POST(event: RequestEvent): Promise<Response> {
   }
 
   try {
-    dismissFeatureTours(userId, featureIds);
+    await db.featureTours.dismissFeatureTours(userId, featureIds);
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
-  } catch {
+  } catch (e) {
+    log.error(`Failed to dismiss feature tours: ${e}`);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

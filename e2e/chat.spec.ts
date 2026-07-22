@@ -11,17 +11,17 @@ test.describe('AI chat flow', () => {
     await page.goto('/', { waitUntil: 'load' });
     await page.waitForTimeout(1000);
 
-    // Verify page loaded — look for the text input
-    const textarea = page.locator('textarea').first();
-    await expect(textarea).toBeVisible({ timeout: 5000 });
+    // Verify page loaded — look for the text input (contenteditable div[role="textbox"])
+    const textbox = page.locator('[role="textbox"]');
+    await expect(textbox).toBeVisible({ timeout: 5000 });
 
     // Type a question
     const question = 'What projects has Daniel founded?';
-    await textarea.fill(question);
-    await expect(textarea).toHaveValue(question);
+    await textbox.fill(question);
+    await expect(textbox).toHaveText(question);
 
     // Press Enter to send
-    await textarea.press('Enter');
+    await textbox.press('Enter');
 
     // Wait for navigation to chat page (auto-send flow)
     await page.waitForURL(/\/chat\//, { timeout: 15000 });

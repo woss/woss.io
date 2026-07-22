@@ -1,7 +1,7 @@
-import { getExperience } from '$lib/server/db';
+import { db } from '$lib/server/db';
 
-export function load() {
-  const entries = getExperience()
+export async function load() {
+  const entries = (await db.content.getExperience())
     .filter((e) => e.published !== false)
     .sort((a, b) => {
       if (!a.startDate && !b.startDate) return 0;

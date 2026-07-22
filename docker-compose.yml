@@ -6,41 +6,70 @@ services:
     container_name: woss-init
     volumes:
       - ./data/:/app/data
-    command: ['pnpm', 'run', 'build-index']
-    restart: 'no'
+    command: ["pnpm", "run", "build-index"]
+    restart: "no"
 
   woss:
     image: docker.io/woss/woss-io:latest
     build: .
     env_file: .env
     ports:
-      - '5173:3000'
+      - "5173:3000"
     volumes:
       - ./data/:/app/data
     depends_on:
-      zinalog:
+      datadog-agent:
+        condition: service_started
+      surrealdb:
         condition: service_started
       init:
         condition: service_completed_successfully
+    environment:
+      SURREAL_DB_URL: ws://surrealdb:8000
     restart: unless-stopped
     extra_hosts:
-      - 'host.docker.internal:host-gateway'
-    command: ['node', 'build/index.js']
+      - "host.docker.internal:host-gateway"
+    command: ["node", "build/index.js"]
 
-  zinalog:
-    image: ghcr.io/iamceeso/zinalog:latest
-    container_name: woss-zinalog
-    restart: unless-stopped
-    ports:
-      - '4000:4000'
+  datadog-agent:
+    image: datadog/agent:latest
+    container_name: woss-dd-agent
     environment:
-      PORT: '4000'
-      HOSTNAME: '0.0.0.0'
-      DATABASE_PATH: /data/logs.db
-      TRUST_PROXY: 'false'
-      ENCRYPTION_KEY: ${ZINALOG_ENCRYPTION_KEY}
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE}
+      - DD_ENV=${DD_ENV}
+      - DD_SERVICE=${DD_SERVICE}
+      - DD_APM_ENABLED=true
+      - DD_APM_PORT=8126
+      - DD_LOGS_ENABLED=true
+      - DD_LOGS_CONFIG_COLLECT_ALL=true
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+    ports:
+      - "8126:8126"
+      - "8125:8125/udp"
     volumes:
-      - ./data/zinalog:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dd-agent-config:/etc/datadog-agent
+    restart: unless-stopped
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    container_name: woss-surrealdb
+    ports:
+      - "10101:8000"
+    volumes:
+      - surrealdb-data:/data
+    environment:
+      SURREAL_TELEMETRY_PROVIDER: otlp
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://datadog-agent:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+    command: start --user admin --pass admin --namespace woss --database woss --log trace
+    depends_on:
+      datadog-agent:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   search_data:
+  dd-agent-config:
+  surrealdb-data:

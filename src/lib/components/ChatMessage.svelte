@@ -3,10 +3,9 @@
   import relativeTime from 'dayjs/plugin/relativeTime.js';
   import utc from 'dayjs/plugin/utc.js';
   import 'highlight.js/styles/atom-one-dark.css';
-  import { toast } from 'svelte-sonner';
   import type { ChatMessage } from '$lib/chat/types';
   import { page } from '$app/state';
-  import { Button, Input } from 'sv5ui';
+  import { Button } from 'sv5ui';
   import ActionBar from './ActionBar.svelte';
   import ToolCallList from './ToolCallList.svelte';
 
@@ -39,11 +38,27 @@
     userId?: string;
     chatId?: string;
     onretry?: () => void;
-    onreport?: (id: string) => void;
+    onreport?: (id: string, reason: string) => void;
     onToggleSidebar?: (tab: 'sources' | 'tools') => void;
   } = $props();
 
-  let downReason = $state('');
+  let showReasoning = $state(false);
+
+  let reasoningEl = $state<HTMLDivElement | undefined>(undefined);
+  let reasoningHeight = $state(0);
+
+  $effect(() => {
+    if (showReasoning && reasoningEl) {
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          reasoningHeight = entry.contentRect.height;
+        }
+      });
+      observer.observe(reasoningEl);
+      return () => observer.disconnect();
+    }
+    if (!showReasoning) reasoningHeight = 0;
+  });
 
   let cardHtml = $state('');
 
@@ -67,25 +82,6 @@
       cancelled = true;
     };
   });
-
-  async function submitDownReason(message: ChatMessage, reason: string): Promise<void> {
-    try {
-      const fd = new FormData();
-      fd.set('messageId', message.id);
-      fd.set('userId', userId);
-      fd.set('reason', reason.trim());
-      const res = await fetch(`/chat/${chatId}?/report`, {
-        method: 'POST',
-        body: fd,
-      });
-      if (res.ok) {
-        onreport(message.id);
-        toast.success('Thanks for the feedback');
-      }
-    } catch {
-      /* ignore */
-    }
-  }
 
   const proseCls =
     'prose prose-invert max-w-none text-on-surface/90 leading-relaxed ' +
@@ -178,7 +174,7 @@
             <div
               class="flex items-center gap-0.5 pt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
             >
-              <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} />
+              <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} {onreport} />
             </div>
             <!-- User message bubble -->
             <div class="max-w-[85%] md:max-w-[75%] rounded-2xl rounded-br-md bg-surface-container-low/30 px-4 py-3">
@@ -203,6 +199,52 @@
           </div>
         {/if}
 
+        <!-- Reasoning accordion -->
+        {#if message.reasoning}
+          <div class="mb-3 border border-[rgba(255,255,255,0.06)] rounded-lg overflow-hidden">
+            <button
+              onclick={() => (showReasoning = !showReasoning)}
+              class="flex items-center gap-2 w-full px-3 py-2 text-xs font-mono text-outline hover:text-on-surface hover:bg-surface-container-low/30 transition-colors cursor-pointer"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="transition-transform duration-200"
+                class:rotate-90={showReasoning}
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <span class="text-[11px] uppercase tracking-wider font-semibold"
+                >{showReasoning ? 'Hide reasoning' : 'Show reasoning'}</span
+              >
+              <span class="ml-auto text-[10px] opacity-50"
+                >{message.reasoning.length > 1000
+                  ? `${Math.round(message.reasoning.length / 100) / 10}k`
+                  : message.reasoning.length} chars</span
+              >
+            </button>
+            <div
+              class="transition-all duration-300 ease-out overflow-hidden"
+              style="max-height: {showReasoning ? reasoningHeight + 32 || 9999 : 0}px; opacity: {showReasoning
+                ? 1
+                : 0};"
+            >
+              <div
+                bind:this={reasoningEl}
+                class="px-3 pb-3 pt-1 text-xs/relaxed text-outline font-mono whitespace-pre-wrap"
+              >
+                {message.reasoning}
+              </div>
+            </div>
+          </div>
+        {/if}
+
         <!-- Markdown content -->
         {#if message.text}
           <div class={proseCls}>
@@ -219,7 +261,7 @@
         <!-- ActionBar -->
         {#if !(isLast && isLoading) && message.text && !message.deletedAt}
           <div class="mt-4 flex items-center gap-2 text-xs text-outline font-mono">
-            <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} />
+            <ActionBar {message} {userId} {chatId} onOpenSidebar={(tab) => onToggleSidebar(tab)} {onreport} />
             <!-- {#if message.durationMs}
  <span class="shrink-0">·</span>
  <span class="shrink-0">{formatDuration(message.durationMs)}</span>
@@ -234,37 +276,6 @@
           </div>
         {/if}
 
-        <!-- Reason input (thumbs down) -->
-        {#if message.reaction?.type === 'down'}
-          <div class="mt-3">
-            <div class="flex gap-2">
-              <Input
-                type="text"
-                variant="outline"
-                size="sm"
-                placeholder="What was missing or incorrect?"
-                bind:value={downReason}
-                onkeydown={(e: KeyboardEvent) => {
-                  if (e.key === 'Enter' && downReason.trim() !== '') {
-                    submitDownReason(message, downReason);
-                  }
-                }}
-              />
-              <Button
-                variant="solid"
-                color="primary"
-                disabled={downReason.trim() === ''}
-                onclick={() => {
-                  if (downReason.trim() !== '') {
-                    submitDownReason(message, downReason);
-                  }
-                }}
-              >
-                Send feedback & remove
-              </Button>
-            </div>
-          </div>
-        {/if}
       </div>
     </div>
   {/if}

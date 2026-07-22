@@ -17,7 +17,7 @@ Beyond the chat, there's:
 - **Dark and light mode**: follows your system preference, handled by sv5ui theming
 - **Rate limiting**: SQLite-backed, 10 requests per minute per IP
 - **GeoIP**: country detection via geoip-country so I know roughly where visitors are
-- **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing
+- **Structured logging**: LogTape with file rotation
 - **Webhooks**: events pushed to external URLs when interesting things happen
 - **Message reactions**: upvote, downvote, or heart AI responses
 - **Contact and intent detection**: the AI can figure out if you're trying to hire me or just browsing
@@ -100,7 +100,11 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 | `PUBLIC_DD_RUM_APP_ID`        | -                          | Datadog RUM application ID             |
 | `PUBLIC_DD_RUM_CLIENT_TOKEN`  | -                          | Datadog RUM client token               |
 | `PUBLIC_APP_VERSION`          | `0.0.0`                    | App version tag for Datadog            |
-| `ZINALOG_ENCRYPTION_KEY`      | -                          | Encryption key for ZinaLog container   |
+| `SURREAL_DB_URL`              | `ws://localhost:10101`     | SurrealDB WebSocket endpoint           |
+| `SURREAL_DB_USER`             | `admin`                    | SurrealDB user                         |
+| `SURREAL_DB_PASS`             | `admin`                    | SurrealDB password                     |
+| `SURREAL_DB_NS`               | `woss`                     | SurrealDB namespace                    |
+| `SURREAL_DB_DB`               | `woss`                     | SurrealDB database name                |
 
 ### MCP Server Configuration
 
@@ -125,14 +129,18 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 ]
 ```
 
+## API
+
+The chat UI communicates with a JSON API at `/api/chat`. See [docs/api.md](docs/api.md) for the full reference (create, delete, list chats, error codes).
+
 ## Customizing content
 
 Content lives in markdown files. Here's where everything is:
 
 | What           | Where                                | Format                                                |
 | -------------- | ------------------------------------ | ----------------------------------------------------- |
-| Blog posts     | `src/content/posts/*.md`             | Markdown + frontmatter (title, date, tags, excerpt)   |
-| Resume entries | `src/content/experience/*.md`        | Markdown + frontmatter (company, role, dates, skills) |
+| Blog posts     | `content/posts/*.md`                 | Markdown + frontmatter (title, date, tags, excerpt)   |
+| Resume entries | `content/experience/*.md`            | Markdown + frontmatter (company, role, dates, skills) |
 | Site config    | `src/lib/config.ts`                  | TypeScript (Macula nickname, defaults)                |
 | Branding       | `static/favicon.ico`, `src/app.html` | Favicon, HTML shell                                   |
 | Pages          | `src/routes/`                        | SvelteKit file-based routing                          |
@@ -183,7 +191,33 @@ Docker Compose stacks:
 
 - **woss**: Main SvelteKit app (port 5173 → 3000)
 - **init**: One-shot search index builder
-- **zinalog**: Log aggregation dashboard (port 4000)
+
+### SurrealDB (Development — Migration Target)
+
+SurrealDB is set up as the migration target to replace SQLite + USearch. Schema is defined in `src/scripts/migrate.surql` (16 SCHEMAFULL tables with ANN, FTS, and UNIQUE indices). The service layer (`src/lib/server/db/`) is implemented — a typed async interface (`IDatabaseService`) backed by `SurrealDatabaseService` with all 15 repositories using raw SurrealQL. Not yet powering the app — active stack still uses SQLite.
+
+| Layer       | File                                   | Description                                                      |
+| ----------- | -------------------------------------- | ---------------------------------------------------------------- |
+| Client      | `src/lib/server/db/surreal.ts`         | SurrealDB client singleton (initSurreal/getSurreal/closeSurreal) |
+| Interfaces  | `src/lib/server/db/interfaces.ts`      | 15 typed async repo interfaces + IDatabaseService                |
+| Service     | `src/lib/server/db/surreal-service.ts` | SurrealDatabaseService implementing all repos via SurrealQL      |
+| Entry point | `src/lib/server/db/index.ts`           | Barrel file exporting `db` singleton + types                     |
+
+The dev server runs at `ws://localhost:10101` with user `admin` / password `admin`, namespace `woss`, database `woss`.
+
+Environment variables for SurrealDB connection are in `.env` (see `SURREAL_DB_*` vars).
+
+Alternatively, spin up your own local instance (update env vars to match):
+
+```bash
+docker run -p 8000:8000 surrealdb/surrealdb start --log trace --user root --pass root
+```
+
+Or use the surreal binary:
+
+```bash
+surreal start --log trace --user root --pass root
+```
 
 ## Stack
 
@@ -193,13 +227,13 @@ The tech side in one shot:
 - **Styling**: Tailwind CSS v4, Tailwind Typography, sv5ui
 - **Runtime**: Node.js 26, pnpm
 - **Task Runner**: Turborepo v2 (DAG-based build caching)
-- **Database**: SQLite (better-sqlite3)
-- **Vector Index**: USearch (ANN)
+- **Database**: SQLite (better-sqlite3), SurrealDB (migration target)
+- **Vector Index**: USearch (ANN), SurrealDB native ANN (migration target)
 - **AI SDK**: Vercel AI SDK (streamText, tool calling)
 - **Embeddings**: HuggingFace Transformers.js (ONNX), in-process, no external API
 - **MCP Client**: @modelcontextprotocol/sdk
 - **OG Images**: Satori + resvg-js
-- **Logging**: LogTape + ZinaLog
+- **Logging**: LogTape
 - **Container**: Docker + Docker Compose
 
 ## License
