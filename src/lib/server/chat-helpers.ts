@@ -1,4 +1,4 @@
-import { getChat, renameChat } from '$lib/server/db';
+import { getDbService } from '$lib/server/db-service';
 import { config } from '$lib/server/config';
 import {
   getRelevanceCheckUserPrompt,
@@ -28,8 +28,8 @@ const log = createLogger(CAT.chat);
  */
 export function tryRenameChat(chatId: string, text: string): void {
   try {
-    const chat = getChat(chatId);
-    if (chat && chat.title === 'New Chat') renameChat(chatId, text.slice(0, 40));
+    const chat = getDbService().getChat(chatId);
+    if (chat && chat.title === 'New Chat') getDbService().renameChat(chatId, text.slice(0, 40));
   } catch (err) {
     log.error`auto-rename failed: ${err}`;
   }

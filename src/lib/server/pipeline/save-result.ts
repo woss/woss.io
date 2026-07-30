@@ -1,4 +1,4 @@
-import { addMessage } from '$lib/server/db';
+import { getDbService } from '$lib/server/db-service';
 import { publishPersistent } from '$lib/server/chat-events';
 import { CAT, createLogger } from '$lib/server/logger';
 import { storeCache } from '$lib/server/llm-cache';
@@ -88,23 +88,10 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
       ? rawAnswerText
       : "I'm sorry, I wasn't able to generate a response. Please try rephrasing your question.";
     try {
-      const errMsgId = addMessage({
-        userId,
-        role: 'assistant',
+      await getDbService().updateMessage(msgId, {
         content: fallbackText,
-        sources: JSON.stringify(sources),
         reasoning: reasoningText,
-        chatId,
-        modelId: currentModelId,
-        tokensIn: tokenUsage.promptTokens,
-        tokensOut: tokenUsage.completionTokens,
-        durationMs: responseMs,
-        maxTokens,
-        queryType,
-        irrecoverable: irrecoverable || undefined,
         error: 'Failed to generate answer after retries',
-        userAgentId,
-        fromCache: false,
       });
       log.info('Sending SSE event', {
         event: 'error',
@@ -113,7 +100,7 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
       });
       publishPersistent(chatId, 'error', {
         message: 'Failed to generate answer after retries',
-        messageId: errMsgId,
+        messageId: msgId,
         irrecoverable: irrecoverable === true,
       });
     } catch (e) {
@@ -124,28 +111,21 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
 
   const answerText = linkContextRefs(rawAnswerText, ragChunks);
 
-  // Save assistant message
+  // Update assistant message with full content (record created before streaming)
   try {
-    addMessage({
-      userId,
-      role: 'assistant',
+    await getDbService().updateMessage(msgId, {
       content: answerText,
       sources: JSON.stringify(sources),
       reasoning: reasoningText,
-      chatId,
       modelId: currentModelId,
       tokensIn: tokenUsage.promptTokens,
       tokensOut: tokenUsage.completionTokens,
       durationMs: responseMs,
       maxTokens,
-      queryType,
-      msgId,
-      userAgentId,
-      fromCache: false,
     });
   } catch (err) {
     log.error`addMessage failed: ${err}`;
-    const errMsgId = addMessage({
+    const errMsgId = getDbService().addMessage({
       userId,
       role: 'assistant',
       content: '',
@@ -174,6 +154,7 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
   log.info('Sending SSE event', { event: 'done', chatId, dataLength: answerText.length });
   publishPersistent(chatId, 'done', {
     answer: answerText,
+    reasoning: reasoningText,
     sources,
     messageId: msgId,
     queryType,

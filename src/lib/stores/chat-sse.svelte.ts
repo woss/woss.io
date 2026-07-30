@@ -5,9 +5,11 @@ import { SvelteSet, SvelteDate } from 'svelte/reactivity';
 
 export interface SSECallbacks {
   onToken: (token: string) => void;
+  onReasoning: (text: string) => void;
   onDone: (data: {
     messageId: string;
     answer: string;
+    reasoning?: string;
     queryType: string;
     sources: unknown[];
     usage: { tokensIn: number; tokensOut: number; durationMs: number };
@@ -186,6 +188,17 @@ export function connectSSE(chatId: string, callbacks: SSECallbacks): () => void 
         ...sseState.streamingToolCalls,
         [data.id]: { ...existing, finishedAt: Date.now() },
       };
+    }
+  });
+
+  es.addEventListener('reasoning', (e: MessageEvent) => {
+    if (currentGen !== generation) return;
+    resetSseTimeout();
+    if (typeof e.data !== 'string') return;
+    try {
+      callbacks.onReasoning(JSON.parse(e.data).text);
+    } catch {
+      /* JSON parse failure — skip malformed payload */
     }
   });
 

@@ -1,4 +1,4 @@
-import { insertChatEvent } from './db.ts';
+import { getDbService } from './db-service';
 import { CAT, createLogger } from '$lib/server/logger';
 
 const log = createLogger(CAT.chat);
@@ -46,7 +46,7 @@ export function publishLive(chatId: string, type: string, data: unknown): void {
  * Returns the event ID from DB.
  */
 export function publishPersistent(chatId: string, type: string, data: unknown): number {
-  const id = insertChatEvent(chatId, type, data);
+  const id = getDbService().insertChatEvent(chatId, type, data);
   const event: ChatEventPayload = { id, chatId, type, data };
   subscribers.get(chatId)?.forEach((cb) => {
     try {
