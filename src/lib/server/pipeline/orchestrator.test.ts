@@ -4,6 +4,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // Mock ALL external dependencies BEFORE imports
 // ---------------------------------------------------------------------------
 
+vi.mock('$lib/utils/random-uuid', () => ({
+  randomUUID: vi.fn(() => 'generated-msg-id'),
+}));
+
 vi.mock('$lib/server/chat-events', () => ({
   publishLive: vi.fn(),
   publishPersistent: vi.fn(),
@@ -14,8 +18,9 @@ vi.mock('$lib/server/webhooks', () => ({
   callWebhook: vi.fn(),
 }));
 
-vi.mock('$lib/server/db', () => ({
+const mockDb = {
   addMessage: vi.fn(() => 'msg-42'),
+  createMessage: vi.fn().mockResolvedValue('generated-msg-id'),
   getDb: vi.fn(() => ({
     prepare: vi.fn(() => ({
       run: vi.fn(),
@@ -26,6 +31,10 @@ vi.mock('$lib/server/db', () => ({
     transaction: vi.fn((fn: (rows: unknown[]) => void) => fn),
   })),
   searchChunks: vi.fn(() => []),
+};
+
+vi.mock('$lib/server/db-service', () => ({
+  getDbService: vi.fn(() => mockDb),
 }));
 
 vi.mock('$lib/server/openai-provider', () => ({
@@ -85,6 +94,7 @@ vi.mock('$lib/server/chat-helpers', () => ({
 
 vi.mock('$lib/server/trace-context', () => ({
   generateTraceId: vi.fn(() => 'trace-abc'),
+  setMsgId: vi.fn(),
   withTrace: vi.fn((_msgTraceId: string, _genTraceId: string, fn: () => Promise<void>) => fn()),
 }));
 
@@ -116,8 +126,9 @@ import { handleEarlyGates } from './early-gates';
 import { streamWithRetry } from './stream';
 import { saveAndEmitResult } from './save-result';
 import { publishPersistent } from '$lib/server/chat-events';
-import { addMessage, searchChunks } from '$lib/server/db';
 import { CAT, createLogger } from '$lib/server/logger';
+import { setMsgId } from '$lib/server/trace-context';
+import { randomUUID } from '$lib/utils/random-uuid';
 
 // ===========================================================================
 // abortGeneration
@@ -238,7 +249,7 @@ describe('startGeneration', () => {
 
     await startGeneration('Broken', 'chat-3', 'user-1', 5);
 
-    expect(addMessage).toHaveBeenCalledWith(
+    expect(mockDb.addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         role: 'assistant',
         content: '',
@@ -251,6 +262,60 @@ describe('startGeneration', () => {
       'error',
       expect.objectContaining({ message: 'Unexpected DB failure', irrecoverable: true }),
     );
+  });
+
+  it('creates message via createMessage BEFORE streaming with correct msgId', async () => {
+    vi.mocked(handleEarlyGates).mockResolvedValueOnce({
+      handled: false,
+      embedding: { data: [0.1, 0.2, 0.3], dimensions: 3 },
+      cacheEmbeddingData: [0.1, 0.2, 0.3],
+      cacheText: 'Hello',
+      ctxMessages: [],
+      history: [],
+    });
+    vi.mocked(streamWithRetry).mockResolvedValueOnce({
+      answerText: 'Reply',
+      reasoningText: '',
+      currentModelId: 42,
+      tokenUsage: { promptTokens: 10, completionTokens: 20 },
+      responseMs: 100,
+      maxTokens: 4096,
+      anyStepHadToolCalls: false,
+      lastError: null,
+      partial: false,
+      msgId: 'generated-msg-id',
+      toolLoopDetected: false,
+      irrecoverable: false,
+    });
+
+    await startGeneration('Test msgId', 'chat-msgid', 'user-1', 5);
+
+    // randomUUID was called to generate msgId
+    expect(randomUUID).toHaveBeenCalled();
+    // setMsgId was called with the generated msgId
+    expect(setMsgId).toHaveBeenCalledWith('generated-msg-id');
+    // createMessage was called BEFORE streamWithRetry — with correct fields
+    expect(mockDb.createMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        role: 'assistant',
+        content: '',
+        chatId: 'chat-msgid',
+        msgId: 'generated-msg-id',
+        fromCache: false,
+      }),
+    );
+    // streamWithRetry received the msgId
+    expect(streamWithRetry).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Object),
+      expect.any(String),
+      expect.any(Object),
+      expect.any(Map),
+      'generated-msg-id',
+    );
+    // saveAndEmitResult received the msgId
+    expect(saveAndEmitResult).toHaveBeenCalledWith(expect.objectContaining({ msgId: 'generated-msg-id' }));
   });
 });
 
@@ -299,7 +364,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    vi.mocked(searchChunks).mockReturnValueOnce([
+    mockDb.searchChunks.mockReturnValueOnce([
       { score: 0.1, chunk: makeChunk('Good', 'good') },
       { score: 0.6, chunk: makeChunk('Bad', 'bad') },
       { score: 0.4, chunk: makeChunk('Edge', 'edge') },
@@ -349,7 +414,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    vi.mocked(searchChunks).mockReturnValueOnce([
+    mockDb.searchChunks.mockReturnValueOnce([
       { score: 0.6, chunk: makeChunk('A', 'a') },
       { score: 0.8, chunk: makeChunk('B', 'b') },
     ]);
@@ -400,7 +465,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    vi.mocked(searchChunks).mockReturnValueOnce([
+    mockDb.searchChunks.mockReturnValueOnce([
       { score: 0.1, chunk: makeChunk('X', 'x') },
       { score: 0.4, chunk: makeChunk('Y', 'y') },
     ]);
