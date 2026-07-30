@@ -20,6 +20,7 @@ Beyond the chat, there's:
 - **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing
 - **Webhooks**: events pushed to external URLs when interesting things happen
 - **Message reactions**: upvote, downvote, or heart AI responses
+- **Reasoning display**: collapsible "thinking" accordion showing model chain-of-thought with character count badge
 - **Contact and intent detection**: the AI can figure out if you're trying to hire me or just browsing
 - **Docker**: multi-stage build, production ready
 
@@ -193,7 +194,7 @@ The tech side in one shot:
 - **Styling**: Tailwind CSS v4, Tailwind Typography, sv5ui
 - **Runtime**: Node.js 26, pnpm
 - **Task Runner**: Turborepo v2 (DAG-based build caching)
-- **Database**: SQLite (better-sqlite3)
+- **Database**: SQLite (better-sqlite3) behind async DatabaseService interface
 - **Vector Index**: USearch (ANN)
 - **AI SDK**: Vercel AI SDK (streamText, tool calling)
 - **Embeddings**: HuggingFace Transformers.js (ONNX), in-process, no external API

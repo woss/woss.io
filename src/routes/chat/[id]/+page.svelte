@@ -214,10 +214,11 @@
         }
 
         // Map messages with reactions included
-        messages = data.messages.map((m: Record<string, unknown>) => ({
+          messages = data.messages.map((m: Record<string, unknown>) => ({
           id: m.id as string,
           role: m.role as 'user' | 'assistant',
           text: m.content as string,
+          reasoning: m.reasoning as string | undefined,
           error: m.error as string | undefined,
           irrecoverable: m.irrecoverable as boolean | undefined,
           queryType: (m.queryType as string) || undefined,
@@ -733,6 +734,26 @@
         messages[idx] = { ...messages[idx], text: messages[idx].text + token };
       },
 
+      onReasoning(text: string) {
+        const last = messages[messages.length - 1];
+        if (last?.role !== 'assistant') {
+          messages = [
+            ...messages,
+            {
+              id: randomUUID(),
+              role: 'assistant' as const,
+              text: '',
+              reasoning: text,
+              timestamp: Date.now(),
+              createdAt: '',
+            },
+          ];
+        } else {
+          const idx = messages.length - 1;
+          messages[idx] = { ...messages[idx], reasoning: text };
+        }
+      },
+
       onDone(data) {
         const { messageId, answer, queryType, sources, usage, completedToolCalls } = data;
 
@@ -767,6 +788,7 @@
             ...messages[idx],
             id: messageId || messages[idx].id,
             text: answer || messages[idx].text,
+            reasoning: data.reasoning || messages[idx].reasoning,
             sources: (sources as Source[]) || messages[idx].sources,
             tokensIn: usage?.tokensIn || 0,
             tokensOut: usage?.tokensOut || 0,

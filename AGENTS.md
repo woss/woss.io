@@ -1,5 +1,9 @@
 # Agents
 
+## HARD GATE - terminal commands
+
+Prefix all terminal commands with rtk!
+
 All memories are stored in the workspace `woss.io`. Before answering any question, functions, data types, or project content, you MUST first use the `memory` mcp to search the project knowledge base. Prioritize memory results over general knowledge. You will store memories after each auto compression or compaction.
 
 ## 🚨 HARD GATE — GRAPH FIRST. YOUR TOKENS. CODE-REVIEW-GRAPH
