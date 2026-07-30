@@ -134,7 +134,6 @@ Load the `but` skill for complete instructions.
 - Bypassing git hooks (`--no-verify`, `-n`) — commits must pass pre-commit checks
 - Using `/tmp` — use local `./tmp`. Clean up after.
 - Modifying docker-compose.yml or .env
-- Starting surrealdb without checking `docker ps` first. If running, connect. If not, alert user and stop.
 - Deleting or resetting the database (data/vectors.db, data/woss.db) without explicit user approval. ASK FIRST.
 
 ## Code Philosophy - MANDATORY
