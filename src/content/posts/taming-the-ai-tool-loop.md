@@ -1,5 +1,5 @@
 ---
-published: false
+published: true
 title: 'Taming the AI Tool Loop: What Happens When the Model Never Gets a Turn Without Tools'
 slug: 'taming-the-ai-tool-loop'
 description: 'How woss.io evolved from a 41-character AI answer to a 4-layer defense against tool-calling doom loops — with cross-round fingerprinting, synthesis rounds, and a lot of lessons learned.'

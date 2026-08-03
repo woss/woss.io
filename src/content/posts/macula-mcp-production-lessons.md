@@ -543,8 +543,5 @@ The key insight: a single traversal tool with validated node-edge pairs replaces
 
 - [MCP Specification](https://modelcontextprotocol.io)
 - [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
-- [Full Source Code](https://github.com/woss/macula-mcp/tree/main/src/endpoints)
 
 ---
-
-_Built with Fastify, TypeScript, Prisma, Redis, and ❤️_

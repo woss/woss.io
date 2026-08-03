@@ -1,5 +1,5 @@
 ---
-published: false
+published: true
 title: 'When Your AI Makes Up a Blog Post: A RAG Hallucination Story'
 slug: 'when-ai-fabricates-post'
 description: 'A user asked for the latest blog post. The AI happily fabricated one — with a title, excerpt, and publication date. None of it was real. Here is how that happened, how we traced it, and the three-layer fix whose layers themselves needed patching before it held.'
@@ -200,4 +200,4 @@ Now you can ask "show me the last post you wrote" and get a real answer with act
 
 This is one of those fixes that looks obvious in retrospect — of course you should handle the empty RAG case, of course you should have a metadata lookup for metadata questions. But it wasn't obvious before someone triggered it. The system told us where the gap was.
 
-The rest of the posts in this series cover similar pipeline fixes: the [tool classifier prompt fix](/blog/classifier-lessons) that prevented unnecessary tool loading, and the [position-dependence problem](/blog/system-prompt-position-matters) that showed how prompt ordering changes LLM behavior. Each one follows the same pattern — something worked on the happy path, broke on an edge case, and the fix revealed a deeper insight about how these systems actually behave.
+The rest of the posts in this series cover similar pipeline fixes: the [tool classifier prompt fix](/posts/classifier-lessons) that prevented unnecessary tool loading, and the [position-dependence problem](/posts/system-prompt-position-matters) that showed how prompt ordering changes LLM behavior. Each one follows the same pattern — something worked on the happy path, broke on an edge case, and the fix revealed a deeper insight about how these systems actually behave.
