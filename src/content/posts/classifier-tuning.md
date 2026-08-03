@@ -1,5 +1,5 @@
 ---
-published: false
+published: true
 title: "The 7-Second Classifier: Why Your Smallest Task Shouldn't Run on Your Biggest Model"
 slug: 'classifier-lessons'
 description: 'Two classifiers, one lesson: the tool classifier that took 7 seconds to say "none" and the relevance gate that stopped off-topic queries — and what both taught us about right-sizing your LLM pipeline.'
