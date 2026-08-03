@@ -295,6 +295,8 @@ export function getDismissedFeatureTours(userId: string): string[] {
  */
 export function dismissFeatureTours(userId: string, featureIds: string[]): void {
   const db = getDb();
+  // feature_tours are having user as fk, so we need to ensure the user exists before inserting
+  ensureUser(userId);
   const stmt = db.prepare('INSERT OR IGNORE INTO feature_tours (user_id, feature_id) VALUES (?, ?)');
   for (const featureId of featureIds) {
     stmt.run(userId, featureId);
