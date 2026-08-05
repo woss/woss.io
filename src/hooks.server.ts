@@ -1,7 +1,6 @@
 import { config } from '$lib/server/config';
 import { initLogger, CAT, createLogger } from '$lib/server/logger';
 import { generateTraceId, generateSpanId, withTrace } from '$lib/server/trace-context';
-import { getActiveOtelContext } from '$lib/server/trace-context';
 import type { Handle } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 
@@ -12,11 +11,11 @@ const APP_ORIGIN = config().app.origin;
 function buildCspPolicy(): string {
   const directives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.datadoghq.eu",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' https://u.macula.link data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' https://*.datadoghq.eu https://browser-intake-datadoghq.eu https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
+    "connect-src 'self' https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
     "worker-src 'self' blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
@@ -72,10 +71,8 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
 
   // Wrap request with trace context for log correlation
-  // Prefer OTel active span (from SvelteKit's experimental.tracing.server) when available
-  const otelCtx = getActiveOtelContext();
-  const traceId = otelCtx?.traceId ?? generateTraceId();
-  const spanId = otelCtx?.spanId ?? generateSpanId();
+  const traceId = generateTraceId();
+  const spanId = generateSpanId();
   const response = await withTrace(traceId, spanId, () => resolve(event));
 
   // CSP headers
