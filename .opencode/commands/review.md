@@ -11,7 +11,6 @@ If argument is "recent", review changes since last commit using `git diff HEAD~1
 Otherwise, review the specified file(s) or directory.
 
 The reviewer agent will:
-
 - Load the code-review skill
 - Apply the 4 Review Layers (Correctness, Security, Performance, Style)
 - Classify findings by severity (Critical, Major, Minor, Nitpick)

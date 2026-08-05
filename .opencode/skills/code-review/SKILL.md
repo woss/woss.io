@@ -6,11 +6,9 @@ description: Comprehensive code review methodology with severity classification 
 # Code Review Philosophy
 
 ## TL;DR
-
 Systematic code review across 4 layers with severity classification. Only report findings with ≥80% confidence. Include file:line references for all issues.
 
 ## When to Use This Skill
-
 - Before reporting implementation completion
 - When explicitly asked to review code
 - When using the `/review` command
@@ -19,7 +17,6 @@ Systematic code review across 4 layers with severity classification. Only report
 ## The 4 Review Layers
 
 ### Layer 1: Correctness
-
 - Logic errors and edge cases
 - Error handling completeness
 - Type safety and null checks
@@ -27,7 +24,6 @@ Systematic code review across 4 layers with severity classification. Only report
 - Off-by-one errors
 
 ### Layer 2: Security
-
 - No hardcoded secrets or API keys
 - Input validation and sanitization
 - Injection vulnerability prevention (SQL, XSS, command)
@@ -36,7 +32,6 @@ Systematic code review across 4 layers with severity classification. Only report
 - OWASP Top 10 awareness
 
 ### Layer 3: Performance
-
 - No N+1 query patterns
 - Appropriate caching strategies
 - No unnecessary re-renders (React/frontend)
@@ -45,7 +40,6 @@ Systematic code review across 4 layers with severity classification. Only report
 - Algorithmic complexity concerns
 
 ### Layer 4: Style & Maintainability
-
 - Adherence to project conventions (check AGENTS.md)
 - Code duplication (DRY violations)
 - Complexity management (cyclomatic complexity)
@@ -54,19 +48,18 @@ Systematic code review across 4 layers with severity classification. Only report
 
 ## Severity Classification
 
-| Severity | Icon | Criteria                                                 | Action Required       |
-| -------- | ---- | -------------------------------------------------------- | --------------------- |
-| Critical | 🔴   | Security vulnerabilities, crashes, data loss, corruption | Must fix before merge |
-| Major    | 🟠   | Bugs, performance issues, missing error handling         | Should fix            |
-| Minor    | 🟡   | Code smells, maintainability issues, test gaps           | Nice to fix           |
-| Nitpick  | 🟢   | Style preferences, naming suggestions, documentation     | Optional              |
+| Severity | Icon | Criteria | Action Required |
+|----------|------|----------|-----------------|
+| Critical | 🔴 | Security vulnerabilities, crashes, data loss, corruption | Must fix before merge |
+| Major | 🟠 | Bugs, performance issues, missing error handling | Should fix |
+| Minor | 🟡 | Code smells, maintainability issues, test gaps | Nice to fix |
+| Nitpick | 🟢 | Style preferences, naming suggestions, documentation | Optional |
 
 ## Confidence Threshold
 
 **Only report findings with ≥80% confidence.**
 
 If uncertain about an issue:
-
 - State the uncertainty explicitly: "Potential issue (70% confidence): ..."
 - Suggest investigation rather than assert a problem
 - Prefer false negatives over false positives (reduce noise)
@@ -104,7 +97,6 @@ Structure your review as:
 ## Adherence Checklist
 
 Before completing a review, verify:
-
 - [ ] All 4 layers analyzed (Correctness, Security, Performance, Style)
 - [ ] Severity assigned to each finding
 - [ ] Confidence ≥80% for all reported issues (or uncertainty stated)
