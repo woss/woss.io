@@ -15,8 +15,7 @@ export default defineConfig({
     host: '0.0.0.0',
   },
   ssr: {
-    // noExternal: ['sv5ui'],
-    // external: ['node:sqlite'],
+    external: ['dd-trace'],
   },
   build: {
     minify: 'oxc',

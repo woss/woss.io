@@ -79,6 +79,13 @@ export async function startGeneration(
     log.info('Sending SSE event', { event: 'user_message', chatId, dataLength: text.length });
     publishPersistent(chatId, 'user_message', { text, userId });
 
+    // Auto-rename "New Chat" to user's first message (before early gates)
+    try {
+      tryRenameChat(chatId, text);
+    } catch (err) {
+      log.error`Failed to rename chat: ${err}`;
+    }
+
     // 1a-3: Early gates — relevance, polite, embedding, cache
     const earlyResult = await handleEarlyGates(text, chatId, userId, abortController, userAgentId, startTime);
     if (earlyResult.handled) return;
@@ -214,9 +221,6 @@ export async function startGeneration(
         }
       }
     }
-
-    // Auto-rename "New Chat" to user's first message (all paths)
-    tryRenameChat(chatId, text);
 
     // For /summarize, use all unique sources from conversation history instead of RAG results.
     // RAG search on "/summarize" returns chunks unrelated to the conversation topics.

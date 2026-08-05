@@ -129,6 +129,7 @@ import { publishPersistent } from '$lib/server/chat-events';
 import { CAT, createLogger } from '$lib/server/logger';
 import { setMsgId } from '$lib/server/trace-context';
 import { randomUUID } from '$lib/utils/random-uuid';
+import { tryRenameChat } from '$lib/server/chat-helpers';
 
 // ===========================================================================
 // abortGeneration
@@ -173,6 +174,7 @@ describe('startGeneration', () => {
     await startGeneration('Hello', 'chat-1', 'user-1', 5);
 
     expect(handleEarlyGates).toHaveBeenCalledTimes(1);
+    expect(tryRenameChat).toHaveBeenCalledWith('chat-1', 'Hello');
     expect(streamWithRetry).not.toHaveBeenCalled();
     expect(saveAndEmitResult).not.toHaveBeenCalled();
   });

@@ -27,12 +27,14 @@ const log = createLogger(CAT.chat);
  * Best-effort — failures are logged but never surface to the user.
  */
 export function tryRenameChat(chatId: string, text: string): void {
-  try {
-    const chat = getDbService().getChat(chatId);
-    if (chat && chat.title === 'New Chat') getDbService().renameChat(chatId, text.slice(0, 40));
-  } catch (err) {
-    log.error`auto-rename failed: ${err}`;
-  }
+  getDbService()
+    .getChat(chatId)
+    .then((chat) => {
+      if (chat && chat.title === 'New Chat') return getDbService().renameChat(chatId, text.slice(0, 40));
+    })
+    .catch((err) => {
+      log.error`auto-rename failed: ${err}`;
+    });
 }
 
 /**
