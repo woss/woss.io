@@ -14,9 +14,6 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
   },
-  ssr: {
-    external: ['dd-trace'],
-  },
   build: {
     minify: 'oxc',
     cssMinify: 'lightningcss',

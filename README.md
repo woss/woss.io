@@ -95,14 +95,6 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 | `WOSS_USER_WEBHOOK_URL`       | -                          | Webhook URL for events                 |
 | `WOSS_USER_WEBHOOK_ERROR_URL` | -                          | Webhook URL for errors                 |
 | `WOSS_USER_WEBHOOK_TOKEN`     | -                          | Webhook auth token                     |
-| `DD_API_KEY`                  | -                          | Datadog API key (APM + logs)           |
-| `DD_ENV`                      | `production`               | Datadog environment tag                |
-| `DD_SITE`                     | `datadoghq.eu`             | Datadog site                           |
-| `DD_SERVICE`                  | `woss-io`                  | Datadog service name                   |
-| `DD_VERSION`                  | -                          | Datadog version tag                    |
-| `PUBLIC_DD_RUM_APP_ID`        | -                          | Datadog RUM application ID             |
-| `PUBLIC_DD_RUM_CLIENT_TOKEN`  | -                          | Datadog RUM client token               |
-| `PUBLIC_APP_VERSION`          | `0.0.0`                    | App version tag for Datadog            |
 | `ZINALOG_ENCRYPTION_KEY`      | -                          | Encryption key for ZinaLog container   |
 
 ### MCP Endpoint
@@ -131,19 +123,6 @@ woss.io exposes its own Streamable HTTP MCP endpoint at `POST /mcp` for AI agent
   }
 ]
 ```
-
-### Observability / Datadog APM
-
-APM tracing runs agentless: dd-trace posts spans directly to the Datadog EU intake (`public-trace-http-intake.logs.datadoghq.eu/api/v2/spans`) with no local Datadog agent. Required in `.env`:
-
-- `DD_API_KEY` — Datadog API key
-- `DD_SITE` — Datadog site, e.g. `datadoghq.eu`
-- `DD_ENV` — environment tag
-- `DD_SERVICE` — service name (defaults to `woss-io`)
-
-`DD_VERSION` is optional (version tag).
-
-dd-trace reads `process.env`, so `src/instrumentation.server.ts` mirrors `$env/dynamic/private` into `process.env` before `tracer.init()` (via `??=`, so values already in `process.env` win). The mirror is required in dev, where SvelteKit doesn't load `.env` into `process.env`; in Docker/prod, `env_file` already populates `process.env` and the mirror is a no-op.
 
 ## Customizing content
 

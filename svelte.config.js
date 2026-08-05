@@ -14,14 +14,6 @@ const config = {
     alias: {
       $content: 'src/content',
     },
-    experimental: {
-      tracing: {
-        server: true,
-      },
-      instrumentation: {
-        server: true,
-      },
-    },
   },
 };
 
