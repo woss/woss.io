@@ -20,7 +20,7 @@ Beyond the chat, there's:
 - **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing
 - **Webhooks**: events pushed to external URLs when interesting things happen
 - **Message reactions**: upvote, downvote, or heart AI responses
-- **Reasoning display**: collapsible "thinking" accordion showing model chain-of-thought with character count badge
+- **Reasoning display**: collapsible "thinking" accordion showing model chain-of-thought with character count badge; reasoning is preserved across multi-round tool calls and passed back to thinking-mode models (e.g. `deepseek-v4-flash-free`) as `reasoning_content`
 - **Contact and intent detection**: the AI can figure out if you're trying to hire me or just browsing
 - **Docker**: multi-stage build, production ready
 

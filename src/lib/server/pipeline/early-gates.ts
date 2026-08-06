@@ -53,7 +53,11 @@ export async function handleEarlyGates(
 > {
   // should get max messages from config. unification
   const ctxMessages = await getDbService().getMessages(chatId, 50);
-  const history = ctxMessages.map((m) => ({ role: m.role, content: m.content }));
+  const history = ctxMessages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    ...(m.reasoning ? { reasoning: m.reasoning } : {}),
+  }));
 
   // For short ambiguous messages, call classifyToolNeeds once and share the result
   let classifyResult: Awaited<ReturnType<typeof classifyToolNeeds>> | undefined;

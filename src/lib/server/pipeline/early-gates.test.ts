@@ -7,7 +7,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 const mockDb = {
   addMessage: vi.fn(() => 'msg-id'),
   getChatMessageCount: vi.fn(() => 5),
-  getMessages: vi.fn(() => []),
+  getMessages: vi.fn<(chatId: string) => Promise<StoredMessage[]>>(),
   lockChat: vi.fn(),
   getOffTopicCount: vi.fn(() => 0),
   incrementOffTopicCount: vi.fn(() => 1),
@@ -108,7 +108,9 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('rejects off-topic question with attempts left (< 3 strikes)', async () => {
-    mockDb.getMessages.mockReturnValue([{ role: 'user', content: 'Previous question' }] as unknown as StoredMessage[]);
+    mockDb.getMessages.mockResolvedValue([
+      { role: 'user', content: 'Previous question' },
+    ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(false);
@@ -132,7 +134,9 @@ describe('handleEarlyGates', () => {
   });
 
   it('locks chat after 3 off-topic strikes', async () => {
-    mockDb.getMessages.mockReturnValue([{ role: 'user', content: 'Previous question' }] as unknown as StoredMessage[]);
+    mockDb.getMessages.mockResolvedValue([
+      { role: 'user', content: 'Previous question' },
+    ] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(false);
@@ -158,7 +162,7 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('skips relevance check when tool intent detected via keywords', async () => {
-    mockDb.getMessages.mockReturnValue([{ role: 'user', content: 'Show repos' }] as unknown as StoredMessage[]);
+    mockDb.getMessages.mockResolvedValue([{ role: 'user', content: 'Show repos' }] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(true);
     // Ensure we don't reach the isRelevant call
     vi.mocked(isRelevant).mockRejectedValue(new Error('should not be called'));
@@ -179,7 +183,7 @@ describe('handleEarlyGates', () => {
   });
 
   it('skips relevance check for /summarize commands', async () => {
-    mockDb.getMessages.mockReturnValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
+    mockDb.getMessages.mockResolvedValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
     vi.mocked(isRelevant).mockRejectedValue(new Error('should not be called'));
     vi.mocked(embedText).mockResolvedValue({ data: [0.5, 0.6], dimensions: 2 });
 
@@ -201,7 +205,7 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns polite response for thank-you messages', async () => {
-    mockDb.getMessages.mockReturnValue([]);
+    mockDb.getMessages.mockResolvedValue([]);
     vi.mocked(generatePoliteResponse).mockResolvedValue('You are welcome!');
 
     const result = await handleEarlyGates(
@@ -226,7 +230,7 @@ describe('handleEarlyGates', () => {
   });
 
   it('uses fallback when polite response generation fails', async () => {
-    mockDb.getMessages.mockReturnValue([]);
+    mockDb.getMessages.mockResolvedValue([]);
     vi.mocked(generatePoliteResponse).mockRejectedValue(new Error('LLM error'));
 
     const result = await handleEarlyGates('thanks', 'chat-6', 'user-1', new AbortController(), undefined, Date.now());
@@ -245,7 +249,7 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns handled: true when embedding fails', async () => {
-    mockDb.getMessages.mockReturnValue([{ role: 'user', content: 'A question' }] as unknown as StoredMessage[]);
+    mockDb.getMessages.mockResolvedValue([{ role: 'user', content: 'A question' }] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(true);
@@ -274,7 +278,7 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns cached answer on cache hit when cache enabled', async () => {
-    mockDb.getMessages.mockReturnValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
+    mockDb.getMessages.mockResolvedValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(true);
@@ -305,7 +309,7 @@ describe('handleEarlyGates', () => {
   });
 
   it('emits tool call events on cache hit when cached data has tool calls', async () => {
-    mockDb.getMessages.mockReturnValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
+    mockDb.getMessages.mockResolvedValue([{ role: 'user', content: 'Old question' }] as unknown as StoredMessage[]);
     vi.mocked(needsGithubTools).mockResolvedValue(false);
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(true);
@@ -359,7 +363,7 @@ describe('handleEarlyGates', () => {
   // -----------------------------------------------------------------------
 
   it('returns embedding, messages, and history when all gates pass', async () => {
-    mockDb.getMessages.mockReturnValue([
+    mockDb.getMessages.mockResolvedValue([
       { role: 'user', content: 'Previous question', sources: '' },
       { role: 'assistant', content: 'Previous answer', sources: '' },
     ] as unknown as StoredMessage[]);
@@ -390,6 +394,71 @@ describe('handleEarlyGates', () => {
         { role: 'user', content: 'Previous question' },
         { role: 'assistant', content: 'Previous answer' },
       ],
+      classifyResult: undefined,
+    });
+  });
+
+  it('carries assistant reasoning through the history replay', async () => {
+    mockDb.getMessages.mockResolvedValue([
+      { role: 'user', content: 'Previous question', sources: '' },
+      { role: 'assistant', content: 'Previous answer', reasoning: 'prior-thoughts', sources: '' },
+    ] as unknown as StoredMessage[]);
+    vi.mocked(needsGithubTools).mockResolvedValue(false);
+    vi.mocked(needsMaculaTools).mockResolvedValue(false);
+    vi.mocked(isRelevant).mockResolvedValue(true);
+    vi.mocked(embedText).mockResolvedValue({ data: [0.1, 0.2, 0.3], dimensions: 3 });
+
+    const result = await handleEarlyGates(
+      'What is your name?',
+      'chat-9',
+      'user-1',
+      new AbortController(),
+      undefined,
+      Date.now(),
+    );
+
+    expect(result).toEqual({
+      handled: false,
+      embedding: { data: [0.1, 0.2, 0.3], dimensions: 3 },
+      cacheEmbeddingData: [0.1, 0.2, 0.3],
+      cacheText: 'What is your name?',
+      ctxMessages: [
+        { role: 'user', content: 'Previous question', sources: '' },
+        { role: 'assistant', content: 'Previous answer', reasoning: 'prior-thoughts', sources: '' },
+      ],
+      history: [
+        { role: 'user', content: 'Previous question' },
+        { role: 'assistant', content: 'Previous answer', reasoning: 'prior-thoughts' },
+      ],
+      classifyResult: undefined,
+    });
+  });
+
+  it('omits the reasoning key from history when the prior message has none', async () => {
+    mockDb.getMessages.mockResolvedValue([
+      { role: 'assistant', content: 'Plain answer', sources: '' },
+    ] as unknown as StoredMessage[]);
+    vi.mocked(needsGithubTools).mockResolvedValue(false);
+    vi.mocked(needsMaculaTools).mockResolvedValue(false);
+    vi.mocked(isRelevant).mockResolvedValue(true);
+    vi.mocked(embedText).mockResolvedValue({ data: [0.1, 0.2, 0.3], dimensions: 3 });
+
+    const result = await handleEarlyGates(
+      'Next question',
+      'chat-10',
+      'user-1',
+      new AbortController(),
+      undefined,
+      Date.now(),
+    );
+
+    expect(result).toEqual({
+      handled: false,
+      embedding: { data: [0.1, 0.2, 0.3], dimensions: 3 },
+      cacheEmbeddingData: [0.1, 0.2, 0.3],
+      cacheText: 'Next question',
+      ctxMessages: [{ role: 'assistant', content: 'Plain answer', sources: '' }],
+      history: [{ role: 'assistant', content: 'Plain answer' }],
       classifyResult: undefined,
     });
   });
