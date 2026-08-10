@@ -9,47 +9,24 @@
  * provider is registered before any application code runs, and stays a no-op
  * whenever `OTEL_SDK_DISABLED=1` (development, CI, tests).
  *
- * Env is read via `readEnv()` — `$env/dynamic/private` first, then
- * `process.env`. In dev, `.env` is only surfaced through
- * `$env/dynamic/private` (SvelteKit's Vite `loadEnv`), so raw `process.env`
- * misses it. In built adapter-node mode, `$env/dynamic/private` resolves to
- * `process.env`, so the Docker-baked `DD_VERSION` (the image tag, passed via
- * the Dockerfile build-arg) and any runtime env are picked up. Nothing is
- * baked into the bundle at build time, so docker builds succeed without a
- * `.env` file. See `readEnv()` below.
+ * Env is read via `process.env`, never `$env/dynamic/private`: the
+ * adapter-node facade imports this module before `Server.init()` populates
+ * SvelteKit's private env, so `$env/dynamic/private` would be permanently
+ * undefined here in built mode.
  */
 
-import { env as dynamicEnv } from '$env/dynamic/private';
-import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
+import process from 'node:process';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
-import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
-import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 import { logs, NodeSDK, resources, tracing } from '@opentelemetry/sdk-node';
-import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
-import { SERVICE_NAME_FALLBACK } from './dd-config';
 import { MAX_LOG_MESSAGE_BYTES, truncateLogMessage } from './lib/server/log-truncate';
 
 export { MAX_LOG_MESSAGE_BYTES, truncateLogMessage };
 
-/**
- * Read a server env var from `$env/dynamic/private` first, then `process.env`.
- *
- * In `vite dev`, `process.env` is not populated from `.env` — SvelteKit loads
- * `.env` into the `$env/dynamic/private` module via Vite's `loadEnv`. In built
- * adapter-node mode, `$env/dynamic/private` resolves to `process.env` (a lazy
- * getter), so the fallback covers both. This mirrors `logger.ts`.
- */
-function readEnv(name: string): string | undefined {
-  const fromDynamic = dynamicEnv[name as keyof typeof dynamicEnv];
-  return fromDynamic ?? process.env[name];
-}
-
 /** Datadog EU agentless OTLP intake endpoints (HTTP, protobuf payloads). */
-const DATADOG_TRACES_ENDPOINT = 'https://http-intake.logs.datadoghq.eu/v1/traces';
-const DATADOG_LOGS_ENDPOINT = 'https://http-intake.logs.datadoghq.eu/v1/logs';
-const DATADOG_METRICS_ENDPOINT = 'https://http-intake.logs.datadoghq.eu/v1/metrics';
+const DATADOG_TRACES_ENDPOINT = 'https://http-intake.datadoghq.eu/api/v0.2/otlp/v1/traces';
+const DATADOG_LOGS_ENDPOINT = 'https://http-intake.datadoghq.eu/api/v0.2/otlp/v1/logs';
 
 /** `dd-otel-span-mapping` header value: use the span name as the resource name. */
 const SPAN_NAME_AS_RESOURCE_NAME = '{"span_name_as_resource_name": true}';
@@ -60,10 +37,12 @@ let sdk: NodeSDK | undefined;
 /**
  * True when the OpenTelemetry SDK must stay disabled (dev, CI, tests).
  *
- * Read via `readEnv()` inside startSdk(), which runs at module scope before
- * any request handling.
+ * Read once from `process.env` at module scope: process env is populated by
+ * the OS before the process starts, so the module-level startup path can rely
+ * on it (unlike `$env/dynamic/private`, which the adapter-node facade has not
+ * populated yet when this module is imported).
  */
-let isSdkDisabled = false;
+const isSdkDisabled = process.env.OTEL_SDK_DISABLED === '1';
 
 /** Config type accepted by OTLPTraceExporter's constructor (OTel 0.221). */
 type TraceExporterNodeConfig = NonNullable<ConstructorParameters<typeof OTLPTraceExporter>[0]>;
@@ -119,25 +98,19 @@ class TruncatingLogRecordExporter implements OTelLogRecordExporter {
 /**
  * Build the SDK Resource carrying Datadog service identity.
  *
- * `DD_SERVICE`, `DD_ENV`, and `DD_VERSION` are read at runtime via
- * `readEnv()` (`$env/dynamic/private` → `process.env`). In built adapter-node
- * mode this resolves to `process.env` — the Docker image bakes `DD_VERSION`
- * (the image tag) via `ENV`, so telemetry carries the exact deploy version.
- * `service.name` falls back to `woss-io` (SERVICE_NAME_FALLBACK) when
- * `DD_SERVICE` is unset; `deployment.environment` and `service.version` are
- * only included when their variables are defined.
+ * `service.name` falls back to `woss.io` when `DD_SERVICE` is unset;
+ * `deployment.environment` and `service.version` are only included when
+ * their environment variables are defined.
  */
 function createResource(): ReturnType<typeof resources.resourceFromAttributes> {
   const attributes: Record<string, string> = {
-    'service.name': readEnv('DD_SERVICE') || SERVICE_NAME_FALLBACK,
+    'service.name': process.env.DD_SERVICE || 'woss-io',
   };
-  const ddEnv = readEnv('DD_ENV');
-  if (ddEnv) {
-    attributes['deployment.environment'] = ddEnv;
+  if (process.env.DD_ENV) {
+    attributes['deployment.environment'] = process.env.DD_ENV;
   }
-  const ddVersion = readEnv('DD_VERSION');
-  if (ddVersion) {
-    attributes['service.version'] = ddVersion;
+  if (process.env.DD_VERSION) {
+    attributes['service.version'] = process.env.DD_VERSION;
   }
   return resources.resourceFromAttributes(attributes);
 }
@@ -152,25 +125,17 @@ function createResource(): ReturnType<typeof resources.resourceFromAttributes> {
  * Errors are logged and swallowed so telemetry never crashes the server.
  */
 function startSdk(): void {
-  // readEnv(): $env/dynamic/private first (carries .env in dev), then process.env.
-  isSdkDisabled = readEnv('OTEL_SDK_DISABLED') === '1';
   if (isSdkDisabled || sdk) {
     return;
   }
 
   try {
-    // Surface OTel internal diagnostics (exporter failures, init, networking)
-    // on stderr only when OTEL_DIAG_DEBUG=1 — avoids log spam in normal runs.
-    if (readEnv('OTEL_DIAG_DEBUG') === '1') {
-      diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
-    }
-
     const traceExporter = new OTLPTraceExporter({
       url: DATADOG_TRACES_ENDPOINT,
       // gzip is a CompressionAlgorithm member; the enum type lives in otlp-exporter-base (not root-importable).
       compression: 'gzip' as TraceExporterNodeConfig['compression'],
       headers: {
-        'dd-api-key': readEnv('DD_API_KEY') ?? '',
+        'dd-api-key': process.env.DD_API_KEY ?? '',
         'dd-otel-span-mapping': SPAN_NAME_AS_RESOURCE_NAME,
         // `dd-otlp-source` is deliberately absent — it triggers a 403 from
         // the agentless OTLP intake.
@@ -183,7 +148,7 @@ function startSdk(): void {
         // gzip is a CompressionAlgorithm member; the enum type lives in otlp-exporter-base (not root-importable).
         compression: 'gzip' as TraceExporterNodeConfig['compression'],
         headers: {
-          'dd-api-key': readEnv('DD_API_KEY') ?? '',
+          'dd-api-key': process.env.DD_API_KEY ?? '',
           // `dd-otlp-source` is deliberately absent — see the trace exporter.
         },
       }),
@@ -200,50 +165,18 @@ function startSdk(): void {
       exporter: logExporter,
       maxExportBatchSize: 100,
       scheduledDelayMillis: 1000,
-      exportTimeoutMillis: 30000,
-      maxQueueSize: 2048,
-    });
-
-    const metricExporter = new OTLPMetricExporter({
-      url: DATADOG_METRICS_ENDPOINT,
-      compression: 'gzip' as TraceExporterNodeConfig['compression'],
-      headers: {
-        'dd-api-key': readEnv('DD_API_KEY') ?? '',
-        // `dd-otlp-source` is deliberately absent — see the trace exporter.
-      },
-    });
-
-    const metricReader = new PeriodicExportingMetricReader({
-      exporter: metricExporter,
-      exportIntervalMillis: 30000,
-      exportTimeoutMillis: 30000,
     });
 
     sdk = new NodeSDK({
       resource: createResource(),
       spanProcessors: [spanProcessor],
       logRecordProcessors: [logRecordProcessor],
-      metricReaders: [metricReader],
       sampler: new tracing.ParentBasedSampler({
         root: new tracing.TraceIdRatioBasedSampler(1.0),
       }),
-      // http + https via HttpInstrumentation; global fetch (undici) via
-      // UndiciInstrumentation so SvelteKit SSR outbound calls are traced.
-      // fs and dns instrumentations are intentionally excluded.
-      instrumentations: [
-        new HttpInstrumentation({
-          ignoreOutgoingRequestHook: (request) => {
-            const host = request.hostname || '';
-            return host.includes('datadoghq.eu') || host.includes('datadoghq.com');
-          },
-        }),
-        new UndiciInstrumentation({
-          ignoreRequestHook: (request) => {
-            const origin = request.origin || '';
-            return origin.includes('datadoghq.eu') || origin.includes('datadoghq.com');
-          },
-        }),
-      ],
+      // http + https only: HttpInstrumentation covers both modules. undici,
+      // fs, and dns instrumentations are intentionally excluded.
+      instrumentations: [new HttpInstrumentation()],
     });
 
     sdk.start();
@@ -277,10 +210,8 @@ export function init(): void {
 /**
  * Gracefully shut down the OpenTelemetry SDK, flushing pending exports.
  *
- * Wired to the adapter-node `sveltekit:shutdown` event (emitted on SIGTERM/
- * SIGINT by the built server) at module load. No-op when the SDK is disabled
- * or was never initialized. Errors are logged and swallowed so shutdown never
- * throws.
+ * No-op when the SDK is disabled or was never initialized. Errors are
+ * logged and swallowed so shutdown never throws.
  */
 export async function shutdown(): Promise<void> {
   if (isSdkDisabled || !sdk) {
@@ -292,9 +223,3 @@ export async function shutdown(): Promise<void> {
     console.error('[instrumentation] OpenTelemetry SDK shutdown failed:', error);
   }
 }
-
-// adapter-node emits `sveltekit:shutdown` when gracefully stopping on
-// SIGTERM/SIGINT — flush telemetry before the process exits.
-process.once('sveltekit:shutdown', () => {
-  void shutdown();
-});

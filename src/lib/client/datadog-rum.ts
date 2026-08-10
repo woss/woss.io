@@ -4,9 +4,6 @@ import { env } from '$env/dynamic/public';
 import { dev } from '$app/environment';
 import { SERVICE_NAME_FALLBACK } from '../../dd-config';
 
-/** Deploy version reported to Datadog (`<semver>-dev|prod`). Single source for tests. */
-export const RUM_VERSION = `1.1.0-${dev ? 'dev' : 'prod'}`;
-
 /**
  * Initializes Datadog RUM on the client.
  *
@@ -56,21 +53,10 @@ export function initDatadogRum(): void {
     trackResources: true,
     trackLongTasks: true,
     trackUserInteractions: true,
-    traceContextInjection: 'all',
-    allowedTracingUrls: [
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      (url: string, init?: RequestInit) => {
-        try {
-          return new URL(url).origin === location.origin;
-        } catch {
-          return false;
-        }
-      },
-    ],
     defaultPrivacyLevel: 'mask-user-input',
     service: SERVICE_NAME_FALLBACK,
     env: dev ? 'dev' : 'production',
-    version: RUM_VERSION,
+    version: `1.1.0-${dev ? 'dev' : 'prod'}`,
   });
   datadogRum.onReady(() => {
     console.log('Datadog RUM initialized');

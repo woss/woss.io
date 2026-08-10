@@ -30,7 +30,6 @@ import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { traceStorage } from './trace-context';
 import { truncateLogMessage } from './log-truncate';
-import { hexIdToLow64Decimal, isZeroLow64Decimal } from './datadog-ids';
 
 const DATADOG_LEVEL_MAP: Record<string, string> = {
   trace: 'debug',
@@ -57,8 +56,6 @@ function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefine
     const message = truncateLogMessage(formatLogtapeMessage(record.message));
     const service = record.category.join('.');
     const body: Record<string, unknown> = { level, message, service };
-    // Datadog reserved tag: env:dev / env:production goes in `ddtags`.
-    if (ddEnv) body.ddtags = `env:${ddEnv}`;
     // Attach trace context to metadata
     const { traceId, spanId } = record.properties as Record<string, string | undefined>;
     if (traceId || spanId) {
@@ -66,16 +63,6 @@ function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefine
       if (traceId) metadata.traceId = traceId;
       if (spanId) metadata.spanId = spanId;
       body.metadata = metadata;
-    }
-    // Emit Datadog correlation ids as low-64 decimal strings (FR-005).
-    // Both-or-neither (INV-3): emit only when both ids are present and non-zero.
-    if (traceId && spanId) {
-      const ddTraceId = hexIdToLow64Decimal(traceId);
-      const ddSpanId = hexIdToLow64Decimal(spanId);
-      if (!isZeroLow64Decimal(ddTraceId) && !isZeroLow64Decimal(ddSpanId)) {
-        body['dd.trace_id'] = ddTraceId;
-        body['dd.span_id'] = ddSpanId;
-      }
     }
     const bodyStr = JSON.stringify(body);
     // Fire-and-forget POST — non-blocking
@@ -86,21 +73,10 @@ function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefine
         'DD-API-KEY': apiKey,
       },
       body: bodyStr,
-    })
-      .then((res) => {
-        if (!res.ok) {
-          // fallback: can't use logger here (circular), use console as last resort
-          console.error(`[datadog] push failed: HTTP ${res.status} ${res.statusText}`);
-        }
-      })
-      .catch((err: unknown) => {
-        // fallback: can't use logger here (circular), use console as last resort
-        console.error(
-          '[datadog] push failed:',
-          (err as Error)?.message ?? err,
-          (err as { cause?: Error })?.cause ?? '',
-        );
-      });
+    }).catch((err: unknown) => {
+      // fallback: can't use logger here (circular), use console as last resort
+      console.error('[datadog] push failed:', (err as Error)?.message ?? err);
+    });
   };
 }
 

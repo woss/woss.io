@@ -7,38 +7,40 @@
  *    effect), before any exported function is called.
  *  - Exported init() is idempotent: repeated calls never construct or start
  *    a second SDK, and return undefined.
- *  - OTEL_SDK_DISABLED=1 (read from process.env) keeps the module a
+ *  - OTEL_SDK_DISABLED=1 (read from $env/dynamic/private) keeps the module a
  *    silent no-op: no SDK, no exporters, no instrumentations.
  *  - try/catch safety: when SDK construction or start() throws, module import
  *    still succeeds and init()/shutdown() never throw to the caller.
- *  - Service identity (DD_SERVICE/DD_ENV/DD_VERSION) is read at runtime via
- *    readEnv() — in built adapter-node mode this is process.env, the same
- *    surface the Dockerfile bakes DD_VERSION into via the build-arg.
- *  - Everything else (DD_API_KEY, OTEL_SDK_DISABLED, OTEL_DIAG_DEBUG) is read
- *    via readEnv(): $env/dynamic/private first, then process.env. The test
- *    mocks $env/dynamic/private to forward to process.env so those assertions
- *    drive the real process.env value (the built adapter-node equivalent).
+ *  - Env comes from $env/dynamic/private: DD_SERVICE / DD_ENV / DD_VERSION /
+ *    DD_API_KEY are read from the SvelteKit env system.
  *  - shutdown() flushes the SDK started at import time and swallows errors.
  *  - MAX_LOG_MESSAGE_BYTES / truncateLogMessage re-exported unchanged from
  *    ./lib/server/log-truncate.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** Mutable env mock for $env/dynamic/private — set per test before importInstrumentation(). */
+const mockEnv = vi.hoisted(() => ({
+  OTEL_SDK_DISABLED: undefined as string | undefined,
+  DD_SERVICE: undefined as string | undefined,
+  DD_ENV: undefined as string | undefined,
+  DD_VERSION: undefined as string | undefined,
+  DD_API_KEY: undefined as string | undefined,
+}));
+
+vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
+
 /** Env keys the module reads; cleared between tests for hygiene. */
-const ENV_KEYS = ['OTEL_SDK_DISABLED', 'OTEL_DIAG_DEBUG', 'DD_SERVICE', 'DD_ENV', 'DD_VERSION', 'DD_API_KEY'] as const;
+const ENV_KEYS = ['OTEL_SDK_DISABLED', 'DD_SERVICE', 'DD_ENV', 'DD_VERSION', 'DD_API_KEY'] as const;
 
 /** Constructor/instance spies for the mocked OpenTelemetry classes. */
 const otelState = vi.hoisted(() => {
   const nodeSDKSpy = vi.fn();
   const traceExporterSpy = vi.fn();
   const logExporterSpy = vi.fn();
-  const metricExporterSpy = vi.fn();
-  const metricReaderSpy = vi.fn();
   const httpInstrumentationSpy = vi.fn();
-  const undiciInstrumentationSpy = vi.fn();
   const logRecordProcessorSpy = vi.fn();
   const traceIdRatioSamplerSpy = vi.fn();
-  const diagSetLoggerSpy = vi.fn();
   const nodeSDKInstances: { start: ReturnType<typeof vi.fn>; shutdown: ReturnType<typeof vi.fn> }[] = [];
   /** When true, MockNodeSDK#start() throws (exercises the try/catch path). */
   const flags = { throwOnStart: false };
@@ -63,24 +65,9 @@ const otelState = vi.hoisted(() => {
       logExporterSpy(...args);
     }
   }
-  class MockMetricExporter {
-    constructor(...args: unknown[]) {
-      metricExporterSpy(...args);
-    }
-  }
-  class MockPeriodicMetricReader {
-    constructor(...args: unknown[]) {
-      metricReaderSpy(...args);
-    }
-  }
   class MockHttpInstrumentation {
     constructor(...args: unknown[]) {
       httpInstrumentationSpy(...args);
-    }
-  }
-  class MockUndiciInstrumentation {
-    constructor(...args: unknown[]) {
-      undiciInstrumentationSpy(...args);
     }
   }
   class MockBatchSpanProcessor {
@@ -104,39 +91,21 @@ const otelState = vi.hoisted(() => {
     nodeSDKSpy,
     traceExporterSpy,
     logExporterSpy,
-    metricExporterSpy,
-    metricReaderSpy,
     httpInstrumentationSpy,
-    undiciInstrumentationSpy,
     logRecordProcessorSpy,
     traceIdRatioSamplerSpy,
-    diagSetLoggerSpy,
     nodeSDKInstances,
     flags,
     MockNodeSDK,
     MockTraceExporter,
     MockLogExporter,
-    MockMetricExporter,
-    MockPeriodicMetricReader,
     MockHttpInstrumentation,
-    MockUndiciInstrumentation,
     MockBatchSpanProcessor,
     MockBatchLogRecordProcessor,
     MockParentBasedSampler,
     MockTraceIdRatioBasedSampler,
   };
 });
-
-// Forward $env/dynamic/private to process.env so readEnv() resolves the
-// process.env value the tests drive (the built adapter-node equivalent).
-vi.mock('$env/dynamic/private', () => ({
-  env: new Proxy(
-    {},
-    {
-      get: (_target, prop) => (typeof prop === 'string' ? process.env[prop] : undefined),
-    },
-  ),
-}));
 
 vi.mock('@opentelemetry/sdk-node', () => ({
   NodeSDK: otelState.MockNodeSDK,
@@ -157,38 +126,18 @@ vi.mock('@opentelemetry/exporter-logs-otlp-http', () => ({
   OTLPLogExporter: otelState.MockLogExporter,
 }));
 
-vi.mock('@opentelemetry/exporter-metrics-otlp-http', () => ({
-  OTLPMetricExporter: otelState.MockMetricExporter,
-}));
-
-vi.mock('@opentelemetry/sdk-metrics', () => ({
-  PeriodicExportingMetricReader: otelState.MockPeriodicMetricReader,
-}));
-
 vi.mock('@opentelemetry/instrumentation-http', () => ({
   HttpInstrumentation: otelState.MockHttpInstrumentation,
 }));
 
-vi.mock('@opentelemetry/instrumentation-undici', () => ({
-  UndiciInstrumentation: otelState.MockUndiciInstrumentation,
-}));
-
-vi.mock('@opentelemetry/api', () => ({
-  diag: { setLogger: otelState.diagSetLoggerSpy },
-  DiagConsoleLogger: class MockDiagConsoleLogger {},
-  DiagLogLevel: { DEBUG: 1 },
-}));
-
-function setProcessEnv(entries: Record<string, string | undefined>): void {
+function setMockEnv(entries: Record<string, string | undefined>): void {
   for (const key of Object.keys(entries)) {
-    const value = entries[key];
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    (mockEnv as Record<string, string | undefined>)[key] = entries[key];
   }
 }
 
-function clearProcessEnv(): void {
-  for (const key of ENV_KEYS) delete process.env[key];
+function clearMockEnv(): void {
+  for (const key of ENV_KEYS) (mockEnv as Record<string, string | undefined>)[key] = undefined;
 }
 
 /** Fresh module instance so the module-scope `isSdkDisabled` and `sdk` never leak. */
@@ -211,7 +160,7 @@ function traceExporterConfig(): { url: string; compression: string; headers: Rec
 }
 
 beforeEach(() => {
-  clearProcessEnv();
+  clearMockEnv();
   otelState.nodeSDKInstances.length = 0;
   otelState.flags.throwOnStart = false;
   vi.clearAllMocks();
@@ -234,14 +183,10 @@ describe('module-level SDK startup (task 2.1)', () => {
     expect(otelState.traceExporterSpy).toHaveBeenCalledTimes(1);
     expect(otelState.logExporterSpy).toHaveBeenCalledTimes(1);
     expect(otelState.httpInstrumentationSpy).toHaveBeenCalledTimes(1);
-    expect(otelState.undiciInstrumentationSpy).toHaveBeenCalledTimes(1);
-    expect(otelState.metricExporterSpy).toHaveBeenCalledTimes(1);
-    expect(otelState.metricReaderSpy).toHaveBeenCalledTimes(1);
     expect(otelState.logRecordProcessorSpy).toHaveBeenCalledTimes(1);
-    expect(otelState.diagSetLoggerSpy).not.toHaveBeenCalled(); // OTEL_DIAG_DEBUG unset
 
     const traceCfg = traceExporterConfig();
-    expect(traceCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/traces');
+    expect(traceCfg.url).toBe('https://http-intake.datadoghq.eu/api/v0.2/otlp/v1/traces');
     expect(traceCfg.compression).toBe('gzip');
     expect(traceCfg.headers['dd-otel-span-mapping']).toBe('{"span_name_as_resource_name": true}');
     // dd-otlp-source must stay absent — it triggers a 403 from the intake.
@@ -259,48 +204,11 @@ describe('module-level SDK startup (task 2.1)', () => {
     // Sampling: ParentBasedSampler over TraceIdRatioBasedSampler(1.0).
     expect(otelState.traceIdRatioSamplerSpy).toHaveBeenCalledWith(1.0);
 
-    // Metrics: OTLPMetricExporter → /v1/metrics, gzip, dd-api-key; wired via
-    // PeriodicExportingMetricReader into the SDK's metricReaders.
-    const metricExporterCfg = otelState.metricExporterSpy.mock.calls[0][0] as {
-      url: string;
-      compression: string;
-      headers: Record<string, string>;
-    };
-    expect(metricExporterCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/metrics');
-    expect(metricExporterCfg.compression).toBe('gzip');
-    expect(metricExporterCfg.headers).toEqual({ 'dd-api-key': '' });
-    const metricReaderCfg = otelState.metricReaderSpy.mock.calls[0][0] as {
-      exporter: unknown;
-      exportIntervalMillis: number;
-      exportTimeoutMillis: number;
-    };
-    expect(metricReaderCfg.exportIntervalMillis).toBe(30000);
-    expect(metricReaderCfg.exportTimeoutMillis).toBe(30000);
-    const sdkConfig = otelState.nodeSDKSpy.mock.calls[0][0] as { metricReaders: unknown[] };
-    expect(sdkConfig.metricReaders).toHaveLength(1);
-
-    // Log batch processor mirrors the span processor's timeouts/queue.
-    const processorOpts = otelState.logRecordProcessorSpy.mock.calls[0][0] as {
-      exportTimeoutMillis: number;
-      maxQueueSize: number;
-    };
-    expect(processorOpts.exportTimeoutMillis).toBe(30000);
-    expect(processorOpts.maxQueueSize).toBe(2048);
-
-    // undici instrumentation ignores Datadog intake hosts (self-telemetry).
-    const undiciCfg = otelState.undiciInstrumentationSpy.mock.calls[0][0] as {
-      ignoreRequestHook: (request: { origin?: string }) => boolean;
-    };
-    expect(undiciCfg.ignoreRequestHook({ origin: 'https://http-intake.logs.datadoghq.eu' })).toBe(true);
-    expect(undiciCfg.ignoreRequestHook({ origin: 'https://api.example.com' })).toBe(false);
-
     expect(mod.init()).toBeUndefined(); // no-op after import-time start
   });
 
-  it('reads DD_SERVICE/DD_ENV/DD_VERSION from runtime env, DD_API_KEY via readEnv', async () => {
-    // Runtime config: resource identity follows the runtime environment —
-    // the same surface Docker uses to inject DD_VERSION (image tag).
-    setProcessEnv({ DD_SERVICE: 'woss-svc', DD_ENV: 'prod', DD_VERSION: '9.9.9', DD_API_KEY: 'ddkey' });
+  it('reads DD_SERVICE/DD_ENV/DD_VERSION/DD_API_KEY from $env/dynamic/private', async () => {
+    setMockEnv({ DD_SERVICE: 'woss-svc', DD_ENV: 'prod', DD_VERSION: '9.9.9', DD_API_KEY: 'ddkey' });
     await importInstrumentation();
 
     expect(sdkResourceAttributes()).toEqual({
@@ -309,7 +217,6 @@ describe('module-level SDK startup (task 2.1)', () => {
       'service.version': '9.9.9',
     });
 
-    // DD_API_KEY stays dynamic (readEnv): process.env drives it.
     const traceCfg = traceExporterConfig();
     expect(traceCfg.headers).toEqual({
       'dd-api-key': 'ddkey',
@@ -317,27 +224,15 @@ describe('module-level SDK startup (task 2.1)', () => {
     });
 
     const logCfg = otelState.logExporterSpy.mock.calls[0][0] as { url: string; headers: Record<string, string> };
-    expect(logCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/logs');
+    expect(logCfg.url).toBe('https://http-intake.datadoghq.eu/api/v0.2/otlp/v1/logs');
     expect(logCfg.headers).toEqual({ 'dd-api-key': 'ddkey' });
   });
 
-  it('defaults: service.name falls back to woss-io, env/version omitted when unset', async () => {
+  it('defaults: service.name=woss.io, optional attrs omitted, empty dd-api-key', async () => {
     await importInstrumentation(); // env cleared
 
-    expect(sdkResourceAttributes()).toEqual({
-      'service.name': 'woss-io',
-    });
+    expect(sdkResourceAttributes()).toEqual({ 'service.name': 'woss.io' });
     expect(traceExporterConfig().headers['dd-api-key']).toBe('');
-  });
-
-  it('enables diag logger only when OTEL_DIAG_DEBUG=1', async () => {
-    await importInstrumentation(); // env cleared
-    expect(otelState.diagSetLoggerSpy).not.toHaveBeenCalled();
-
-    setProcessEnv({ OTEL_DIAG_DEBUG: '1' });
-    await importInstrumentation();
-    expect(otelState.diagSetLoggerSpy).toHaveBeenCalledTimes(1);
-    expect(otelState.diagSetLoggerSpy.mock.calls[0].length).toBe(2); // (logger, logLevel)
   });
 
   it('each fresh module import starts exactly one SDK', async () => {
@@ -364,10 +259,10 @@ describe('exported init() idempotency', () => {
   });
 });
 
-describe('OTEL_SDK_DISABLED gate (process.env)', () => {
+describe('OTEL_SDK_DISABLED gate ($env/dynamic/private)', () => {
   it('module import does not start the SDK when OTEL_SDK_DISABLED=1', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    setProcessEnv({ OTEL_SDK_DISABLED: '1' });
+    setMockEnv({ OTEL_SDK_DISABLED: '1' });
     const mod = await importInstrumentation();
 
     expect(otelState.nodeSDKSpy).not.toHaveBeenCalled();
@@ -381,23 +276,23 @@ describe('OTEL_SDK_DISABLED gate (process.env)', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('is re-evaluated on each startSdk() call via process.env', async () => {
-    setProcessEnv({ OTEL_SDK_DISABLED: '1' });
+  it('is re-evaluated on each startSdk() call via $env/dynamic/private', async () => {
+    setMockEnv({ OTEL_SDK_DISABLED: '1' });
     const mod = await importInstrumentation();
     expect(otelState.nodeSDKSpy).not.toHaveBeenCalled();
 
-    // process.env is read inside startSdk() — changing it before init() re-evaluates the gate.
-    setProcessEnv({ OTEL_SDK_DISABLED: undefined });
+    // $env/dynamic/private is dynamic — changing it before init() re-evaluates the gate.
+    setMockEnv({ OTEL_SDK_DISABLED: undefined });
     expect(mod.init()).toBeUndefined();
     expect(otelState.nodeSDKSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('is re-evaluated per fresh import from process.env', async () => {
-    setProcessEnv({ OTEL_SDK_DISABLED: '1' });
+  it('is re-evaluated per fresh import from $env/dynamic/private', async () => {
+    setMockEnv({ OTEL_SDK_DISABLED: '1' });
     await importInstrumentation();
     expect(otelState.nodeSDKSpy).not.toHaveBeenCalled();
 
-    setProcessEnv({ OTEL_SDK_DISABLED: undefined });
+    setMockEnv({ OTEL_SDK_DISABLED: undefined });
     await importInstrumentation();
     expect(otelState.nodeSDKSpy).toHaveBeenCalledTimes(1);
   });
@@ -445,16 +340,6 @@ describe('shutdown()', () => {
     await expect(mod.shutdown()).resolves.toBeUndefined();
     expect(otelState.nodeSDKInstances).toHaveLength(1);
     expect(otelState.nodeSDKInstances[0].start).toHaveBeenCalledTimes(1);
-    expect(otelState.nodeSDKInstances[0].shutdown).toHaveBeenCalledTimes(1);
-  });
-
-  it('flushes the SDK when adapter-node emits sveltekit:shutdown', async () => {
-    await importInstrumentation();
-
-    process.emit('sveltekit:shutdown' as never, 'SIGTERM');
-    await new Promise((resolve) => setTimeout(resolve, 0)); // flush microtasks
-
-    expect(otelState.nodeSDKInstances).toHaveLength(1);
     expect(otelState.nodeSDKInstances[0].shutdown).toHaveBeenCalledTimes(1);
   });
 
