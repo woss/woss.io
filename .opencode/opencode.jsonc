@@ -1,8 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": [
-		"./tools/philosophy.md"
-	],
+    "./tools/philosophy.md"
+  ],
   "lsp": true,
   "formatter": true,
   "experimental": {
@@ -60,17 +60,16 @@
       "type": "remote",
       "url": "http://localhost:5173/mcp",
       "enabled": true
-		},
-		"gh_grep": {
-			"type": "remote",
-			"url": "https://mcp.grep.app",
-			"enabled": true
-		}
+    },
+    "gh_grep": {
+      "type": "remote",
+      "url": "https://mcp.grep.app",
+      "enabled": true
+    }
   },
   "plugin": [
-		"@tarquinen/opencode-dcp@3.1.3",
-		"@franlol/opencode-md-table-formatter@0.0.6"
-	],
+    "@franlol/opencode-md-table-formatter@0.0.6"
+  ],
   "permission": {
     "task": "deny",
     "context7_*": "deny",
@@ -84,8 +83,8 @@
     "gitbutler_*": "deny",
     "pnpm run *": "allow",
     "pnpm add *": "allow",
-		"ls -la *": "allow",
-		"worktree_*": "deny"
+    "ls -la *": "allow",
+    "worktree_*": "deny"
   },
   "agent": {
     "researcher": {
@@ -198,8 +197,8 @@
           "sqlite3 *": "allow",
           "*": "deny"
         },
-				"task": "allow",
-				"worktree_*": "allow"
+        "task": "allow",
+        "worktree_*": "allow"
       }
     },
     "build": {
@@ -210,8 +209,8 @@
         "bash": {
           "*": "deny"
         },
-				"task": "allow",
-				"worktree_*": "allow"
+        "task": "allow",
+        "worktree_*": "allow"
       }
     },
     "explore": {
@@ -238,14 +237,14 @@
           "hostname": "allow",
           "whoami": "allow",
           "which *": "allow",
-					"realpath *": "allow",
-					"git status*": "allow",
-					"git log*": "allow",
-					"git diff*": "allow",
-					"git show*": "allow",
-					"git blame*": "allow",
-					"git branch*": "allow",
-					"git ls-files*": "allow"
+          "realpath *": "allow",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "allow",
+          "git show*": "allow",
+          "git blame*": "allow",
+          "git branch*": "allow",
+          "git ls-files*": "allow"
         }
       }
     }
