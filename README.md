@@ -17,7 +17,8 @@ Beyond the chat, there's:
 - **Dark and light mode**: follows your system preference, handled by sv5ui theming
 - **Rate limiting**: SQLite-backed, 10 requests per minute per IP
 - **GeoIP**: country detection via geoip-country so I know roughly where visitors are
-- **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing
+- **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing, and optional Datadog log export when `DD_API_KEY` is set
+- **Client monitoring**: Datadog RUM bootstrapped in the client hooks — session replay and page-view telemetry to the EU org, silently off unless you set `PUBLIC_DD_RUM_APP_ID` and `PUBLIC_DD_RUM_CLIENT_TOKEN`
 - **Webhooks**: events pushed to external URLs when interesting things happen
 - **Message reactions**: upvote, downvote, or heart AI responses
 - **Reasoning display**: collapsible "thinking" accordion showing model chain-of-thought with character count badge; reasoning is preserved across multi-round tool calls and passed back to thinking-mode models (e.g. `deepseek-v4-flash-free`) as `reasoning_content`
@@ -73,29 +74,41 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 
 ## Configuration
 
-| Variable                      | Default                    | Description                            |
-| ----------------------------- | -------------------------- | -------------------------------------- |
-| `ORIGIN`                      | `http://localhost:5173`    | App origin for CORS/redirects          |
-| `PROVIDER_API_KEY`            | `public`                   | API key for your LLM endpoint          |
-| `LLM_PROVIDER_BASE_URL`       | `http://localhost:1234/v1` | OpenAI-compatible API base URL         |
-| `MAIN_MODEL`                  | `mistralai/ministral-3-3b` | Model ID to use                        |
-| `MAX_TOKENS`                  | `10000`                    | Max output tokens                      |
-| `FIRST_ROUND_MAX_STEPS`       | `5`                        | Max tool steps in first round          |
-| `TOOL_CLASSIFY_TIMEOUT_MS`    | `15000`                    | Tool classification timeout (ms)       |
-| `TOOL_CLASSIFY_MODEL`         | -                          | Model for tool classification          |
-| `RELEVANCE_CHECK_MODEL`       | -                          | Model for relevance scoring            |
-| `MAX_ROUNDS`                  | `3`                        | Max tool-calling rounds                |
-| `MAX_RESULTS_LENGTH`          | `64000`                    | Max content length per search result   |
-| `LLM_CACHE_ENABLED`           | `true`                     | Enable semantic LLM response cache     |
-| `LLM_CACHE_TTL`               | `86400`                    | Cache TTL in seconds                   |
-| `MCP_SERVERS`                 | `[]`                       | JSON array of MCP server configs       |
-| `GITHUB_TOKEN`                | -                          | GitHub PAT (referenced in MCP_SERVERS) |
-| `PUBLIC_MAX_MESSAGES`         | `10`                       | Max messages per chat                  |
-| `PUBLIC_MAX_CHATS`            | `3`                        | Max chats per visitor                  |
-| `WOSS_USER_WEBHOOK_URL`       | -                          | Webhook URL for events                 |
-| `WOSS_USER_WEBHOOK_ERROR_URL` | -                          | Webhook URL for errors                 |
-| `WOSS_USER_WEBHOOK_TOKEN`     | -                          | Webhook auth token                     |
-| `ZINALOG_ENCRYPTION_KEY`      | -                          | Encryption key for ZinaLog container   |
+| Variable                      | Default                    | Description                                     |
+| ----------------------------- | -------------------------- | ----------------------------------------------- |
+| `ORIGIN`                      | `http://localhost:5173`    | App origin for CORS/redirects                   |
+| `PROVIDER_API_KEY`            | `public`                   | API key for your LLM endpoint                   |
+| `LLM_PROVIDER_BASE_URL`       | `http://localhost:1234/v1` | OpenAI-compatible API base URL                  |
+| `MAIN_MODEL`                  | `mistralai/ministral-3-3b` | Model ID to use                                 |
+| `MAX_TOKENS`                  | `10000`                    | Max output tokens                               |
+| `FIRST_ROUND_MAX_STEPS`       | `5`                        | Max tool steps in first round                   |
+| `TOOL_CLASSIFY_TIMEOUT_MS`    | `15000`                    | Tool classification timeout (ms)                |
+| `TOOL_CLASSIFY_MODEL`         | -                          | Model for tool classification                   |
+| `RELEVANCE_CHECK_MODEL`       | -                          | Model for relevance scoring                     |
+| `MAX_ROUNDS`                  | `3`                        | Max tool-calling rounds                         |
+| `MAX_RESULTS_LENGTH`          | `64000`                    | Max content length per search result            |
+| `LLM_CACHE_ENABLED`           | `true`                     | Enable semantic LLM response cache              |
+| `LLM_CACHE_TTL`               | `86400`                    | Cache TTL in seconds                            |
+| `MCP_SERVERS`                 | `[]`                       | JSON array of MCP server configs                |
+| `GITHUB_TOKEN`                | -                          | GitHub PAT (referenced in MCP_SERVERS)          |
+| `PUBLIC_MAX_MESSAGES`         | `10`                       | Max messages per chat                           |
+| `PUBLIC_MAX_CHATS`            | `3`                        | Max chats per visitor                           |
+| `WOSS_USER_WEBHOOK_URL`       | -                          | Webhook URL for events                          |
+| `WOSS_USER_WEBHOOK_ERROR_URL` | -                          | Webhook URL for errors                          |
+| `WOSS_USER_WEBHOOK_TOKEN`     | -                          | Webhook auth token                              |
+| `ZINALOG_ENCRYPTION_KEY`      | -                          | Encryption key for ZinaLog container            |
+| `ZINALOG_URL`                 | -                          | ZinaLog ingest URL (enables ZinaLog sink)       |
+| `ZINALOG_API_KEY`             | -                          | ZinaLog ingest API key                          |
+| `DD_SITE`                     | `datadoghq.eu`             | Datadog site for the logs intake host           |
+| `DD_API_KEY`                  | -                          | Datadog API key (enables Datadog logs sink)     |
+| `PUBLIC_DD_RUM_APP_ID`        | -                          | Datadog RUM application ID (enables client RUM) |
+| `PUBLIC_DD_RUM_CLIENT_TOKEN`  | -                          | Datadog RUM client token (enables client RUM)   |
+
+### Datadog RUM
+
+Client-side Real User Monitoring boots at startup via `src/hooks.client.ts`. Sessions sample at 100% with session replay at 20% (resources, long tasks, and user interactions tracked; input masked by default). Data goes to the EU org (`datadoghq.eu`) tagged `service: woss-io` and `env: dev`, mirroring the server-side log export values.
+
+Set `PUBLIC_DD_RUM_APP_ID` and `PUBLIC_DD_RUM_CLIENT_TOKEN` in `.env` to enable. Without them the app runs with no RUM — silent skip, no errors, no SDK calls.
 
 ### MCP Endpoint
 
@@ -199,7 +212,7 @@ The tech side in one shot:
 - **MCP Client**: @modelcontextprotocol/sdk
 - **MCP Server**: Streamable HTTP transport at POST /mcp, Accept header normalization
 - **OG Images**: Satori + resvg-js
-- **Logging**: LogTape + ZinaLog
+- **Logging**: LogTape + ZinaLog, optional Datadog export
 - **Container**: Docker + Docker Compose
 
 ## License

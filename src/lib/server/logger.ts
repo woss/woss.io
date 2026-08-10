@@ -24,10 +24,11 @@ import {
 } from '@logtape/logtape';
 import { getRotatingFileSink } from '@logtape/file';
 import { getPrettyFormatter } from '@logtape/pretty';
-import { env } from 'node:process';
+import { env } from '$env/dynamic/private';
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { traceStorage } from './trace-context';
+import { truncateLogMessage } from './log-truncate';
 
 // Level mapping: LogTape → ZinaLog
 const ZINA_LEVEL_MAP: Record<string, string> = {
@@ -79,6 +80,37 @@ function getZinaLogSink(url: string, apiKey: string): Sink {
   };
 }
 
+function getDatadogLogSink(url: string, apiKey: string): Sink {
+  return (record: LogRecord) => {
+    const level = ZINA_LEVEL_MAP[record.level] ?? 'info';
+    // Truncate on the live export path before serialization (FR-003, 1 MiB cap)
+    const message = truncateLogMessage(formatLogtapeMessage(record.message));
+    const service = record.category.join('.');
+    const body: Record<string, unknown> = { level, message, service };
+    // Attach trace context to metadata
+    const { traceId, spanId } = record.properties as Record<string, string | undefined>;
+    if (traceId || spanId) {
+      const metadata: Record<string, string> = {};
+      if (traceId) metadata.traceId = traceId;
+      if (spanId) metadata.spanId = spanId;
+      body.metadata = metadata;
+    }
+    const bodyStr = JSON.stringify(body);
+    // Fire-and-forget POST — non-blocking
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'DD-API-KEY': apiKey,
+      },
+      body: bodyStr,
+    }).catch((err: unknown) => {
+      // fallback: can't use logger here (circular), use console as last resort
+      console.error('[datadog] push failed:', (err as Error)?.message ?? err);
+    });
+  };
+}
+
 /** Categories used across the app — add new ones here. */
 export const CAT = {
   app: ['woss', 'app'] as [string, string],
@@ -117,8 +149,14 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   const logFile = join(logDir, 'woss.io.log');
 
   // ZinaLog sink (if configured)
-  const zinalogUrl = env.ZINALOG_URL;
-  const zinalogApiKey = env.ZINALOG_API_KEY;
+  // process.env fallbacks keep vite-node consumers (build-index.ts, download-model.ts) working.
+  const zinalogUrl = env.ZINALOG_URL ?? process.env.ZINALOG_URL;
+  const zinalogApiKey = env.ZINALOG_API_KEY ?? process.env.ZINALOG_API_KEY;
+
+  // Datadog logs sink (if configured)
+  const ddSite = env.DD_SITE ?? process.env.DD_SITE ?? 'datadoghq.eu';
+  const ddApiKey = env.DD_API_KEY ?? process.env.DD_API_KEY;
+  const datadogUrl = `https://http-intake.${ddSite}/api/v2/logs`;
 
   const sinks: Record<string, Sink> = {
     console: getConsoleSink({
@@ -139,6 +177,11 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   if (zinalogUrl && zinalogApiKey) {
     sinks.zinalog = getZinaLogSink(zinalogUrl, zinalogApiKey);
     extraSinks.push('zinalog');
+  }
+
+  if (ddApiKey) {
+    sinks.datadog = getDatadogLogSink(datadogUrl, ddApiKey);
+    extraSinks.push('datadog');
   }
 
   await configure({

@@ -8,14 +8,14 @@ import { env } from '$env/dynamic/private';
 
 const APP_ORIGIN = config().app.origin;
 
-function buildCspPolicy(): string {
+export function buildCspPolicy(): string {
   const directives = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' https://u.macula.link data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
+    "connect-src 'self' https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com https://browser-intake-datadoghq.eu https://*.browser-intake-datadoghq.eu",
     "worker-src 'self' blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",

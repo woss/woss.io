@@ -145,7 +145,7 @@ export async function streamWithRetry(
   let anySuccessfulToolCalls;
   let doomLoopDetectedInRound = false;
   // Use message_id passed from orchestrator for tool-call FK tracking
-  const db = getDbService().getDb();
+  const db = getDbService().getDb()!;
   const toolCallStmt = db.prepare(
     `INSERT INTO tool_calls (id, message_id, name, server_id, tool_input, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
   );

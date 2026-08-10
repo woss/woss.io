@@ -96,7 +96,7 @@ export async function startGeneration(
     log.info`🎯 queryType=${queryType} "${text.slice(0, 80)}"`;
     // Persist query_type on the user message
     if (userMsgId) {
-      getDbService().getDb().prepare('UPDATE messages SET query_type = ? WHERE id = ?').run(queryType, userMsgId);
+      getDbService().getDb()!.prepare('UPDATE messages SET query_type = ? WHERE id = ?').run(queryType, userMsgId);
     }
 
     // 5. RAG search (skip for tool-only queries)

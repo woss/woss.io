@@ -8,6 +8,10 @@ const config = {
   },
   kit: {
     adapter: adapter(),
+    experimental: {
+      tracing: { server: true },
+      instrumentation: { server: true },
+    },
     paths: {
       relative: false,
     },
