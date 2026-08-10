@@ -66,7 +66,7 @@ function finishEvent(
 
 /** @group ModelMessage Converter */
 
-function toModelMessages(messages: ChatMessage[]): Array<ModelMessage> {
+export function toModelMessages(messages: ChatMessage[]): Array<ModelMessage> {
   const result: Array<ModelMessage> = [];
   for (const m of messages) {
     switch (m.role) {
@@ -77,7 +77,17 @@ function toModelMessages(messages: ChatMessage[]): Array<ModelMessage> {
         result.push({ role: 'user', content: m.content });
         break;
       case 'assistant':
-        result.push({ role: 'assistant', content: m.content });
+        if (m.reasoning) {
+          result.push({
+            role: 'assistant',
+            content: [
+              { type: 'reasoning', text: m.reasoning },
+              { type: 'text', text: m.content },
+            ],
+          });
+        } else {
+          result.push({ role: 'assistant', content: m.content });
+        }
         break;
       case 'tool':
         result.push({
@@ -114,6 +124,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   tool_call_id?: string;
+  reasoning?: string;
 }
 
 /** @group Configuration */
@@ -183,7 +194,7 @@ export function buildRagPrompt(question: string, chunks: RagChunk[], history?: C
     const filtered = history.filter((m) => m.role === 'user' || m.role === 'assistant');
     const slice = filtered.length > MAX_HISTORY_MESSAGES ? filtered.slice(-MAX_HISTORY_MESSAGES) : filtered;
     for (const msg of slice) {
-      messages.push({ role: msg.role, content: msg.content });
+      messages.push({ role: msg.role, content: msg.content, ...(msg.reasoning ? { reasoning: msg.reasoning } : {}) });
     }
   }
 
@@ -287,6 +298,7 @@ export function chatStreamWithTools(
             let roundToolCalls = 0;
             let roundTextLength = 0;
             let roundText = '';
+            let roundReasoning = '';
             const roundToolResults: string[] = [];
             const roundToolCallRecords: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
 
@@ -309,6 +321,7 @@ export function chatStreamWithTools(
                         emit.single(textDeltaEvent(chunk.text));
                         break;
                       case 'reasoning-delta':
+                        roundReasoning += chunk.text;
                         emit.single(reasoningDeltaEvent(chunk.text));
                         break;
                       case 'tool-call':
@@ -419,6 +432,7 @@ export function chatStreamWithTools(
                         currentMessages.push({
                           role: 'assistant',
                           content: [
+                            ...(roundReasoning ? [{ type: 'reasoning' as const, text: roundReasoning }] : []),
                             ...(roundText ? [{ type: 'text' as const, text: roundText }] : []),
                             ...roundToolCallRecords.map((tc) => ({
                               type: 'tool-call' as const,
@@ -427,6 +441,7 @@ export function chatStreamWithTools(
                               input: tc.input,
                             })),
                           ] as Array<
+                            | { type: 'reasoning'; text: string }
                             | { type: 'text'; text: string }
                             | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
                           >,
@@ -472,6 +487,7 @@ export function chatStreamWithTools(
                         currentMessages.push({
                           role: 'assistant',
                           content: [
+                            ...(roundReasoning ? [{ type: 'reasoning' as const, text: roundReasoning }] : []),
                             ...(roundText ? [{ type: 'text' as const, text: roundText }] : []),
                             ...roundToolCallRecords.map((tc) => ({
                               type: 'tool-call' as const,
@@ -480,6 +496,7 @@ export function chatStreamWithTools(
                               input: tc.input,
                             })),
                           ] as Array<
+                            | { type: 'reasoning'; text: string }
                             | { type: 'text'; text: string }
                             | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
                           >,

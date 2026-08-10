@@ -36,6 +36,8 @@ The streaming refactor is complete:
 - `buildToolSet()` converts MCP tools to AI SDK `ToolSet` format
 - `maxSteps: 5` for multi-round tool execution
 - `onChunk` emits `text-delta`, `tool-call`, `tool-result`, `reasoning-delta` events
+- `reasoning-delta` → `publishLive('reasoning')` → accumulated in SSE store → displayed in collapsible accordion in ChatMessage
+- Reasoning text preserved through streaming session and included in `done` event payload
 - Tool descriptions improved with usage guidance per tool
 - Tools filtered from 43 → 20 (Q&A-relevant read-only only)
 - System prompt updated: "Start with context, use tools if lacking" (resolves contradiction)

@@ -1,7 +1,7 @@
 <script lang="ts">
  import { browser } from '$app/environment';
  import { resolve } from '$app/paths';
- import type { ExperienceEntry } from '$content';
+  import type { ExperienceEntry } from '$lib/types';
  import Seo from '$lib/components/Seo.svelte';
  import { SvelteDate } from 'svelte/reactivity';
  import { toast } from 'svelte-sonner';

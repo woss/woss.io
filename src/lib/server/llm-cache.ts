@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Index, MetricKind, ScalarKind } from 'usearch';
 import { EMBEDDING_DIM } from '../search-config.ts';
-import { getDb } from './db.ts';
+import { getDbService } from './db-service';
 import { config } from './config.ts';
 import { CAT, createLogger } from './logger';
 
@@ -97,7 +97,7 @@ export function checkCache(
 
   if (distance > HIT_THRESHOLD) return null;
 
-  const db = getDb();
+  const db = getDbService().getDb();
   const row = db.prepare('SELECT answer, sources, tool_calls, created_at FROM llm_cache WHERE id = ?').get(cacheId) as
     | { answer: string; sources: string; tool_calls: string | null; created_at: string }
     | undefined;
@@ -130,7 +130,7 @@ export function storeCache(
 ): void {
   if (!answer) return; // Don't cache empty answers
 
-  const db = getDb();
+  const db = getDbService().getDb();
   const idx = getIndex();
 
   const result = db

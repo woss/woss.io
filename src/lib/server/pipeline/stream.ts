@@ -1,16 +1,14 @@
 import { publishLive } from '$lib/server/chat-events';
-import { ensureModel, getDb } from '$lib/server/db';
+import { getDbService } from '$lib/server/db-service';
 import { chatStreamWithTools } from '$lib/server/openai-provider';
 import type { LLMEvent } from '$lib/server/llm/types';
 import type { McpToolDef } from '$lib/server/mcp/tools';
 import { getDoomLoopRecoveryPrompt } from '../prompts.ts';
 import { hasDsmlBlocks, stripDsmlBlocks } from './dsml-parser.ts';
 import { config } from '$lib/server/config';
-import { setMsgId } from '../trace-context.ts';
 import { CAT, createLogger } from '$lib/server/logger';
 import type { ChatMessage } from '$lib/server/openai-provider';
 import { Effect, Stream } from 'effect';
-import { randomUUID } from '$lib/utils/random-uuid';
 
 const log = createLogger(CAT.chat);
 
@@ -127,6 +125,7 @@ export async function streamWithRetry(
   chatId: string,
   abortController: AbortController,
   toolServerMap: Map<string, string>,
+  msgId: string,
 ): Promise<StreamResult> {
   publishLive(chatId, 'status', { step: 'generating' });
   let lastError: Error | null = null;
@@ -135,6 +134,7 @@ export async function streamWithRetry(
   let reasoningText = '';
 
   let currentModelId = 0;
+  let pendingModel: { provider: string; modelName: string; actualModelName: string; maxTokens: number } | undefined;
   let tokenUsage = { promptTokens: 0, completionTokens: 0 };
   let responseMs = 0;
   let maxTokens = 0;
@@ -144,12 +144,8 @@ export async function streamWithRetry(
   let anyStepHadToolCalls = false;
   let anySuccessfulToolCalls;
   let doomLoopDetectedInRound = false;
-  const collectedToolCalls: { name: string; serverId: string }[] = [];
-
-  // Pre-generate message ID for tool-call FK tracking
-  const db = getDb();
-  const msgId = randomUUID();
-  setMsgId(msgId);
+  // Use message_id passed from orchestrator for tool-call FK tracking
+  const db = getDbService().getDb();
   const toolCallStmt = db.prepare(
     `INSERT INTO tool_calls (id, message_id, name, server_id, tool_input, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
   );
@@ -189,15 +185,16 @@ export async function streamWithRetry(
                 break;
               case 'reasoning-delta':
                 reasoningText += event.text;
+                publishLive(chatId, 'reasoning', { text: reasoningText });
                 break;
               case 'finish': {
                 if (event.actualModelName || event.modelName) {
-                  currentModelId = ensureModel(
-                    event.provider ?? String(config().openai.baseUrl),
-                    event.modelName ?? config().openai.model,
-                    event.actualModelName ?? event.modelName ?? config().openai.model,
-                    event.maxTokens ?? config().openai.maxTokens,
-                  );
+                  pendingModel = {
+                    provider: event.provider ?? String(config().openai.baseUrl),
+                    modelName: event.modelName ?? config().openai.model,
+                    actualModelName: event.actualModelName ?? event.modelName ?? config().openai.model,
+                    maxTokens: event.maxTokens ?? config().openai.maxTokens,
+                  };
                 }
                 if (event.usage) {
                   tokenUsage = {
@@ -217,10 +214,6 @@ export async function streamWithRetry(
                 break;
               case 'tool-call':
                 log.debug`Tool call: ${event.name}(${JSON.stringify(event.input)})`;
-                collectedToolCalls.push({
-                  name: event.name,
-                  serverId: toolServerMap.get(event.name) ?? 'unknown',
-                });
                 publishLive(chatId, 'tool_call_start', {
                   id: event.id,
                   name: event.name,
@@ -259,6 +252,17 @@ export async function streamWithRetry(
         ),
       );
       log.debug`RAW_LLM_OUTPUT:\n${answerText}`;
+
+      // Resolve model ID after the Effect stream (Effect.sync can't handle async)
+      if (pendingModel) {
+        currentModelId = await getDbService().ensureModel(
+          pendingModel.provider,
+          pendingModel.modelName,
+          pendingModel.actualModelName,
+          pendingModel.maxTokens,
+        );
+        pendingModel = undefined;
+      }
 
       // DSML handling: strip DeepSeek DSML tool call blocks from output
       {
@@ -398,6 +402,15 @@ export async function streamWithRetry(
     }
   }
 
+  // Query tool calls saved to DB during streaming (no in-memory buffering)
+  let toolCalls: { name: string; serverId: string }[] = [];
+  try {
+    const records = await getDbService().getToolCallsByMessageId(msgId);
+    toolCalls = records.map((r) => ({ name: r.name, serverId: r.serverId }));
+  } catch (e) {
+    log.warn`Failed to query tool calls from DB: ${e}`;
+  }
+
   return {
     answerText,
     reasoningText,
@@ -411,6 +424,6 @@ export async function streamWithRetry(
     msgId,
     toolLoopDetected: doomLoopDetectedInRound,
     irrecoverable,
-    toolCalls: collectedToolCalls,
+    toolCalls,
   };
 }

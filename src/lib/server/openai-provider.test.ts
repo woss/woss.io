@@ -48,8 +48,22 @@ vi.mock('$lib/server/sanitize', () => ({
   sanitizeText: vi.fn((x: string) => x),
 }));
 
-import { mergeSameRole, buildRagPrompt, mapFinishReason, isAvailable } from './openai-provider';
+vi.mock('ai', () => ({
+  jsonSchema: vi.fn(),
+  streamText: vi.fn(),
+}));
+
+import {
+  mergeSameRole,
+  buildRagPrompt,
+  mapFinishReason,
+  isAvailable,
+  toModelMessages,
+  chatStreamWithTools,
+} from './openai-provider';
 import type { ChatMessage } from './openai-provider';
+import { Effect, Stream } from 'effect';
+import { streamText } from 'ai';
 
 describe('mergeSameRole', () => {
   it('leaves alternating roles unchanged', () => {
@@ -302,5 +316,246 @@ describe('isAvailable', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
     const result = await isAvailable();
     expect(result).toBe(false);
+  });
+});
+
+// ===========================================================================
+// toModelMessages
+// ===========================================================================
+
+describe('toModelMessages', () => {
+  it('maps assistant message with reasoning to reasoning + text content array', () => {
+    const messages: ChatMessage[] = [{ role: 'assistant', content: 'Answer text', reasoning: 'Reasoning trace' }];
+    const result = toModelMessages(messages);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'reasoning', text: 'Reasoning trace' },
+        { type: 'text', text: 'Answer text' },
+      ],
+    });
+  });
+
+  it('maps assistant message without reasoning to plain content string', () => {
+    const messages: ChatMessage[] = [{ role: 'assistant', content: 'Plain answer' }];
+    const result = toModelMessages(messages);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ role: 'assistant', content: 'Plain answer' });
+  });
+
+  it('maps user, system, and tool messages unchanged', () => {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Hello' },
+      { role: 'tool', content: 'Tool output', tool_call_id: 'call_1' },
+    ];
+    const result = toModelMessages(messages);
+    expect(result).toEqual([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Hello' },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call_1',
+            toolName: '',
+            output: { type: 'text', value: 'Tool output' },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('keeps plain string content when reasoning is an empty string (falsy)', () => {
+    const messages: ChatMessage[] = [{ role: 'assistant', content: 'Answer text', reasoning: '' }];
+    const result = toModelMessages(messages);
+    expect(result).toEqual([{ role: 'assistant', content: 'Answer text' }]);
+  });
+
+  it('maps assistant with reasoning and empty text content to reasoning + empty text parts', () => {
+    const messages: ChatMessage[] = [{ role: 'assistant', content: '', reasoning: 'Reasoning only' }];
+    const result = toModelMessages(messages);
+    expect(result).toEqual([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning', text: 'Reasoning only' },
+          { type: 'text', text: '' },
+        ],
+      },
+    ]);
+  });
+
+  it('ignores the reasoning field on non-assistant roles', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'Hello', reasoning: 'Should be ignored' },
+      { role: 'system', content: 'System', reasoning: 'Should be ignored' },
+    ];
+    const result = toModelMessages(messages);
+    expect(result).toEqual([
+      { role: 'user', content: 'Hello' },
+      { role: 'system', content: 'System' },
+    ]);
+  });
+});
+
+// ===========================================================================
+// chatStreamWithTools — reasoning round-trip (runRound reconstruction)
+// ===========================================================================
+
+type MockStreamChunk =
+  | { type: 'text-delta'; text: string }
+  | { type: 'reasoning-delta'; text: string }
+  | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
+  | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown };
+
+type MockStreamTextParams = {
+  model?: unknown;
+  messages?: unknown;
+  allowSystemInMessages?: boolean;
+  abortSignal?: unknown;
+  temperature?: number;
+  maxTokens?: number;
+  tools?: unknown;
+  maxSteps?: number;
+  onChunk?: (info: { chunk: MockStreamChunk }) => void;
+  onError?: (info: { error: unknown }) => void;
+  onFinish?: (event: {
+    finishReason?: string;
+    usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+    response?: { modelId?: string };
+  }) => void;
+};
+
+interface MockRoundOptions {
+  textDeltas?: string[];
+  reasoningDeltas?: string[];
+  toolCalls?: Array<{ toolCallId: string; toolName: string; input: unknown }>;
+  toolResults?: Array<{ toolCallId: string; toolName: string; output: unknown }>;
+  finishReason?: string;
+  capture?: (params: MockStreamTextParams) => void;
+}
+
+const streamTextMock = vi.mocked(streamText) as unknown as {
+  mockImplementationOnce: (impl: (params: MockStreamTextParams) => { text: Promise<string> }) => unknown;
+  mockReset: () => unknown;
+};
+
+function mockStreamTextRound(options: MockRoundOptions): void {
+  streamTextMock.mockImplementationOnce((params) => {
+    options.capture?.(params);
+    // runRound destructures `({ chunk })` from the onChunk callback argument,
+    // matching the real AI SDK contract: onChunk({ chunk: <stream part> })
+    for (const text of options.textDeltas ?? []) {
+      params.onChunk?.({ chunk: { type: 'text-delta', text } });
+    }
+    for (const text of options.reasoningDeltas ?? []) {
+      params.onChunk?.({ chunk: { type: 'reasoning-delta', text } });
+    }
+    for (const tc of options.toolCalls ?? []) {
+      params.onChunk?.({ chunk: { type: 'tool-call', ...tc } });
+    }
+    for (const tr of options.toolResults ?? []) {
+      params.onChunk?.({ chunk: { type: 'tool-result', ...tr } });
+    }
+    params.onFinish?.({
+      finishReason: options.finishReason ?? 'stop',
+      usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 },
+      response: { modelId: 'test-model' },
+    });
+    return { text: Promise.resolve('') };
+  });
+}
+
+describe('chatStreamWithTools reasoning round-trip', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    streamTextMock.mockReset();
+  });
+
+  async function collect(messages: ChatMessage[]): Promise<Array<{ type: string } & Record<string, unknown>>> {
+    const stream = chatStreamWithTools(messages, []);
+    const chunk = await Effect.runPromise(Stream.runCollect(stream));
+    return Array.from(chunk as unknown as Iterable<{ type: string } & Record<string, unknown>>);
+  }
+
+  it('accumulates reasoning-delta chunks and carries reasoning onto the continue-with-tools assistant message', async () => {
+    let round2Params: MockStreamTextParams | undefined;
+
+    mockStreamTextRound({
+      textDeltas: ['Querying the database now.'],
+      reasoningDeltas: ['Let me reason', ' about the query'],
+      toolCalls: [{ toolCallId: 'call_1', toolName: 'search', input: { q: 'paris' } }],
+      toolResults: [{ toolCallId: 'call_1', toolName: 'search', output: { text: 'db result' } }],
+      finishReason: 'tool-calls',
+    });
+    mockStreamTextRound({
+      textDeltas: ['Here is the final answer.'],
+      finishReason: 'stop',
+      capture: (p) => {
+        round2Params = p;
+      },
+    });
+
+    const events = await collect([{ role: 'user', content: 'What is the capital of France?' }]);
+
+    // client reasoning-delta events still emitted, one per chunk (not accumulated)
+    const reasoningEvents = events.filter((e) => e.type === 'reasoning-delta');
+    expect(reasoningEvents.map((e) => e.text)).toEqual(['Let me reason', ' about the query']);
+
+    // Round 2 received the reconstructed assistant message with reasoning part first
+    const round2Messages = round2Params?.messages as Array<Record<string, unknown>>;
+    expect(round2Messages).toBeDefined();
+    expect(round2Messages[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'reasoning', text: 'Let me reason about the query' },
+        { type: 'text', text: 'Querying the database now.' },
+        { type: 'tool-call', toolCallId: 'call_1', toolName: 'search', input: { q: 'paris' } },
+      ],
+    });
+    expect(round2Messages[2]).toMatchObject({ role: 'tool' });
+
+    // stream completed normally with a stop finish event
+    const finishEvents = events.filter((e) => e.type === 'finish');
+    expect(finishEvents).toHaveLength(1);
+    expect(finishEvents[0]).toMatchObject({ reason: 'stop' });
+  });
+
+  it('carries reasoning onto the forced-final-round assistant message (interim text path, tools dropped)', async () => {
+    let round2Params: MockStreamTextParams | undefined;
+
+    mockStreamTextRound({
+      // 3+ interim phrases ("let me", "i'll", "i should") without structural content → interim round
+      textDeltas: ["Let me search. I'll fetch. I should verify."],
+      reasoningDeltas: ['Step through', ' options'],
+      toolCalls: [{ toolCallId: 'call_2', toolName: 'lookup', input: { key: 'x' } }],
+      toolResults: [{ toolCallId: 'call_2', toolName: 'lookup', output: 'data' }],
+      finishReason: 'tool-calls',
+    });
+    mockStreamTextRound({
+      textDeltas: ['Done.'],
+      finishReason: 'stop',
+      capture: (p) => {
+        round2Params = p;
+      },
+    });
+
+    const events = await collect([{ role: 'user', content: 'Find the answer' }]);
+
+    const round2Messages = round2Params?.messages as Array<Record<string, unknown>>;
+    expect(round2Messages[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'reasoning', text: 'Step through options' },
+        { type: 'text', text: "Let me search. I'll fetch. I should verify." },
+        { type: 'tool-call', toolCallId: 'call_2', toolName: 'lookup', input: { key: 'x' } },
+      ],
+    });
+    // forced final round runs WITHOUT tools
+    expect(round2Params?.tools).toBeUndefined();
+    expect(events.filter((e) => e.type === 'reasoning-delta').map((e) => e.text)).toEqual(['Step through', ' options']);
   });
 });
