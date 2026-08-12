@@ -22,6 +22,7 @@
 export function hexIdToLow64Decimal(id: string): string {
   const stripped = id.replaceAll('-', '');
   if (stripped.length === 0) return '0';
+  if (!/^[0-9a-fA-F]+$/.test(stripped)) return '0';
   return BigInt(`0x${stripped.slice(-16)}`).toString(10);
 }
 

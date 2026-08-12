@@ -15,11 +15,11 @@
  * undefined here in built mode.
  */
 
-import process from 'node:process';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { logs, NodeSDK, resources, tracing } from '@opentelemetry/sdk-node';
+import { env } from '$env/dynamic/private';
 import { MAX_LOG_MESSAGE_BYTES, truncateLogMessage } from './lib/server/log-truncate';
 
 export { MAX_LOG_MESSAGE_BYTES, truncateLogMessage };
@@ -31,18 +31,21 @@ const DATADOG_LOGS_ENDPOINT = 'https://http-intake.datadoghq.eu/api/v0.2/otlp/v1
 /** `dd-otel-span-mapping` header value: use the span name as the resource name. */
 const SPAN_NAME_AS_RESOURCE_NAME = '{"span_name_as_resource_name": true}';
 
+/** Datadog service name fallback when DD_SERVICE is unset. Must match the RUM service name (see src/lib/client/datadog-rum.ts). */
+const SERVICE_NAME_FALLBACK = 'woss-io';
+
 /** Lazily created SDK; guards against double initialization. */
 let sdk: NodeSDK | undefined;
 
 /**
  * True when the OpenTelemetry SDK must stay disabled (dev, CI, tests).
  *
- * Read once from `process.env` at module scope: process env is populated by
- * the OS before the process starts, so the module-level startup path can rely
- * on it (unlike `$env/dynamic/private`, which the adapter-node facade has not
- * populated yet when this module is imported).
+ * Read from `$env/dynamic/private` inside startSdk() so the SvelteKit env
+ * system has populated it before the check runs. The module-level startup
+ * path (startSdk at module scope) is called during Server.init(), after
+ * $env/dynamic/private is populated.
  */
-const isSdkDisabled = process.env.OTEL_SDK_DISABLED === '1';
+let isSdkDisabled = false;
 
 /** Config type accepted by OTLPTraceExporter's constructor (OTel 0.221). */
 type TraceExporterNodeConfig = NonNullable<ConstructorParameters<typeof OTLPTraceExporter>[0]>;
@@ -98,19 +101,19 @@ class TruncatingLogRecordExporter implements OTelLogRecordExporter {
 /**
  * Build the SDK Resource carrying Datadog service identity.
  *
- * `service.name` falls back to `woss.io` when `DD_SERVICE` is unset;
+ * `service.name` falls back to `woss-io` (SERVICE_NAME_FALLBACK) when `DD_SERVICE` is unset;
  * `deployment.environment` and `service.version` are only included when
  * their environment variables are defined.
  */
 function createResource(): ReturnType<typeof resources.resourceFromAttributes> {
   const attributes: Record<string, string> = {
-    'service.name': process.env.DD_SERVICE || 'woss-io',
+    'service.name': env.DD_SERVICE || SERVICE_NAME_FALLBACK,
   };
-  if (process.env.DD_ENV) {
-    attributes['deployment.environment'] = process.env.DD_ENV;
+  if (env.DD_ENV) {
+    attributes['deployment.environment'] = env.DD_ENV;
   }
-  if (process.env.DD_VERSION) {
-    attributes['service.version'] = process.env.DD_VERSION;
+  if (env.DD_VERSION) {
+    attributes['service.version'] = env.DD_VERSION;
   }
   return resources.resourceFromAttributes(attributes);
 }
@@ -125,6 +128,8 @@ function createResource(): ReturnType<typeof resources.resourceFromAttributes> {
  * Errors are logged and swallowed so telemetry never crashes the server.
  */
 function startSdk(): void {
+  // Read from SvelteKit's env system — process.env is unreliable in built mode.
+  isSdkDisabled = env.OTEL_SDK_DISABLED === '1';
   if (isSdkDisabled || sdk) {
     return;
   }
@@ -135,7 +140,7 @@ function startSdk(): void {
       // gzip is a CompressionAlgorithm member; the enum type lives in otlp-exporter-base (not root-importable).
       compression: 'gzip' as TraceExporterNodeConfig['compression'],
       headers: {
-        'dd-api-key': process.env.DD_API_KEY ?? '',
+        'dd-api-key': env.DD_API_KEY ?? '',
         'dd-otel-span-mapping': SPAN_NAME_AS_RESOURCE_NAME,
         // `dd-otlp-source` is deliberately absent — it triggers a 403 from
         // the agentless OTLP intake.
@@ -148,7 +153,7 @@ function startSdk(): void {
         // gzip is a CompressionAlgorithm member; the enum type lives in otlp-exporter-base (not root-importable).
         compression: 'gzip' as TraceExporterNodeConfig['compression'],
         headers: {
-          'dd-api-key': process.env.DD_API_KEY ?? '',
+          'dd-api-key': env.DD_API_KEY ?? '',
           // `dd-otlp-source` is deliberately absent — see the trace exporter.
         },
       }),
@@ -176,7 +181,14 @@ function startSdk(): void {
       }),
       // http + https only: HttpInstrumentation covers both modules. undici,
       // fs, and dns instrumentations are intentionally excluded.
-      instrumentations: [new HttpInstrumentation()],
+      instrumentations: [
+        new HttpInstrumentation({
+          ignoreOutgoingRequestHook: (request) => {
+            const host = request.hostname || '';
+            return host.includes('datadoghq.eu') || host.includes('datadoghq.com');
+          },
+        }),
+      ],
     });
 
     sdk.start();
