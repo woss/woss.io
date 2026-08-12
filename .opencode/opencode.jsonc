@@ -12,6 +12,7 @@
   "enabled_providers": [
     "opencode"
   ],
+  "provider": {},
   "mcp": {
     "datadog": {
       "type": "remote",
