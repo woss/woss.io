@@ -12,7 +12,13 @@
   "enabled_providers": [
     "opencode"
   ],
+  "provider": {},
   "mcp": {
+    "datadog": {
+      "type": "remote",
+      "url": "https://mcp.datadoghq.eu/v1/mcp",
+      "oauth": {}
+    },
     "ocv": {
       "type": "local",
       "command": [
@@ -68,7 +74,11 @@
     }
   },
   "plugin": [
-    "@franlol/opencode-md-table-formatter@0.0.6"
+    "@franlol/opencode-md-table-formatter@0.0.6",
+    "opencode-swarm@latest",
+    // "@tarquinen/opencode-dcp@latest",
+    "opencode-acp@stable",
+    "/Users/woss/.config/opencode/plugins/headroom-opencode/dist/entry.opencode.js"
   ],
   "permission": {
     "task": "deny",
