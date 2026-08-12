@@ -1,3 +1,4 @@
+import { context, trace } from '@opentelemetry/api';
 import { config } from '$lib/server/config';
 import { initLogger, CAT, createLogger } from '$lib/server/logger';
 import { generateTraceId, generateSpanId, withTrace } from '$lib/server/trace-context';
@@ -27,70 +28,77 @@ export function buildCspPolicy(): string {
 let logInitialized = false;
 
 export const handle: Handle = async ({ event, resolve }) => {
-  // Init logger on first request
-  if (!logInitialized) {
-    logInitialized = true;
-    const VALID_LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error'] as const;
-    type LogLevel = (typeof VALID_LOG_LEVELS)[number];
-    const rawLevel = env.LOG_LEVEL;
-    const logLevel: LogLevel = VALID_LOG_LEVELS.includes(rawLevel as LogLevel) ? (rawLevel as LogLevel) : 'info';
-    await initLogger(logLevel);
-    const log = createLogger(CAT.hooks);
-    log.info(`Logger initialized. App origin: ${APP_ORIGIN}`);
-  }
+  const span = trace.getSpan(context.active());
+  const ids = span
+    ? { traceId: span.spanContext().traceId, spanId: span.spanContext().spanId }
+    : { traceId: generateTraceId(), spanId: generateSpanId() };
 
-  const log = createLogger(CAT.hooks);
-
-  // Only check /api/* routes in production
-  if (!dev && event.url.pathname.startsWith('/api/')) {
-    const origin = event.request.headers.get('origin');
-    const referer = event.request.headers.get('referer');
-
-    if (origin && origin !== APP_ORIGIN) {
-      log.warn(`Blocked request from invalid origin: ${origin}`);
-      return new Response(JSON.stringify({ error: 'Forbidden: invalid origin' }), {
-        status: 403,
-        headers: { 'content-type': 'application/json' },
-      });
+  // Wrap the entire request path in the trace context so all work performed by
+  // the request shares the active span ids (or the generated fallback ids).
+  return withTrace(ids.traceId, ids.spanId, async () => {
+    // Init logger on first request
+    if (!logInitialized) {
+      logInitialized = true;
+      const VALID_LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error'] as const;
+      type LogLevel = (typeof VALID_LOG_LEVELS)[number];
+      const rawLevel = env.LOG_LEVEL;
+      const logLevel: LogLevel = VALID_LOG_LEVELS.includes(rawLevel as LogLevel) ? (rawLevel as LogLevel) : 'info';
+      await initLogger(logLevel);
+      const log = createLogger(CAT.hooks);
+      log.info(`Logger initialized. App origin: ${APP_ORIGIN}`);
     }
 
-    if (!origin && (!referer || !referer.startsWith(APP_ORIGIN))) {
-      const hasProxyHeaders = event.request.headers.has('cf-ray') || event.request.headers.has('x-forwarded-for');
-      const isSafeMethod = event.request.method === 'GET' || event.request.method === 'HEAD';
+    const log = createLogger(CAT.hooks);
 
-      if (hasProxyHeaders || isSafeMethod) {
-        // Allow through — infra probes, proxy health checks
-      } else {
-        log.warn(`Blocked request with missing origin and no valid referer: ${referer ?? 'none'}`);
-        return new Response(JSON.stringify({ error: 'Forbidden: missing origin and no valid referer' }), {
+    // Only check /api/* routes in production
+    if (!dev && event.url.pathname.startsWith('/api/')) {
+      const origin = event.request.headers.get('origin');
+      const referer = event.request.headers.get('referer');
+
+      if (origin && origin !== APP_ORIGIN) {
+        log.warn(`Blocked request from invalid origin: ${origin}`);
+        return new Response(JSON.stringify({ error: 'Forbidden: invalid origin' }), {
           status: 403,
           headers: { 'content-type': 'application/json' },
         });
       }
+
+      if (!origin && (!referer || !referer.startsWith(APP_ORIGIN))) {
+        const hasProxyHeaders = event.request.headers.has('cf-ray') || event.request.headers.has('x-forwarded-for');
+        const isSafeMethod = event.request.method === 'GET' || event.request.method === 'HEAD';
+
+        if (hasProxyHeaders || isSafeMethod) {
+          // Allow through — infra probes, proxy health checks
+        } else {
+          log.warn(`Blocked request with missing origin and no valid referer: ${referer ?? 'none'}`);
+          return new Response(JSON.stringify({ error: 'Forbidden: missing origin and no valid referer' }), {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+      }
     }
-  }
 
-  // Wrap request with trace context for log correlation
-  const traceId = generateTraceId();
-  const spanId = generateSpanId();
-  const response = await withTrace(traceId, spanId, () => resolve(event));
+    // Resolve the request inside the trace context so all downstream work shares the span ids
+    const response = await resolve(event);
 
-  // CSP headers
-  const csp = buildCspPolicy();
-  const responseHeaders = new Headers(response.headers);
-  if (!responseHeaders.has('Content-Security-Policy')) {
-    responseHeaders.set('Content-Security-Policy', csp);
-  }
-  const cspResponse = new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: responseHeaders,
+    // CSP headers
+    const csp = buildCspPolicy();
+    const responseHeaders = new Headers(response.headers);
+    if (!responseHeaders.has('Content-Security-Policy')) {
+      responseHeaders.set('Content-Security-Policy', csp);
+    }
+    const cspResponse = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+    });
+
+    if (cspResponse.status === 404) {
+      const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
+      const referer = event.request.headers.get('referer') ?? 'none';
+      log.warn`[404] ${event.request.method} ${event.url.pathname} UA=${event.request.headers.get('user-agent') ?? 'none'} Ref=${referer} IP=${ip}`;
+    }
+    return cspResponse;
   });
-
-  if (cspResponse.status === 404) {
-    const ip = event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? event.getClientAddress();
-    const referer = event.request.headers.get('referer') ?? 'none';
-    log.warn`[404] ${event.request.method} ${event.url.pathname} UA=${event.request.headers.get('user-agent') ?? 'none'} Ref=${referer} IP=${ip}`;
-  }
-  return cspResponse;
 };

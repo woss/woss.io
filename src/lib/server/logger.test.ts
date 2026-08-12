@@ -527,11 +527,11 @@ describe('instrumentation.server.ts import-time env + FR-002', () => {
     expect(otelState.httpInstrumentationSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('defaults: DD_SERVICE falls back to woss.io; DD_ENV/DD_VERSION omitted; dd-api-key empty', async () => {
+  it('defaults: DD_SERVICE falls back to woss-io; DD_ENV/DD_VERSION omitted; dd-api-key empty', async () => {
     const mod = await importInstrumentation(); // empty process.env → SDK starts with defaults at import
 
     const sdkConfig = otelState.nodeSDKSpy.mock.calls[0][0] as { resource: { attributes: Record<string, string> } };
-    expect(sdkConfig.resource.attributes).toEqual({ 'service.name': 'woss.io' });
+    expect(sdkConfig.resource.attributes).toEqual({ 'service.name': 'woss-io' });
 
     const traceCfg = otelState.traceExporterSpy.mock.calls[0][0] as { headers: Record<string, string> };
     expect(traceCfg.headers['dd-api-key']).toBe('');

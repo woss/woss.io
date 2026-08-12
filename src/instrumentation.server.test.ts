@@ -228,10 +228,10 @@ describe('module-level SDK startup (task 2.1)', () => {
     expect(logCfg.headers).toEqual({ 'dd-api-key': 'ddkey' });
   });
 
-  it('defaults: service.name=woss.io, optional attrs omitted, empty dd-api-key', async () => {
+  it('defaults: service.name=woss-io, optional attrs omitted, empty dd-api-key', async () => {
     await importInstrumentation(); // env cleared
 
-    expect(sdkResourceAttributes()).toEqual({ 'service.name': 'woss.io' });
+    expect(sdkResourceAttributes()).toEqual({ 'service.name': 'woss-io' });
     expect(traceExporterConfig().headers['dd-api-key']).toBe('');
   });
 

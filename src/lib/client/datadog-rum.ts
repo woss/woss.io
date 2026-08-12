@@ -42,6 +42,17 @@ export function initDatadogRum(): void {
     trackResources: true,
     trackLongTasks: true,
     trackUserInteractions: true,
+    traceContextInjection: 'all',
+    allowedTracingUrls: [
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      (url: string, init?: RequestInit) => {
+        try {
+          return new URL(url).origin === location.origin;
+        } catch {
+          return false;
+        }
+      },
+    ],
     defaultPrivacyLevel: 'mask-user-input',
     service: SERVICE_NAME_FALLBACK,
     env: dev ? 'dev' : 'production',

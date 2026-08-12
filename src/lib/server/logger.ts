@@ -29,6 +29,7 @@ import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { traceStorage } from './trace-context';
 import { truncateLogMessage } from './log-truncate';
+import { hexIdToLow64Decimal, isZeroLow64Decimal } from './datadog-ids';
 
 // Level mapping: LogTape → ZinaLog
 const ZINA_LEVEL_MAP: Record<string, string> = {
@@ -94,6 +95,16 @@ function getDatadogLogSink(url: string, apiKey: string): Sink {
       if (traceId) metadata.traceId = traceId;
       if (spanId) metadata.spanId = spanId;
       body.metadata = metadata;
+    }
+    // Emit Datadog correlation ids as low-64 decimal strings (FR-005).
+    // Both-or-neither (INV-3): emit only when both ids are present and non-zero.
+    if (traceId && spanId) {
+      const ddTraceId = hexIdToLow64Decimal(traceId);
+      const ddSpanId = hexIdToLow64Decimal(spanId);
+      if (!isZeroLow64Decimal(ddTraceId) && !isZeroLow64Decimal(ddSpanId)) {
+        body['dd.trace_id'] = ddTraceId;
+        body['dd.span_id'] = ddSpanId;
+      }
     }
     const bodyStr = JSON.stringify(body);
     // Fire-and-forget POST — non-blocking
