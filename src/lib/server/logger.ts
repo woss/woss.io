@@ -57,6 +57,8 @@ function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefine
     const message = truncateLogMessage(formatLogtapeMessage(record.message));
     const service = record.category.join('.');
     const body: Record<string, unknown> = { level, message, service };
+    // Datadog reserved tag: env:dev / env:production goes in `ddtags`.
+    if (ddEnv) body.ddtags = `env:${ddEnv}`;
     // Attach trace context to metadata
     const { traceId, spanId } = record.properties as Record<string, string | undefined>;
     if (traceId || spanId) {
@@ -84,10 +86,21 @@ function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefine
         'DD-API-KEY': apiKey,
       },
       body: bodyStr,
-    }).catch((err: unknown) => {
-      // fallback: can't use logger here (circular), use console as last resort
-      console.error('[datadog] push failed:', (err as Error)?.message ?? err);
-    });
+    })
+      .then((res) => {
+        if (!res.ok) {
+          // fallback: can't use logger here (circular), use console as last resort
+          console.error(`[datadog] push failed: HTTP ${res.status} ${res.statusText}`);
+        }
+      })
+      .catch((err: unknown) => {
+        // fallback: can't use logger here (circular), use console as last resort
+        console.error(
+          '[datadog] push failed:',
+          (err as Error)?.message ?? err,
+          (err as { cause?: Error })?.cause ?? '',
+        );
+      });
   };
 }
 

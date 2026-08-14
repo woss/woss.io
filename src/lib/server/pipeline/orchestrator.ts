@@ -399,6 +399,7 @@ export async function startGeneration(
         responseMs,
         maxTokens,
         partial,
+        userErrorMessage,
         lastError,
         msgId,
         cacheEmbeddingData,
@@ -408,7 +409,6 @@ export async function startGeneration(
         startTime,
         irrecoverable,
         toolCalls,
-        userErrorMessage,
       }),
     );
   } catch (err) {
