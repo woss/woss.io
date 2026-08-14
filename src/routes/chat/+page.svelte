@@ -74,7 +74,7 @@ async function sendMessage(text: string): Promise<void> {
   }
 
   isLoading = true;
-  const id = await createChatApi(userId);
+  const { id } = await createChatApi(userId);
   if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(trimmed)}`));
   isLoading = false;
 }
@@ -83,13 +83,13 @@ async function sendMessage(text: string): Promise<void> {
 
  async function createChat(): Promise<void> {
  if (!canCreateChat) return;
- const id = await createChatApi(userId);
+ const { id } = await createChatApi(userId);
  if (id) goto(resolve(`/chat/${id}`));
  }
 
  async function askQuestion(question: string): Promise<void> {
  if (!canCreateChat) return;
- const id = await createChatApi(userId);
+ const { id } = await createChatApi(userId);
  if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(question)}`));
  }
 
@@ -147,7 +147,7 @@ async function sendMessage(text: string): Promise<void> {
 			toast.error(`Maximum ${config.public.maxChats} chats reached`);
 			return;
 		}
-		createChatApi(userId).then(id => { if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(t)}`)); });
+		createChatApi(userId).then(({ id }) => { if (id) goto(resolve(`/chat/${id}?q=${encodeURIComponent(t)}`)); });
 	}}
 	/>
 

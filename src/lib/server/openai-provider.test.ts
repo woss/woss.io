@@ -558,4 +558,44 @@ describe('chatStreamWithTools reasoning round-trip', () => {
     expect(round2Params?.tools).toBeUndefined();
     expect(events.filter((e) => e.type === 'reasoning-delta').map((e) => e.text)).toEqual(['Step through', ' options']);
   });
+
+  it('hard-stops instead of recursing forever when the forced-final (no-tools) round still emits tool calls', async () => {
+    let round2Params: MockStreamTextParams | undefined;
+    let callCount = 0;
+
+    // Round 1: interim round (3+ interim phrases) with tool calls → schedules the
+    // forced-final round and flips the forcedFinal flag.
+    mockStreamTextRound({
+      textDeltas: ["Let me search. I'll fetch. I should verify."],
+      toolCalls: [{ toolCallId: 'call_1', toolName: 'lookup', input: { key: 'x' } }],
+      toolResults: [{ toolCallId: 'call_1', toolName: 'lookup', output: 'data' }],
+      finishReason: 'tool-calls',
+      capture: () => {
+        callCount += 1;
+      },
+    });
+    // Round 2: forced-final round runs WITHOUT tools but the model STILL emits a
+    // tool call (the runaway-loop scenario from production logs). The hard-stop
+    // guard must resolve the stream instead of recursing forever.
+    mockStreamTextRound({
+      textDeltas: ["Let me check. I'll retry. I should fetch more."],
+      toolCalls: [{ toolCallId: 'call_2', toolName: 'lookup', input: { key: 'y' } }],
+      toolResults: [{ toolCallId: 'call_2', toolName: 'lookup', output: 'data2' }],
+      finishReason: 'tool-calls',
+      capture: (p) => {
+        round2Params = p;
+        callCount += 1;
+      },
+    });
+
+    const events = await collect([{ role: 'user', content: 'Find the answer' }]);
+
+    // Only 2 streamText calls happened — no unbounded recursion.
+    expect(callCount).toBe(2);
+    // The forced-final round was scheduled without tools.
+    expect(round2Params?.tools).toBeUndefined();
+    // Stream still terminated cleanly with a single finish event.
+    const finishEvents = events.filter((e) => e.type === 'finish');
+    expect(finishEvents).toHaveLength(1);
+  });
 });

@@ -334,7 +334,7 @@ describe('initLogger env access (logger.ts)', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string>; body: string }];
-    expect(url).toBe('https://http-intake.datadoghq.eu/api/v2/logs');
+    expect(url).toBe('https://http-intake.logs.datadoghq.eu/api/v2/logs');
     expect(init.headers['DD-API-KEY']).toBe('dd-key');
     expect(JSON.parse(init.body)).toEqual({ level: 'info', message: 'hello world', service: 'woss.app' });
   });
@@ -350,7 +350,7 @@ describe('initLogger env access (logger.ts)', () => {
     invokeSink('datadog', fakeRecord());
 
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe('https://http-intake.datadoghq.com/api/v2/logs');
+    expect(url).toBe('https://http-intake.logs.datadoghq.com/api/v2/logs');
   });
 
   it('prefers $env.DD_SITE over process.env.DD_SITE', async () => {
@@ -364,7 +364,7 @@ describe('initLogger env access (logger.ts)', () => {
     invokeSink('datadog', fakeRecord());
 
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe('https://http-intake.datadoghq.com/api/v2/logs');
+    expect(url).toBe('https://http-intake.logs.datadoghq.com/api/v2/logs');
   });
 
   it('prefers $env.DD_API_KEY over process.env.DD_API_KEY', async () => {
@@ -379,6 +379,20 @@ describe('initLogger env access (logger.ts)', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }];
     expect(init.headers['DD-API-KEY']).toBe('env-dd-key');
+  });
+
+  it('tags the Datadog log body with env:<DD_ENV> via ddtags', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    setMockEnv({ DD_API_KEY: 'dd-key', DD_ENV: 'dev' });
+    const mod = await importLogger();
+
+    await mod.initLogger();
+    invokeSink('datadog', fakeRecord());
+
+    const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    const body = JSON.parse(init.body) as { ddtags?: string };
+    expect(body.ddtags).toBe('env:dev');
   });
 
   it('FR-003: truncates an oversized message on the live Datadog sink path', async () => {
@@ -485,16 +499,16 @@ describe('instrumentation.server.ts import-time env + FR-002', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
-  it('reads DD_SERVICE/DD_ENV/DD_VERSION/DD_API_KEY from process.env at import time when enabled', async () => {
+  it('bakes DD_SERVICE/DD_ENV/DD_VERSION from $env/static/private, reads DD_API_KEY from process.env when enabled', async () => {
     setProcessEnv({ DD_SERVICE: 'woss-svc', DD_ENV: 'prod', DD_VERSION: '9.9.9', DD_API_KEY: 'ddkey' });
-    const mod = await importInstrumentation(); // import-time side effect constructs the SDK, reading process.env
+    await importInstrumentation(); // import-time side effect constructs the SDK
 
     expect(otelState.nodeSDKSpy).toHaveBeenCalledTimes(1);
     const sdkConfig = otelState.nodeSDKSpy.mock.calls[0][0] as { resource: { attributes: Record<string, string> } };
     expect(sdkConfig.resource.attributes).toEqual({
-      'service.name': 'woss-svc',
-      'deployment.environment': 'prod',
-      'service.version': '9.9.9',
+      'service.name': 'woss-io',
+      'deployment.environment': 'dev',
+      'service.version': 'dev',
     });
 
     expect(otelState.traceExporterSpy).toHaveBeenCalledTimes(1);
@@ -503,7 +517,7 @@ describe('instrumentation.server.ts import-time env + FR-002', () => {
       compression: string;
       headers: Record<string, string>;
     };
-    expect(traceCfg.url).toBe('https://http-intake.datadoghq.eu/api/v0.2/otlp/v1/traces');
+    expect(traceCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/traces');
     expect(traceCfg.compression).toBe('gzip');
     expect(traceCfg.headers).toEqual({
       'dd-api-key': 'ddkey',
@@ -512,7 +526,7 @@ describe('instrumentation.server.ts import-time env + FR-002', () => {
 
     expect(otelState.logExporterSpy).toHaveBeenCalledTimes(1);
     const logCfg = otelState.logExporterSpy.mock.calls[0][0] as { url: string; headers: Record<string, string> };
-    expect(logCfg.url).toBe('https://http-intake.datadoghq.eu/api/v0.2/otlp/v1/logs');
+    expect(logCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/logs');
     expect(logCfg.headers).toEqual({ 'dd-api-key': 'ddkey' });
 
     // The processor receives the TruncatingLogRecordExporter wrapper, which
@@ -527,11 +541,15 @@ describe('instrumentation.server.ts import-time env + FR-002', () => {
     expect(otelState.httpInstrumentationSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('defaults: DD_SERVICE falls back to woss-io; DD_ENV/DD_VERSION omitted; dd-api-key empty', async () => {
-    const mod = await importInstrumentation(); // empty process.env → SDK starts with defaults at import
+  it('defaults: DD_SERVICE falls back to woss-io; baked dev env/version; dd-api-key empty', async () => {
+    await importInstrumentation(); // empty process.env → SDK starts with defaults at import
 
     const sdkConfig = otelState.nodeSDKSpy.mock.calls[0][0] as { resource: { attributes: Record<string, string> } };
-    expect(sdkConfig.resource.attributes).toEqual({ 'service.name': 'woss-io' });
+    expect(sdkConfig.resource.attributes).toEqual({
+      'service.name': 'woss-io',
+      'deployment.environment': 'dev',
+      'service.version': 'dev',
+    });
 
     const traceCfg = otelState.traceExporterSpy.mock.calls[0][0] as { headers: Record<string, string> };
     expect(traceCfg.headers['dd-api-key']).toBe('');

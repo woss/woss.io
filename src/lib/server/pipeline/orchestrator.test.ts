@@ -1,3 +1,4 @@
+import type { SearchResult } from '$lib/server/db';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -30,7 +31,9 @@ const mockDb = {
     })),
     transaction: vi.fn((fn: (rows: unknown[]) => void) => fn),
   })),
-  searchChunks: vi.fn(() => []),
+  searchChunks: vi.fn<
+    (embedding: number[], limit?: number, typeFilter?: 'post' | 'experience') => Promise<SearchResult[]>
+  >(async () => []),
 };
 
 vi.mock('$lib/server/db-service', () => ({
@@ -366,7 +369,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    mockDb.searchChunks.mockReturnValueOnce([
+    mockDb.searchChunks.mockResolvedValueOnce([
       { score: 0.1, chunk: makeChunk('Good', 'good') },
       { score: 0.6, chunk: makeChunk('Bad', 'bad') },
       { score: 0.4, chunk: makeChunk('Edge', 'edge') },
@@ -416,7 +419,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    mockDb.searchChunks.mockReturnValueOnce([
+    mockDb.searchChunks.mockResolvedValueOnce([
       { score: 0.6, chunk: makeChunk('A', 'a') },
       { score: 0.8, chunk: makeChunk('B', 'b') },
     ]);
@@ -467,7 +470,7 @@ describe('source score threshold', () => {
       type: 'post' as const,
     });
 
-    mockDb.searchChunks.mockReturnValueOnce([
+    mockDb.searchChunks.mockResolvedValueOnce([
       { score: 0.1, chunk: makeChunk('X', 'x') },
       { score: 0.4, chunk: makeChunk('Y', 'y') },
     ]);

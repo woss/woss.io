@@ -9,6 +9,7 @@ import { CAT, createLogger } from '$lib/server/logger';
 import { classifyQuery, type QueryClass } from '$lib/query-classifier';
 import { needsGithubTools, needsMaculaTools, parseSources, tryRenameChat } from '$lib/server/chat-helpers';
 import { generateTraceId, setMsgId, withTrace } from '$lib/server/trace-context';
+import { createRootSpan, endSpan, withSpan } from '$lib/server/tracing';
 import { randomUUID } from '$lib/utils/random-uuid';
 
 import { handleEarlyGates } from './early-gates';
@@ -60,7 +61,7 @@ export async function startGeneration(
   msgTraceId?: string,
 ): Promise<void> {
   // If a message traceId is provided, wrap the entire generation in that trace context
-  // so all addMessage calls and LLM operations inherit the message traceId
+  // so all addMessage calls and LLM operations inherit the message traceId.
   if (msgTraceId) {
     return withTrace(msgTraceId, generateTraceId(), () =>
       startGeneration(text, chatId, userId, maxChunks, userAgentId, userMsgId),
@@ -73,6 +74,10 @@ export async function startGeneration(
 
   const startTime = performance.now();
   log.info`📝 ask: "${text.slice(0, 100)}" [chatId=${chatId} userId=${userId}]`;
+
+  // The generation runs fire-and-forget after the 202 response (no active OTEL
+  // context), so open a root span here to surface the whole pipeline in Datadog.
+  const root = createRootSpan('chat.generate', { chatId, userId, text: text.slice(0, 100) });
 
   try {
     // Publish user_message event
@@ -113,7 +118,11 @@ export async function startGeneration(
     if (queryType !== 'tool') {
       publishLive(chatId, 'status', { step: 'searching' });
       // Search more candidates for type-balanced selection
-      const results = await getDbService().searchChunks(embedding.data, maxChunks * 3);
+      const results = await withSpan(
+        'chat.rag_search',
+        () => getDbService().searchChunks(embedding.data, maxChunks * 3),
+        { chatId, maxChunks },
+      );
 
       // Future: cross-encoder re-ranker re-orders results (src/lib/server/reranker.ts).
       // bge-reranker-base produced near-zero scores for this domain, so it couldn't gate.
@@ -262,7 +271,11 @@ export async function startGeneration(
       log.info`📚 queryType=${queryType} overrides tool need — forcing tool-free mode`;
     } else if (githubNeeded || maculaNeeded) {
       try {
-        const toolDefs = await getMcpToolDefs();
+        const toolDefs = await withSpan('chat.mcp_load_tools', () => getMcpToolDefs(), {
+          chatId,
+          github: githubNeeded,
+          macula: maculaNeeded,
+        });
         if (toolDefs.length > 0) {
           mcpToolDefs = toolDefs;
           log.info`🔧 tools: ${toolDefs.map((t: McpToolDef) => t.name).join(', ')}`;
@@ -327,7 +340,11 @@ export async function startGeneration(
       log.error`Failed to create message before streaming: ${e}`;
     }
 
-    const streamResult = await streamWithRetry(messages, mcpToolDefs, chatId, abortController, toolServerMap, msgId);
+    const streamResult = await withSpan(
+      'chat.llm_stream',
+      () => streamWithRetry(messages, mcpToolDefs, chatId, abortController, toolServerMap, msgId),
+      { chatId, model: config().openai.model },
+    );
     const {
       answerText,
       reasoningText,
@@ -368,29 +385,32 @@ export async function startGeneration(
     }
 
     // 8. Save result, store cache, emit done
-    await saveAndEmitResult({
-      userId,
-      chatId,
-      userAgentId,
-      answerText,
-      reasoningText,
-      sources,
-      currentModelId,
-      tokenUsage,
-      responseMs,
-      maxTokens,
-      partial,
-      lastError,
-      msgId,
-      cacheEmbeddingData,
-      cacheText,
-      ragChunks,
-      queryType,
-      startTime,
-      irrecoverable,
-      toolCalls,
-    });
+    await withSpan('chat.save_result', () =>
+      saveAndEmitResult({
+        userId,
+        chatId,
+        userAgentId,
+        answerText,
+        reasoningText,
+        sources,
+        currentModelId,
+        tokenUsage,
+        responseMs,
+        maxTokens,
+        partial,
+        lastError,
+        msgId,
+        cacheEmbeddingData,
+        cacheText,
+        ragChunks,
+        queryType,
+        startTime,
+        irrecoverable,
+        toolCalls,
+      }),
+    );
   } catch (err) {
+    endSpan(root, err);
     const message = err instanceof Error ? err.message : 'Unknown error';
     log.error`Background generation failed: ${err}`;
     try {
@@ -412,5 +432,6 @@ export async function startGeneration(
   } finally {
     activeGenerations.delete(chatId);
     clearTimeout(timeoutId);
+    endSpan(root);
   }
 }

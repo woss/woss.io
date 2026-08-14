@@ -16,6 +16,11 @@ RUN pnpm run build
 
 FROM ghcr.io/pnpm/pnpm:11 AS runner
 RUN pnpm runtime set node --global 26
+# Deploy version (the docker image tag) baked into the image so Datadog
+# telemetry carries the exact deploy version. Falls back to "local" for
+# ad-hoc/local builds that don't pass the arg.
+ARG DD_VERSION=local
+ENV DD_VERSION=$DD_VERSION
 WORKDIR /app
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/vite.config.ts ./vite.config.ts

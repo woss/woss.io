@@ -81,13 +81,15 @@ function getZinaLogSink(url: string, apiKey: string): Sink {
   };
 }
 
-function getDatadogLogSink(url: string, apiKey: string): Sink {
+function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefined): Sink {
   return (record: LogRecord) => {
     const level = ZINA_LEVEL_MAP[record.level] ?? 'info';
     // Truncate on the live export path before serialization (FR-003, 1 MiB cap)
     const message = truncateLogMessage(formatLogtapeMessage(record.message));
     const service = record.category.join('.');
     const body: Record<string, unknown> = { level, message, service };
+    // Datadog reserved tag: env:dev / env:production goes in `ddtags`.
+    if (ddEnv) body.ddtags = `env:${ddEnv}`;
     // Attach trace context to metadata
     const { traceId, spanId } = record.properties as Record<string, string | undefined>;
     if (traceId || spanId) {
@@ -115,10 +117,21 @@ function getDatadogLogSink(url: string, apiKey: string): Sink {
         'DD-API-KEY': apiKey,
       },
       body: bodyStr,
-    }).catch((err: unknown) => {
-      // fallback: can't use logger here (circular), use console as last resort
-      console.error('[datadog] push failed:', (err as Error)?.message ?? err);
-    });
+    })
+      .then((res) => {
+        if (!res.ok) {
+          // fallback: can't use logger here (circular), use console as last resort
+          console.error(`[datadog] push failed: HTTP ${res.status} ${res.statusText}`);
+        }
+      })
+      .catch((err: unknown) => {
+        // fallback: can't use logger here (circular), use console as last resort
+        console.error(
+          '[datadog] push failed:',
+          (err as Error)?.message ?? err,
+          (err as { cause?: Error })?.cause ?? '',
+        );
+      });
   };
 }
 
@@ -167,7 +180,8 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   // Datadog logs sink (if configured)
   const ddSite = env.DD_SITE ?? process.env.DD_SITE ?? 'datadoghq.eu';
   const ddApiKey = env.DD_API_KEY ?? process.env.DD_API_KEY;
-  const datadogUrl = `https://http-intake.${ddSite}/api/v2/logs`;
+  const ddEnv = env.DD_ENV ?? process.env.DD_ENV;
+  const datadogUrl = `https://http-intake.logs.${ddSite}/api/v2/logs`;
 
   const sinks: Record<string, Sink> = {
     console: getConsoleSink({
@@ -191,7 +205,7 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   }
 
   if (ddApiKey) {
-    sinks.datadog = getDatadogLogSink(datadogUrl, ddApiKey);
+    sinks.datadog = getDatadogLogSink(datadogUrl, ddApiKey, ddEnv);
     extraSinks.push('datadog');
   }
 

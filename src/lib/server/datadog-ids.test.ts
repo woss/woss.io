@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hexIdToLow64Decimal, isZeroLow64Decimal } from './datadog-ids';
 
-const MAX_LOW64 = 18446744073709551615n; // 2^64 - 1
-
 describe('hexIdToLow64Decimal', () => {
   it('converts a 32-hex OTel id with only the low bit set to its low-64 decimal', () => {
     expect(hexIdToLow64Decimal('00000000000000000000000000000001')).toBe('1');

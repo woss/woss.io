@@ -30,6 +30,7 @@ const { clickHandlers } = vi.hoisted(() => ({
 }));
 
 vi.mock('svelte', async () => {
+  // eslint-disable-next-line svelte/no-svelte-internal -- test forces client-build APIs (mount/unmount) in node
   const client = await import('svelte/internal/client');
   const server = await import('svelte');
   return {
@@ -53,9 +54,10 @@ vi.mock('@testing-library/svelte-core/svelte-version', () => ({
 // not (props). The spread pattern (...) captures all args and we find
 // the props object by filtering out anchor nodes and functions.
 vi.mock('sv5ui', () => ({
-  Button: (...args: any[]) => {
+  Button: (...args: unknown[]) => {
     const props: Record<string, unknown> =
-      args.find((a: unknown) => a && typeof a === 'object' && !(a as any).nodeType) ?? {};
+      args.find((a: unknown) => a && typeof a === 'object' && !(a as Record<string, unknown>).nodeType) ??
+      ({} as Record<string, unknown>);
     const label: string = (props['aria-label'] as string) ?? (props.label as string) ?? (props.title as string) ?? '';
     if (typeof props.onclick === 'function') {
       clickHandlers[label] = props.onclick as (e: Event) => void;
@@ -64,7 +66,7 @@ vi.mock('sv5ui', () => ({
     return typeof children === 'function' ? children() : undefined;
   },
   Input: () => '',
-  Tooltip: (props: any) => props.children?.(),
+  Tooltip: (props: { children?: () => unknown }) => props.children?.(),
   AvatarGroup: () => '',
   Textarea: () => '',
 }));
