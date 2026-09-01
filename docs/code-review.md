@@ -156,9 +156,11 @@ Domain responsibilities: chat CRUD, content retrieval (posts/experience by slug)
 
 → Part of: `docs/tasks/BE-05-db-layer-cleanup.md`
 
-**m2 — `tryRenameChat` inconsistently called on error paths**
+**m2 — `tryRenameChat` inconsistently called on error paths** (resolved)
 
 Called after polite path (line 369), after cache hit (line 451), and at line 1022 in `startGeneration`. But NOT after the embedding failure path (line 378-398) or after the LLM error path in `saveAndEmitResult`. The chat title stays as "New Chat" until the next successful user message.
+
+→ Resolved in `src/lib/server/pipeline/orchestrator.ts`: `tryRenameChat` now fires immediately after `publishPersistent` and before `handleEarlyGates`, so every handled early-gated path (off-topic, polite, embedding failure, cache hit) and the normal path auto-rename first-message chats. Because it runs before streaming, later LLM failures no longer leave the title stuck as "New Chat". `chat-helpers.ts` drives the rename through an internal `.then().catch()` chain — the sync `void` signature is preserved and failures are logged, never surfaced to the user (best-effort, non-interrupting).
 
 → Part of: `docs/tasks/BE-05-db-layer-cleanup.md`
 

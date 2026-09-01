@@ -54,6 +54,39 @@ function parseRecord(value: string | undefined): Record<string, unknown> {
   }
 }
 
+/**
+ * Normalize tool-call arguments before dispatch to the MCP server.
+ * Coerces stringified-JSON object/array values (e.g. `from`, `filter`) into real
+ * objects/arrays, and numeric strings for known numeric keys into numbers.
+ * Returns a NEW object; never mutates the input. Schema-independent.
+ */
+function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const numericKeys = new Set(['limit', 'maxResults', 'perPage', 'page', 'offset']);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+      try {
+        const parsed: unknown = JSON.parse(value);
+        if (typeof parsed === 'object' && parsed !== null) {
+          result[key] = parsed;
+          continue;
+        }
+      } catch (e) {
+        log.debug`Failed to parse stringified JSON arg "${key}", keeping original: ${e}`;
+      }
+    }
+    if (typeof value === 'string' && numericKeys.has(key)) {
+      const num = Number(value);
+      if (Number.isFinite(num)) {
+        result[key] = num;
+        continue;
+      }
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
 /** @group Cache */
 
 export interface McpToolDef {
@@ -112,7 +145,7 @@ export async function getMcpToolDefs(): Promise<McpToolDef[]> {
  * Parses the JSON-stringified arguments and delegates to the MCP client.
  */
 export async function executeMcpToolCall(toolCall: { name: string; arguments?: string }): Promise<McpToolCallResult> {
-  const args = parseRecord(toolCall.arguments);
+  const args = normalizeArgs(parseRecord(toolCall.arguments));
   log.debug`Tool call: ${toolCall.name}(${JSON.stringify(args)})`;
   const result = await mcp.callTool(toolCall.name, args);
   // Check if any content item indicates a tool error

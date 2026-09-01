@@ -40,7 +40,7 @@ Extract core logic into `doStartGeneration()`. Public `startGeneration` handles 
 
 ### 5. Add `tryRenameChat` on error paths
 
-Specifically in embedding failure catch block and LLM error path in `saveAndEmitResult`.
+✅ Resolved — implemented differently: `tryRenameChat` was moved to run immediately after `publishPersistent` in `orchestrator.ts` (before the early gates), so all handled early-gated paths — including the embedding failure path — and any later LLM failure rename first-message chats. `chat-helpers.ts` reworked `tryRenameChat` to drive `getChat` → title guard → `renameChat` through an internal `.then().catch()` chain, preserving the sync `void` signature; failures are logged via `log.error` and never interrupt message processing.
 
 ## Acceptance criteria
 
@@ -49,5 +49,5 @@ Specifically in embedding failure catch block and LLM error path in `saveAndEmit
 - [ ] `sanitizeText` lives in exactly one canonical location
 - [ ] `query-classifier.ts` centroid loading is async
 - [ ] `startGeneration` not recursive
-- [ ] `tryRenameChat` called on all exit paths
+- [x] `tryRenameChat` covers all exit paths (single call before early gates in `orchestrator.ts`)
 - [ ] Tests pass (`pnpm vitest run`)

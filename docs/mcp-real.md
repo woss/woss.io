@@ -34,8 +34,11 @@ The streaming refactor is complete:
 - `streamText` from Vercel AI SDK replaces raw fetch + SSE
 - Effect.ts `Stream<LLMEvent>` for typed event streaming
 - `buildToolSet()` converts MCP tools to AI SDK `ToolSet` format
+- `normalizeArgs()` coerces string tool-call args before dispatch — schema-independent (object/array stringified-JSON → `JSON.parse`, numeric strings for keys `limit`/`maxResults`/`perPage`/`page`/`offset` → `Number()`, else pass-through) — fixes Macula `traverse` -32602 invalid-params retry loop
 - `maxSteps: 5` for multi-round tool execution
 - `onChunk` emits `text-delta`, `tool-call`, `tool-result`, `reasoning-delta` events
+- `reasoning-delta` → `publishLive('reasoning')` → accumulated in SSE store → displayed in collapsible accordion in ChatMessage
+- Reasoning text preserved through streaming session and included in `done` event payload
 - Tool descriptions improved with usage guidance per tool
 - Tools filtered from 43 → 20 (Q&A-relevant read-only only)
 - System prompt updated: "Start with context, use tools if lacking" (resolves contradiction)

@@ -295,6 +295,8 @@ export function getDismissedFeatureTours(userId: string): string[] {
  */
 export function dismissFeatureTours(userId: string, featureIds: string[]): void {
   const db = getDb();
+  // feature_tours are having user as fk, so we need to ensure the user exists before inserting
+  ensureUser(userId);
   const stmt = db.prepare('INSERT OR IGNORE INTO feature_tours (user_id, feature_id) VALUES (?, ?)');
   for (const featureId of featureIds) {
     stmt.run(userId, featureId);
@@ -640,6 +642,7 @@ function parseStoredMessage(row: Record<string, unknown>): StoredMessage {
 function ensureModel(provider: string, modelName: string, actualModelName: string, maxTokens: number): number {
   const safeMaxTokens = maxTokens ?? 0;
   const db = getDb();
+  console.log('Ensuring model record:', { provider, modelName, actualModelName, safeMaxTokens });
   db.prepare(
     'INSERT OR IGNORE INTO models (provider, model_name, actual_model_name, max_tokens) VALUES (?, ?, ?, ?)',
   ).run(provider, modelName, actualModelName, safeMaxTokens);
@@ -952,6 +955,46 @@ function getToolCallsForMessages(messageIds: string[]): Record<string, ToolCallR
   return map;
 }
 
+/**
+ * Namespaced DB access for the MCP server.
+ * Wraps bare functions into content/vector namespaces with the expected API.
+ */
+const db = {
+  content: {
+    getPosts: (opts?: {
+      sort?: string;
+      order?: string;
+      limit?: number;
+      slug?: string;
+    }): ReturnType<typeof getPosts> => {
+      const posts = getPosts(opts?.slug);
+      let sorted = [...posts];
+      if (opts?.sort === 'title') {
+        sorted.sort((a, b) => a.title.localeCompare(b.title));
+      } else {
+        sorted.sort((a, b) => {
+          if (!a.date && !b.date) return 0;
+          if (!a.date) return 1;
+          if (!b.date) return -1;
+          return a.date < b.date ? 1 : -1;
+        });
+      }
+      if (opts?.order === 'asc') sorted.reverse();
+      if (opts?.limit && opts.limit > 0) sorted = sorted.slice(0, opts.limit);
+      return sorted;
+    },
+    getExperience: (): ReturnType<typeof getExperience> => getExperience(),
+  },
+  vector: {
+    searchChunks: (
+      embedding: number[],
+      limit?: number,
+      type?: 'post' | 'experience',
+    ): ReturnType<typeof searchChunks> => searchChunks(embedding, limit, type),
+  },
+};
+
+export { db };
 export {
   getDb,
   searchChunks,

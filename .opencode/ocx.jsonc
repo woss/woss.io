@@ -2,9 +2,9 @@
   "$schema": "https://ocx.kdco.dev/schemas/ocx.json",
   "registries": {
     "kdco": {
-      "url": "https://registry.kdco.dev",
-    },
+      "url": "https://registry.kdco.dev"
+    }
   },
-  "lockRegistries": true,
-  "skipCompatCheck": false,
+  "lockRegistries": false,
+  "skipCompatCheck": false
 }

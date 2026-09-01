@@ -14,10 +14,6 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
   },
-  ssr: {
-    // noExternal: ['sv5ui'],
-    // external: ['node:sqlite'],
-  },
   build: {
     minify: 'oxc',
     cssMinify: 'lightningcss',

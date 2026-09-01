@@ -20,6 +20,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  reasoning?: string;
   sources?: Source[];
   timestamp: number;
   createdAt: string;

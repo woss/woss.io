@@ -1,11 +1,5 @@
-import {
-  addMessage,
-  getChatMessageCount,
-  getMessages,
-  lockChat,
-  incrementOffTopicCount,
-  type StoredMessage,
-} from '$lib/server/db';
+import { getDbService } from '$lib/server/db-service';
+import type { StoredMessage } from '$lib/server/db';
 import { embedText } from '$lib/server/embed';
 import { checkCache } from '$lib/server/llm-cache';
 import { publishLive, publishPersistent } from '$lib/server/chat-events';
@@ -58,8 +52,12 @@ export async function handleEarlyGates(
     }
 > {
   // should get max messages from config. unification
-  const ctxMessages = getMessages(chatId, 50);
-  const history = ctxMessages.map((m) => ({ role: m.role, content: m.content }));
+  const ctxMessages = await getDbService().getMessages(chatId, 50);
+  const history = ctxMessages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    ...(m.reasoning ? { reasoning: m.reasoning } : {}),
+  }));
 
   // For short ambiguous messages, call classifyToolNeeds once and share the result
   let classifyResult: Awaited<ReturnType<typeof classifyToolNeeds>> | undefined;
@@ -88,11 +86,12 @@ export async function handleEarlyGates(
       publishLive(chatId, 'status', { step: 'checking_relevance' });
       const relevant = await isRelevant(text, history, abortController.signal);
       if (!relevant) {
-        const count = incrementOffTopicCount(chatId);
+        await getDbService().incrementOffTopicCount(chatId);
+        const count = await getDbService().getOffTopicCount(chatId);
         log.info`Off-topic question strike ${count}/3 for chat ${chatId}`;
         if (count >= 3) {
-          lockChat(chatId);
-          const errMsgId = addMessage({
+          await getDbService().lockChat(chatId);
+          const errMsgId = await getDbService().addMessage({
             userId,
             role: 'assistant',
             content: '',
@@ -101,19 +100,20 @@ export async function handleEarlyGates(
             error: "I can only answer questions about Daniel Maricic's professional portfolio and experience.",
             userAgentId,
           });
+          const totalMsgs = await getDbService().getChatMessageCount(chatId);
           await callWebhook({
             type: 'chatLocked',
             chatId,
-            reason: `off-topic question (${count}/3). Chat has ${ctxMessages.length} messages, ${getChatMessageCount(chatId)} total messages. Last message: "${text.slice(0, 100)}" with id ${errMsgId}`,
+            reason: `off-topic question (${count}/3). Chat has ${ctxMessages.length} messages, ${totalMsgs} total messages. Last message: "${text.slice(0, 100)}" with id ${errMsgId}`,
           });
-          publishPersistent(chatId, 'error', {
+          await publishPersistent(chatId, 'error', {
             message: "I can only answer questions about Daniel Maricic's professional portfolio and experience.",
             irrecoverable: true,
             messageId: errMsgId,
           });
         } else {
           const remaining = 3 - count;
-          const errMsgId = addMessage({
+          const errMsgId = await getDbService().addMessage({
             userId,
             role: 'assistant',
             content: '',
@@ -121,7 +121,7 @@ export async function handleEarlyGates(
             error: `I can only answer questions about Daniel Maricic's professional portfolio and experience. This chat will be locked after ${remaining} more off-topic question${remaining === 1 ? '' : 's'}.`,
             userAgentId,
           });
-          publishPersistent(chatId, 'error', {
+          await publishPersistent(chatId, 'error', {
             message: `I can only answer questions about Daniel Maricic's professional portfolio and experience.`,
             messageId: errMsgId,
             attemptsLeft: remaining,
@@ -139,7 +139,7 @@ export async function handleEarlyGates(
     publishLive(chatId, 'status', { step: 'generating' });
     try {
       const politeResponse = await generatePoliteResponse(text, abortController.signal);
-      const msgId = addMessage({
+      const msgId = await getDbService().addMessage({
         userId,
         role: 'assistant',
         content: politeResponse,
@@ -147,7 +147,7 @@ export async function handleEarlyGates(
         chatId,
         userAgentId,
       });
-      publishPersistent(chatId, 'done', {
+      await publishPersistent(chatId, 'done', {
         answer: politeResponse,
         sources: [],
         messageId: msgId,
@@ -156,8 +156,15 @@ export async function handleEarlyGates(
     } catch (e) {
       log.warn`Polite response generation failed, using fallback: ${e}`;
       const fallback = "You're welcome! I'm glad I could help. Feel free to ask more about Daniel's work.";
-      const msgId = addMessage({ userId, role: 'assistant', content: fallback, sources: '', chatId, userAgentId });
-      publishPersistent(chatId, 'done', {
+      const msgId = await getDbService().addMessage({
+        userId,
+        role: 'assistant',
+        content: fallback,
+        sources: '',
+        chatId,
+        userAgentId,
+      });
+      await publishPersistent(chatId, 'done', {
         answer: fallback,
         sources: [],
         messageId: msgId,
@@ -175,7 +182,7 @@ export async function handleEarlyGates(
     embedding = await embedText(text);
   } catch (e) {
     log.warn`Failed to embed query text: ${e}`;
-    const errMsgId = addMessage({
+    const errMsgId = await getDbService().addMessage({
       userId,
       role: 'assistant',
       content: '',
@@ -183,7 +190,7 @@ export async function handleEarlyGates(
       error: 'Failed to generate embedding',
       userAgentId,
     });
-    publishPersistent(chatId, 'error', { message: 'Failed to generate embedding', messageId: errMsgId });
+    await publishPersistent(chatId, 'error', { message: 'Failed to generate embedding', messageId: errMsgId });
     return { handled: true };
   }
 
@@ -225,7 +232,7 @@ export async function handleEarlyGates(
       publishLive(chatId, 'tool_call_end', { id, name: tc.name });
     }
 
-    const msgId = addMessage({
+    const msgId = await getDbService().addMessage({
       userId,
       role: 'assistant',
       content: cached.answer,
@@ -236,7 +243,7 @@ export async function handleEarlyGates(
     });
     const sources = parseSources(cached.sources);
     const elapsed = performance.now() - startTime;
-    publishPersistent(chatId, 'done', {
+    await publishPersistent(chatId, 'done', {
       answer: cached.answer,
       sources,
       messageId: msgId,

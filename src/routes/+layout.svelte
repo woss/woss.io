@@ -2,9 +2,6 @@
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { browser } from '$app/environment';
-  import { dev } from '$app/environment';
-  import { env as publicEnv } from '$env/dynamic/public';
   import { appendQueryParams } from '$lib/utils/utm';
   import { Toaster } from 'svelte-sonner';
   import { Button, Drawer } from 'sv5ui';
@@ -16,9 +13,6 @@
   import '@fontsource-variable/ibm-plex-sans/wght-italic.css';
   import '@fontsource/ibm-plex-mono/400.css';
   import '@fontsource/ibm-plex-mono/700.css';
-
-  import CookieConsent from '$lib/components/CookieConsent.svelte';
-  import { getTrackingConsent, isConsentUndecided, setTrackingConsent as persistConsent } from '$lib/stores/tracking-consent';
 
   let avatarUrl = $derived(appendQueryParams('https://u.macula.link/kPT78FuvSm2Y_3BQHPApYg-7?preset=sys_md', page.data.queryParams));
 
@@ -40,12 +34,6 @@
 
   let isChatPage = $derived(page.url.pathname.startsWith('/chat'));
 
-  // Consent state
-  let showCookieConsent = $state(browser && isConsentUndecided());
-  let trackingConsent = $state<'granted' | 'not-granted'>(
-    browser ? getTrackingConsent() : 'not-granted'
-  );
-
   function closeMobileMenu() {
     mobileMenuOpen = false;
   }
@@ -55,53 +43,6 @@
     void page.url.pathname;
     mobileMenuOpen = false;
   });
-
-  // Datadog RUM — client-side only, skip in dev, require consent
-  $effect(() => {
-    if (!browser) return;
-    if (trackingConsent !== 'granted') return;
-    const appId = publicEnv.PUBLIC_DD_RUM_APP_ID;
-    const clientToken = publicEnv.PUBLIC_DD_RUM_CLIENT_TOKEN;
-    if (!appId || !clientToken) return;
-    (async () => {
-      try {
-        const { datadogRum } = await import('@datadog/browser-rum');
-        datadogRum.init({
-          applicationId: appId,
-          clientToken: clientToken,
-          site: 'datadoghq.eu',
-          service: 'woss-io',
-          env: dev ? 'development' : 'production',
-          version: publicEnv.PUBLIC_APP_VERSION ?? '0.0.0',
-          sessionSampleRate: 100,
-          sessionReplaySampleRate: 20,
-          trackUserInteractions: true,
-          trackResources: true,
-          trackLongTasks: true,
-          defaultPrivacyLevel: 'mask-user-input',
-          trackingConsent,
-        });
-        datadogRum.startSessionReplayRecording();
-      } catch (err) {
-        console.error('[RUM] init failed:', err);
-      }
-    })();
-  });
-
-  function handleAcceptConsent() {
-    persistConsent('granted');
-    trackingConsent = 'granted';
-    showCookieConsent = false;
-    import('@datadog/browser-rum').then(({ datadogRum }) => {
-      datadogRum.setTrackingConsent('granted');
-    });
-  }
-
-  function handleDeclineConsent() {
-    persistConsent('not-granted');
-    trackingConsent = 'not-granted';
-    showCookieConsent = false;
-  }
 </script>
 
 <div class="flex flex-col" style="height: 100dvh">
@@ -210,10 +151,6 @@
     {@render children()}
   </main>
 </div>
-
-{#if showCookieConsent}
-  <CookieConsent onaccept={handleAcceptConsent} ondecline={handleDeclineConsent} />
-{/if}
 
 <style>
   @media print {
