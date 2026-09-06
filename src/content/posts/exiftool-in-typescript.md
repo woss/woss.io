@@ -27,7 +27,7 @@ const meta = JSON.parse(stdout)[0];
 // Or undefined. TypeScript knows nothing. You know nothing.
 ```
 
-ExifTool is the reference for reading image metadata: a 30k-line Perl program that knows everything about everything. From JavaScript it has always been a subprocess, though. You pay the Perl interpreter startup on every call, you either spawn per file or manage the `-stay_open` daemon protocol yourself (a hand-rolled text protocol that keeps one Perl process alive between calls), and the output is strings you parse and coerce (`'1/200'` vs `0.005`, dates whose format depends on the file, the same tag sometimes a number and sometimes a string). None of it has types.
+ExifTool is the reference for reading image metadata: a 30k-line Perl program that knows everything about everything. From JavaScript it has always been a subprocess, though. You pay the Perl interpreter startup on every call, you either spawn per file or manage the `-stay_open` daemon protocol yourself, and the output is strings you parse and coerce. None of it has types.
 
 I got tired of that, so I rewrote the parts I need in TypeScript.
 
@@ -48,7 +48,7 @@ import { ExifTool } from '@woss/exiftool';
 const tool = new ExifTool();
 const info = await tool.read('photo.jpg');
 
-info.tags.Make;         // "Canon", typed as TagValue
+info.tags.Make; // "Canon", typed as TagValue
 info.tags.ExposureTime; // "1/200", formatted the way exiftool prints it
 ```
 
@@ -72,16 +72,16 @@ There's a live demo on the docs site: pick a photo, watch it parse locally, noth
 
 Quick benchmark on my machine (M2 Max, ExifTool 13.55 as reference, real-world JPEG libraries, 543 files, ~8.7 GB total):
 
-| Scenario | exiftool | exiftool-ts |
-|---|---|---|
-| Single file, cold process start | ~150 ms | ~150 ms (node CLI), ~125 ms (bun CLI) |
-| 218 mixed files (~3.1 GB) in one process | 3.9 s (~18 ms/file) | 2.1 s (~10 ms/file) |
-| 325 large JPEGs, 5.6 GB, avg 17.7 MB/file | 4.5 s (~14 ms/file) | 2.8 s (~8.5 ms/file) |
-| Peak memory, same batches | ~30 MB | ~0.5–0.8 GB |
+| Scenario                                  | exiftool            | exiftool-ts                           |
+| ----------------------------------------- | ------------------- | ------------------------------------- |
+| Single file, cold process start           | ~150 ms             | ~150 ms (node CLI), ~125 ms (bun CLI) |
+| 218 mixed files (~3.1 GB) in one process  | 3.9 s (~18 ms/file) | 2.1 s (~10 ms/file)                   |
+| 325 large JPEGs, 5.6 GB, avg 17.7 MB/file | 4.5 s (~14 ms/file) | 2.8 s (~8.5 ms/file)                  |
+| Peak memory, same batches                 | ~30 MB              | ~0.5–0.8 GB                           |
 
 Parse time scales with file size, roughly 0.5 ms per MB on this hardware, since the parser walks the whole buffer: the small half (~9 MB avg) parses in ~6 ms, the big half (~26 MB avg) in ~12 ms.
 
-Read it honestly: a cold single-file CLI call is a tie, because interpreter startup dominates both, Perl and node alike. The win is the library path: no subprocess means batch reads run ~2x faster in-process. Memory is the honest tradeoff. V8's heap runs a much larger high-water mark than Perl's working set. It's bounded, not a leak. Live heap stays flat at ~25 MB no matter how many files run, and the peak is node's allocator caching freed 17 MB buffers, not the parser: the same batch of raw `readFileSync` calls with no metadata parsing at all peaks *higher* (710 MB) than the full library run. If you're processing a huge library in one process, exiftool-ts trades RAM for speed.
+Read it honestly: a cold single-file CLI call is a tie, because interpreter startup dominates both, Perl and node alike. The win is the library path: no subprocess means batch reads run ~2x faster in-process. Memory is the honest tradeoff. V8's heap runs a much larger high-water mark than Perl's working set. It's bounded, not a leak. Live heap stays flat at ~25 MB no matter how many files run, and the peak is node's allocator caching freed 17 MB buffers, not the parser: the same batch of raw `readFileSync` calls with no metadata parsing at all peaks higher than the full library run. If you're processing a huge library in one process, exiftool-ts trades RAM for speed.
 
 ## Why parity beats a clean-room rewrite
 
