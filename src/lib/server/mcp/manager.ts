@@ -5,7 +5,6 @@
  * aggregated tool listing with collision resolution, tool execution
  * routing, and clean shutdown.
  */
-import { trace } from '@opentelemetry/api';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { CAT, createLogger } from '$lib/server/logger';
 import type { McpServerConfig } from './config.ts';
@@ -13,7 +12,9 @@ import { toRecord } from './utils.ts';
 import type { jsonSchemaValidator, JsonSchemaType, JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation';
 
 const log = createLogger(CAT.mcp);
-const tracer = trace.getTracer('woss-mcp');
+
+/** Minimum interval (ms) between reconnect attempts for the same server. */
+const RECONNECT_COOLDOWN_MS = 30_000;
 
 /** @group Types */
 
@@ -120,53 +121,77 @@ export class McpManager {
   private toolIndex = new Map<string, string>(); // resolvedName → serverId
   private toolDefs: McpToolDefinition[] = [];
   private initialized = false;
+  private reconnectCooldowns = new Map<string, number>();
 
   constructor(private configs: readonly McpServerConfig[]) {}
 
   /* ── Connection ───────────────────────────────────────────────── */
+
+  /**
+   * Connect to a single MCP server and store the connection.
+   * Called from init(), reconnectTools(), and invalid-session recovery in executeTool().
+   */
+  private async connectServer(cfg: McpServerConfig): Promise<void> {
+    const client = new Client(
+      { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
+      { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
+    );
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json, text/event-stream',
+      ...(cfg.headers ?? {}),
+    };
+    if (!headers.Authorization && cfg.token) {
+      headers.Authorization = `Bearer ${cfg.token}`;
+    }
+    if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
+    if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
+
+    const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+      requestInit: { headers },
+      fetch: withRateLimitLogging(),
+    });
+
+    await client.connect(transport);
+    this.connections.set(cfg.id, { client, transport });
+    this.reconnectCooldowns.set(cfg.id, Date.now());
+  }
+
+  /**
+   * Returns true when enough time has passed since the last reconnect
+   * for the given server, preventing reconnect storms.
+   */
+  private canReconnect(serverId: string): boolean {
+    const lastReconnect = this.reconnectCooldowns.get(serverId) ?? 0;
+    return Date.now() - lastReconnect >= RECONNECT_COOLDOWN_MS;
+  }
+
+  /**
+   * Detect whether an error indicates an invalid/stale MCP session
+   * (transport-level failure that never reached the server).
+   */
+  private isInvalidSessionError(err: unknown): boolean {
+    if (err instanceof Error && err.message.includes('invalid session')) return true;
+    if (typeof err === 'object' && err !== null && 'data' in err) {
+      const data = (err as { data: unknown }).data;
+      if (typeof data === 'object' && data !== null && 'status' in data) {
+        if ((data as { status: unknown }).status === 400) return true;
+      }
+    }
+    return false;
+  }
 
   async init(): Promise<void> {
     const connectStart = Date.now();
     await Promise.all(
       this.configs.map(async (cfg) => {
         const connStart = Date.now();
-        await tracer.startActiveSpan(
-          'mcp.connect',
-          { attributes: { serverId: cfg.id, url: cfg.url } },
-          async (connectSpan) => {
-            try {
-              const client = new Client(
-                { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
-                { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
-              );
-
-              const headers: Record<string, string> = {
-                Accept: 'application/json, text/event-stream',
-                ...(cfg.headers ?? {}),
-              };
-              if (!headers.Authorization && cfg.token) {
-                headers.Authorization = `Bearer ${cfg.token}`;
-              }
-              if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
-              if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
-
-              const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
-                requestInit: { headers },
-                fetch: withRateLimitLogging(),
-              });
-
-              await client.connect(transport);
-              this.connections.set(cfg.id, { client, transport });
-              log.info`init: connected ${cfg.id} in ${Date.now() - connStart}ms (${cfg.url})`;
-              connectSpan.end();
-            } catch (err) {
-              connectSpan.recordException(err instanceof Error ? err : new Error(String(err)));
-              connectSpan.setStatus({ code: 2 /*ERROR*/, message: err instanceof Error ? err.message : String(err) });
-              connectSpan.end();
-              log.warn`init: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
-            }
-          },
-        );
+        try {
+          await this.connectServer(cfg);
+          log.info`init: connected ${cfg.id} in ${Date.now() - connStart}ms (${cfg.url})`;
+        } catch (err) {
+          log.warn`init: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+        }
       }),
     );
 
@@ -202,31 +227,24 @@ export class McpManager {
     await Promise.all(
       entries.map(async ([serverId, { client }]) => {
         const toolStart = Date.now();
-        await tracer.startActiveSpan('mcp.listTools', { attributes: { serverId } }, async (toolSpan) => {
-          try {
-            const cfg = this.configs.find((c) => c.id === serverId);
-            const result = await client.listTools({}, cfg?.timeout ? { timeout: cfg.timeout } : {});
+        try {
+          const cfg = this.configs.find((c) => c.id === serverId);
+          const result = await client.listTools({}, cfg?.timeout ? { timeout: cfg.timeout } : {});
 
-            for (const tool of result.tools) {
-              all.push({
-                name: tool.name,
-                serverId,
-                description: tool.description,
-                inputSchema: toRecord(tool.inputSchema),
-              });
-              nameCounts.set(tool.name, (nameCounts.get(tool.name) ?? 0) + 1);
-            }
-            toolSpan.setAttribute('toolCount', result.tools.length);
-            log.info`listTools: ${serverId} — ${result.tools.length} tools in ${Date.now() - toolStart}ms`;
-            toolSpan.end();
-          } catch (err) {
-            toolSpan.recordException(err instanceof Error ? err : new Error(String(err)));
-            toolSpan.setStatus({ code: 2, message: err instanceof Error ? err.message : String(err) });
-            toolSpan.end();
-            log.warn`listTools: ${serverId} failed after ${Date.now() - toolStart}ms — ${err instanceof Error ? err.message : String(err)}`;
-            failedServers.push(serverId);
+          for (const tool of result.tools) {
+            all.push({
+              name: tool.name,
+              serverId,
+              description: tool.description,
+              inputSchema: toRecord(tool.inputSchema),
+            });
+            nameCounts.set(tool.name, (nameCounts.get(tool.name) ?? 0) + 1);
           }
-        });
+          log.info`listTools: ${serverId} — ${result.tools.length} tools in ${Date.now() - toolStart}ms`;
+        } catch (err) {
+          log.warn`listTools: ${serverId} failed after ${Date.now() - toolStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+          failedServers.push(serverId);
+        }
       }),
     );
 
@@ -274,38 +292,12 @@ export class McpManager {
     await Promise.all(
       toReconnect.map(async (cfg) => {
         const connStart = Date.now();
-        await tracer.startActiveSpan(
-          'mcp.reconnect',
-          { attributes: { serverId: cfg.id, url: cfg.url } },
-          async (reconSpan) => {
-            try {
-              const client = new Client(
-                { name: `woss-mcp-${cfg.id}`, version: '1.0.0' },
-                { capabilities: {}, jsonSchemaValidator: new NoopValidator() },
-              );
-              const headers: Record<string, string> = {
-                Accept: 'application/json, text/event-stream',
-                ...(cfg.headers ?? {}),
-              };
-              if (!headers.Authorization && cfg.token) headers.Authorization = `Bearer ${cfg.token}`;
-              if (cfg.readonly) headers['X-MCP-Readonly'] = 'true';
-              if (cfg.tools) headers['X-MCP-Tools'] = cfg.tools;
-              const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
-                requestInit: { headers },
-                fetch: withRateLimitLogging(),
-              });
-              await client.connect(transport);
-              this.connections.set(cfg.id, { client, transport });
-              log.info`reconnectTools: ${cfg.id} reconnected in ${Date.now() - connStart}ms`;
-              reconSpan.end();
-            } catch (err) {
-              reconSpan.recordException(err instanceof Error ? err : new Error(String(err)));
-              reconSpan.setStatus({ code: 2, message: err instanceof Error ? err.message : String(err) });
-              reconSpan.end();
-              log.warn`reconnectTools: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
-            }
-          },
-        );
+        try {
+          await this.connectServer(cfg);
+          log.info`reconnectTools: ${cfg.id} reconnected in ${Date.now() - connStart}ms`;
+        } catch (err) {
+          log.warn`reconnectTools: ${cfg.id} failed after ${Date.now() - connStart}ms — ${err instanceof Error ? err.message : String(err)}`;
+        }
       }),
     );
 
@@ -442,52 +434,83 @@ export class McpManager {
     const serverId = this.toolIndex.get(resolvedName);
     if (!serverId) throw new Error(`Unknown tool: ${resolvedName}`);
 
-    const conn = this.connections.get(serverId);
-    if (!conn) throw new Error(`Server not connected: ${serverId}`);
-
     // Strip prefix to get original tool name
     const originalName = this.stripPrefix(resolvedName, serverId);
-
-    const start = Date.now();
-    const execSpan = tracer.startSpan('mcp.callTool', {
-      attributes: { tool: resolvedName, serverId },
-    });
-    log.info('Executing MCP tool', { tool: resolvedName, serverId });
     const cfg = this.configs.find((c) => c.id === serverId);
     const toolTimeout = cfg?.timeout ?? 60_000;
 
-    let timeoutHandle!: ReturnType<typeof setTimeout>;
+    const start = Date.now();
+    log.info('Executing MCP tool', { tool: resolvedName, serverId });
+
+    // Inner function: callTool with timeout race
+    const runCall = async () => {
+      const conn = this.connections.get(serverId);
+      if (!conn) throw new Error(`Server not connected: ${serverId}`);
+
+      let timeoutHandle!: ReturnType<typeof setTimeout>;
+      try {
+        const callToolPromise = conn.client.callTool({ name: originalName, arguments: args });
+        // Swallow orphan rejection if timeout wins (prevents unhandledRejection crash)
+        callToolPromise.catch(() => {});
+        const result = await Promise.race([
+          callToolPromise,
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(
+              () => reject(new Error(`MCP callTool timed out after ${toolTimeout}ms for ${resolvedName}`)),
+              toolTimeout,
+            );
+          }),
+        ]);
+        clearTimeout(timeoutHandle);
+        return result;
+      } catch (err) {
+        clearTimeout(timeoutHandle);
+        throw err;
+      }
+    };
+
     let result: { content: Array<Record<string, unknown>>; isError?: boolean };
     try {
-      const callToolPromise = conn.client.callTool({ name: originalName, arguments: args });
-      // Swallow orphan rejection if timeout wins (prevents unhandledRejection crash)
-      callToolPromise.catch(() => {});
-      result = await Promise.race([
-        callToolPromise,
-        new Promise<never>((_, reject) => {
-          timeoutHandle = setTimeout(
-            () => reject(new Error(`MCP callTool timed out after ${toolTimeout}ms for ${resolvedName}`)),
-            toolTimeout,
-          );
-        }),
-      ]);
-      clearTimeout(timeoutHandle);
+      result = await runCall();
     } catch (err) {
-      clearTimeout(timeoutHandle);
-      execSpan.recordException(err instanceof Error ? err : new Error(String(err)));
-      execSpan.setStatus({ code: 2, message: err instanceof Error ? err.message : String(err) });
-      execSpan.end();
-      throw err;
+      if (this.isInvalidSessionError(err) && cfg && this.canReconnect(serverId)) {
+        log.warn`executeTool: ${serverId} invalid session — reconnecting and retrying ${resolvedName}`;
+
+        // Drop the dead connection
+        this.connections.delete(serverId);
+
+        // Purge its tools from the index
+        this.toolDefs = this.toolDefs.filter((t) => t.serverId !== serverId);
+        for (const [key, val] of this.toolIndex) {
+          if (val === serverId) this.toolIndex.delete(key);
+        }
+
+        // Reconnect fresh session
+        try {
+          await this.connectServer(cfg);
+        } catch {
+          // Reconnect failed — fall through and rethrow original error
+          throw err;
+        }
+
+        // Refresh the tool index to pick up the fresh connection
+        await this.refreshToolIndex();
+
+        // If the refresh dropped the reconnected server (e.g. its listTools
+        // failed), a retry is impossible — surface the original transport
+        // error instead of a confusing "Server not connected".
+        if (!this.connections.has(serverId)) throw err;
+
+        // Retry-once is safe because an invalid-session error means the request
+        // never reached the server (transport-level failure), so no server-side
+        // side effect can be duplicated.
+        result = await runCall();
+      } else {
+        throw err;
+      }
     }
 
-    let durationMs: number;
-    try {
-      durationMs = Date.now() - start;
-      execSpan.setAttribute('durationMs', durationMs);
-      execSpan.setAttribute('isError', result.isError ?? false);
-    } finally {
-      execSpan.end();
-    }
+    const durationMs = Date.now() - start;
     log.info('MCP tool completed', {
       tool: resolvedName,
       serverId,

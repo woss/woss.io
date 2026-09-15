@@ -1,5 +1,5 @@
 import { getPosts } from '$lib/server/db';
-import type { BlogPost } from '$content/index';
+import type { BlogPost } from '$lib/types';
 
 export async function load() {
   const records = getPosts();

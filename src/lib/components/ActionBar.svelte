@@ -9,11 +9,13 @@
  message,
  userId = '',
  chatId = '',
+ onfeedback,
   onOpenSidebar = () => {},
  }: {
  message: ChatMessage;
  userId?: string;
  chatId?: string;
+ onfeedback?: (type: 'up' | 'down') => void;
  onOpenSidebar?: (tab: 'sources' | 'tools') => void;
  } = $props();
 
@@ -68,31 +70,17 @@
  }
  }
 
- async function handleReaction(
- msg: ChatMessage,
- type: 'up' | 'down' | 'heart',
- ): Promise<void> {
- if (msg.reaction?.type === type) {
+ async function handleHeartReaction(msg: ChatMessage): Promise<void> {
+ if (msg.reaction?.type === 'heart') {
  msg.reaction = null;
  await removeMessageReaction(msg.id);
  toast.success('Reaction removed');
  return;
  }
 
- if (type === 'heart') {
  msg.reaction = { type: 'heart', reason: '' };
  await setMessageReaction(msg.id, 'heart');
  toast.success("Can't believe someone clicked on this ❤️❤️❤️ Yuh a di best!");
- return;
- }
-
- if (type === 'down') {
- msg.reaction = { type: 'down', reason: '' };
- } else {
- msg.reaction = { type: 'up', reason: '' };
- }
- await setMessageReaction(msg.id, type);
- toast.success('Thanks for the feedback!');
  }
 </script>
 
@@ -160,8 +148,8 @@
   <Button
   variant="ghost" square size="sm"
   class={message.reaction?.type === 'up' ? 'text-[#00da8c]' : ''}
-  onclick={() => handleReaction(message, 'up')}
-  aria-label="Thumbs up"
+   onclick={() => onfeedback?.('up')}
+   aria-label="Thumbs up"
   title="Helpful"
   >
   <svg
@@ -180,9 +168,9 @@
   <Button
   variant="ghost" square size="sm"
   class={message.reaction?.type === 'down' ? 'text-[#00da8c]' : ''}
-  onclick={() => handleReaction(message, 'down')}
-  aria-label="Thumbs down"
-  title="Not helpful"
+   onclick={() => onfeedback?.('down')}
+   aria-label="Thumbs down"
+   title="Not helpful"
   >
   <svg
   width="14"
@@ -201,9 +189,9 @@
   <Button
   variant="ghost" square size="sm"
   class={message.reaction?.type === 'heart' ? 'text-[#00da8c]' : ''}
-  onclick={() => handleReaction(message, 'heart')}
-  aria-label="Heart"
-  title="Love it"
+   onclick={() => handleHeartReaction(message)}
+   aria-label="Heart"
+   title="Love it"
   >
   <svg
   width="14"

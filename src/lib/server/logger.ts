@@ -24,11 +24,12 @@ import {
 } from '@logtape/logtape';
 import { getRotatingFileSink } from '@logtape/file';
 import { getPrettyFormatter } from '@logtape/pretty';
-import { env } from 'node:process';
+import { env } from '$env/dynamic/private';
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
-import { createDatadogSink } from './datadog-sink';
 import { traceStorage } from './trace-context';
+import { truncateLogMessage } from './log-truncate';
+import { hexIdToLow64Decimal, isZeroLow64Decimal } from './datadog-ids';
 
 // Level mapping: LogTape → ZinaLog
 const ZINA_LEVEL_MAP: Record<string, string> = {
@@ -80,6 +81,60 @@ function getZinaLogSink(url: string, apiKey: string): Sink {
   };
 }
 
+function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefined): Sink {
+  return (record: LogRecord) => {
+    const level = ZINA_LEVEL_MAP[record.level] ?? 'info';
+    // Truncate on the live export path before serialization (FR-003, 1 MiB cap)
+    const message = truncateLogMessage(formatLogtapeMessage(record.message));
+    const service = record.category.join('.');
+    const body: Record<string, unknown> = { level, message, service };
+    // Datadog reserved tag: env:dev / env:production goes in `ddtags`.
+    if (ddEnv) body.ddtags = `env:${ddEnv}`;
+    // Attach trace context to metadata
+    const { traceId, spanId } = record.properties as Record<string, string | undefined>;
+    if (traceId || spanId) {
+      const metadata: Record<string, string> = {};
+      if (traceId) metadata.traceId = traceId;
+      if (spanId) metadata.spanId = spanId;
+      body.metadata = metadata;
+    }
+    // Emit Datadog correlation ids as low-64 decimal strings (FR-005).
+    // Both-or-neither (INV-3): emit only when both ids are present and non-zero.
+    if (traceId && spanId) {
+      const ddTraceId = hexIdToLow64Decimal(traceId);
+      const ddSpanId = hexIdToLow64Decimal(spanId);
+      if (!isZeroLow64Decimal(ddTraceId) && !isZeroLow64Decimal(ddSpanId)) {
+        body['dd.trace_id'] = ddTraceId;
+        body['dd.span_id'] = ddSpanId;
+      }
+    }
+    const bodyStr = JSON.stringify(body);
+    // Fire-and-forget POST — non-blocking
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'DD-API-KEY': apiKey,
+      },
+      body: bodyStr,
+    })
+      .then((res) => {
+        if (!res.ok) {
+          // fallback: can't use logger here (circular), use console as last resort
+          console.error(`[datadog] push failed: HTTP ${res.status} ${res.statusText}`);
+        }
+      })
+      .catch((err: unknown) => {
+        // fallback: can't use logger here (circular), use console as last resort
+        console.error(
+          '[datadog] push failed:',
+          (err as Error)?.message ?? err,
+          (err as { cause?: Error })?.cause ?? '',
+        );
+      });
+  };
+}
+
 /** Categories used across the app — add new ones here. */
 export const CAT = {
   app: ['woss', 'app'] as [string, string],
@@ -118,8 +173,15 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   const logFile = join(logDir, 'woss.io.log');
 
   // ZinaLog sink (if configured)
-  const zinalogUrl = env.ZINALOG_URL;
-  const zinalogApiKey = env.ZINALOG_API_KEY;
+  // process.env fallbacks keep vite-node consumers (build-index.ts, download-model.ts) working.
+  const zinalogUrl = env.ZINALOG_URL ?? process.env.ZINALOG_URL;
+  const zinalogApiKey = env.ZINALOG_API_KEY ?? process.env.ZINALOG_API_KEY;
+
+  // Datadog logs sink (if configured)
+  const ddSite = env.DD_SITE ?? process.env.DD_SITE ?? 'datadoghq.eu';
+  const ddApiKey = env.DD_API_KEY ?? process.env.DD_API_KEY;
+  const ddEnv = env.DD_ENV ?? process.env.DD_ENV;
+  const datadogUrl = `https://http-intake.logs.${ddSite}/api/v2/logs`;
 
   const sinks: Record<string, Sink> = {
     console: getConsoleSink({
@@ -142,9 +204,8 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
     extraSinks.push('zinalog');
   }
 
-  const datadogSink = createDatadogSink();
-  if (datadogSink) {
-    sinks.datadog = datadogSink;
+  if (ddApiKey) {
+    sinks.datadog = getDatadogLogSink(datadogUrl, ddApiKey, ddEnv);
     extraSinks.push('datadog');
   }
 

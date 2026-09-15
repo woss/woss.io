@@ -66,7 +66,7 @@ function finishEvent(
 
 /** @group ModelMessage Converter */
 
-function toModelMessages(messages: ChatMessage[]): Array<ModelMessage> {
+export function toModelMessages(messages: ChatMessage[]): Array<ModelMessage> {
   const result: Array<ModelMessage> = [];
   for (const m of messages) {
     switch (m.role) {
@@ -77,7 +77,17 @@ function toModelMessages(messages: ChatMessage[]): Array<ModelMessage> {
         result.push({ role: 'user', content: m.content });
         break;
       case 'assistant':
-        result.push({ role: 'assistant', content: m.content });
+        if (m.reasoning) {
+          result.push({
+            role: 'assistant',
+            content: [
+              { type: 'reasoning', text: m.reasoning },
+              { type: 'text', text: m.content },
+            ],
+          });
+        } else {
+          result.push({ role: 'assistant', content: m.content });
+        }
         break;
       case 'tool':
         result.push({
@@ -114,6 +124,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   tool_call_id?: string;
+  reasoning?: string;
 }
 
 /** @group Configuration */
@@ -183,7 +194,7 @@ export function buildRagPrompt(question: string, chunks: RagChunk[], history?: C
     const filtered = history.filter((m) => m.role === 'user' || m.role === 'assistant');
     const slice = filtered.length > MAX_HISTORY_MESSAGES ? filtered.slice(-MAX_HISTORY_MESSAGES) : filtered;
     for (const msg of slice) {
-      messages.push({ role: msg.role, content: msg.content });
+      messages.push({ role: msg.role, content: msg.content, ...(msg.reasoning ? { reasoning: msg.reasoning } : {}) });
     }
   }
 
@@ -275,6 +286,9 @@ export function chatStreamWithTools(
           let aggregatedUsage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
           let lastFinishReason: string = 'stop';
           let actualModelName: string = config().openai.model;
+          // Set when a forced-final (no-tools) round is first scheduled; guards
+          // against infinite recursion if the model keeps emitting tool calls.
+          let forcedFinal = false;
 
           const MAX_ROUNDS = config().openai.maxRounds;
           const CROSS_ROUND_THRESHOLD = 3;
@@ -287,6 +301,7 @@ export function chatStreamWithTools(
             let roundToolCalls = 0;
             let roundTextLength = 0;
             let roundText = '';
+            let roundReasoning = '';
             const roundToolResults: string[] = [];
             const roundToolCallRecords: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
 
@@ -299,7 +314,10 @@ export function chatStreamWithTools(
                   abortSignal: signal,
                   temperature: 0.2,
                   ...(MAX_TOKENS !== undefined ? { maxTokens: MAX_TOKENS } : {}),
-                  ...(currentToolSet ? { tools: currentToolSet, maxSteps: FIRST_ROUND_MAX_STEPS } : {}),
+                  // Tools round: allow up to FIRST_ROUND_MAX_STEPS auto-tool-steps.
+                  // No-tools final round: maxSteps=1 forces a single response so the
+                  // SDK cannot re-execute pending tool-calls from history and loop.
+                  ...(currentToolSet ? { tools: currentToolSet, maxSteps: FIRST_ROUND_MAX_STEPS } : { maxSteps: 1 }),
                   onChunk: ({ chunk }) => {
                     if (aborted) return;
                     switch (chunk.type) {
@@ -309,6 +327,7 @@ export function chatStreamWithTools(
                         emit.single(textDeltaEvent(chunk.text));
                         break;
                       case 'reasoning-delta':
+                        roundReasoning += chunk.text;
                         emit.single(reasoningDeltaEvent(chunk.text));
                         break;
                       case 'tool-call':
@@ -419,6 +438,7 @@ export function chatStreamWithTools(
                         currentMessages.push({
                           role: 'assistant',
                           content: [
+                            ...(roundReasoning ? [{ type: 'reasoning' as const, text: roundReasoning }] : []),
                             ...(roundText ? [{ type: 'text' as const, text: roundText }] : []),
                             ...roundToolCallRecords.map((tc) => ({
                               type: 'tool-call' as const,
@@ -427,6 +447,7 @@ export function chatStreamWithTools(
                               input: tc.input,
                             })),
                           ] as Array<
+                            | { type: 'reasoning'; text: string }
                             | { type: 'text'; text: string }
                             | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
                           >,
@@ -464,6 +485,15 @@ export function chatStreamWithTools(
                         roundTextLength > 0 &&
                         (reachedMaxRounds || isDoomLoop || isInterimRound)
                       ) {
+                        // Hard stop: only one forced-final (no-tools) round is ever
+                        // scheduled. If the model STILL emits tool calls after tools
+                        // were dropped, resolve now instead of recursing forever.
+                        if (forcedFinal) {
+                          log.warn`[llm-round] Forced-final round still emitted tool calls — stopping (tool loop escaped)`;
+                          resolve();
+                          return;
+                        }
+                        forcedFinal = true;
                         // MAX_ROUNDS reached with tool calls and text — force a final
                         // Force final round without tools so the model must produce text.
                         log.info`[llm-round] MAX_ROUNDS=${MAX_ROUNDS} reached, ${roundToolCalls} tool calls, ${roundTextLength} text chars — forcing final round without tools`;
@@ -472,6 +502,7 @@ export function chatStreamWithTools(
                         currentMessages.push({
                           role: 'assistant',
                           content: [
+                            ...(roundReasoning ? [{ type: 'reasoning' as const, text: roundReasoning }] : []),
                             ...(roundText ? [{ type: 'text' as const, text: roundText }] : []),
                             ...roundToolCallRecords.map((tc) => ({
                               type: 'tool-call' as const,
@@ -480,6 +511,7 @@ export function chatStreamWithTools(
                               input: tc.input,
                             })),
                           ] as Array<
+                            | { type: 'reasoning'; text: string }
                             | { type: 'text'; text: string }
                             | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
                           >,

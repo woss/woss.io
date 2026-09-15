@@ -39,7 +39,9 @@
 
   /* ─── Constants ─── */
 
-  let ORIGINAL_FAV_HREF = $derived(appendQueryParams('https://u.macula.link/kPT78FuvSm2Y_3BQHPApYg-7?preset=sys_md', page.data.queryParams));
+  let ORIGINAL_FAV_HREF = $derived(
+    appendQueryParams('https://u.macula.link/kPT78FuvSm2Y_3BQHPApYg-7?preset=sys_md', page.data.queryParams),
+  );
   const LOADING_FAV_SVG = encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
  <circle cx="16" cy="16" r="15" fill="#1a1a2e"/>
@@ -218,6 +220,7 @@
           id: m.id as string,
           role: m.role as 'user' | 'assistant',
           text: m.content as string,
+          reasoning: m.reasoning as string | undefined,
           error: m.error as string | undefined,
           irrecoverable: m.irrecoverable as boolean | undefined,
           queryType: (m.queryType as string) || undefined,
@@ -240,7 +243,7 @@
 
   async function createChat(): Promise<void> {
     if (!canCreateChat) return;
-    const id = await createChatApi(userId, '/chat');
+    const { id } = await createChatApi(userId, '/chat');
     if (id) goto(resolve(`/chat/${id}`));
   }
 
@@ -267,6 +270,7 @@
   }
 
   async function sendMessage(text: string): Promise<void> {
+    if (currentChat?.locked) return;
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 500 || isLoading) return;
     if (userMessageCount >= config.public.maxMessages) return;
@@ -303,7 +307,9 @@
           dismissed.push(chatId);
           localStorage.setItem(CONTACT_DISMISSED_KEY, JSON.stringify(dismissed));
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -320,7 +326,9 @@
       try {
         const dismissed: string[] = JSON.parse(localStorage.getItem(CONTACT_DISMISSED_KEY) || '[]');
         localStorage.setItem(CONTACT_DISMISSED_KEY, JSON.stringify(dismissed.filter((id: string) => id !== chatId)));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     showContactForm = true;
     _clearInput();
@@ -359,13 +367,16 @@
         "42 is the answer to life, the universe, and everything... but what's your question?",
       ];
       const reply = playfulReplies[crypto.getRandomValues(new Uint32Array(1))[0] % playfulReplies.length];
-      messages = [...messages, {
-        id: randomUUID(),
-        role: 'assistant' as const,
-        text: reply,
-        timestamp: Date.now(),
-        createdAt: new Date().toISOString(),
-      }];
+      messages = [
+        ...messages,
+        {
+          id: randomUUID(),
+          role: 'assistant' as const,
+          text: reply,
+          timestamp: Date.now(),
+          createdAt: new Date().toISOString(),
+        },
+      ];
       const fd = new FormData();
       fd.set('userId', userId);
       fd.set('role', 'assistant');
@@ -426,9 +437,11 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId }),
-    }).then(() => {
-      window.location.reload();
-    }).catch(() => {});
+    })
+      .then(() => {
+        window.location.reload();
+      })
+      .catch(() => {});
     return true;
   }
 
@@ -478,7 +491,9 @@
     sendMessage(text);
   }
 
-  async function fetchReaction(messageId: string): Promise<{ reaction: { type: 'up' | 'down' | 'heart'; reason: string } | null } | null> {
+  async function fetchReaction(
+    messageId: string,
+  ): Promise<{ reaction: { type: 'up' | 'down' | 'heart'; reason: string } | null } | null> {
     try {
       const res = await fetch(`/api/messages/${messageId}/reaction`, {
         headers: { 'x-user-id': userId },
@@ -563,10 +578,6 @@
   $effect(() => {
     if (!browser || !userId || !chatId) return;
     if (chatsLoaded) return;
-    if (chats.length > 0) {
-      chatsLoaded = true;
-      return;
-    }
     loadChats();
   });
 
@@ -736,6 +747,26 @@
         messages[idx] = { ...messages[idx], text: messages[idx].text + token };
       },
 
+      onReasoning(text: string) {
+        const last = messages[messages.length - 1];
+        if (last?.role !== 'assistant') {
+          messages = [
+            ...messages,
+            {
+              id: randomUUID(),
+              role: 'assistant' as const,
+              text: '',
+              reasoning: text,
+              timestamp: Date.now(),
+              createdAt: '',
+            },
+          ];
+        } else {
+          const idx = messages.length - 1;
+          messages[idx] = { ...messages[idx], reasoning: text };
+        }
+      },
+
       onDone(data) {
         const { messageId, answer, queryType, sources, usage, completedToolCalls } = data;
 
@@ -770,6 +801,7 @@
             ...messages[idx],
             id: messageId || messages[idx].id,
             text: answer || messages[idx].text,
+            reasoning: data.reasoning || messages[idx].reasoning,
             sources: (sources as Source[]) || messages[idx].sources,
             tokensIn: usage?.tokensIn || 0,
             tokensOut: usage?.tokensOut || 0,
@@ -896,7 +928,6 @@
 
     return cleanup;
   });
-
 </script>
 
 <svelte:head>
@@ -926,7 +957,10 @@
       </div>
     {:else}
       <!-- Messages area -->
-      <div class="flex-1 overflow-y-auto overflow-x-hidden overscroll-behavior-contain min-h-0" bind:this={messageListEl}>
+      <div
+        class="flex-1 overflow-y-auto overflow-x-hidden overscroll-behavior-contain min-h-0"
+        bind:this={messageListEl}
+      >
         <div class="mx-auto w-full max-w-180 py-2">
           <div class="flex flex-col gap-2">
             {#each messages as message, i (message.id)}
@@ -955,7 +989,9 @@
       <div
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 max-md:p-3"
         onclick={dismissContactOverlay}
-        onkeydown={(e) => { if (e.key === 'Escape') dismissContactOverlay(); }}
+        onkeydown={(e) => {
+          if (e.key === 'Escape') dismissContactOverlay();
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Contact form"
@@ -974,12 +1010,27 @@
               onclick={dismissContactOverlay}
               class="flex items-center justify-center size-8 rounded-full text-outline hover:text-on-surface-variant hover:bg-white/5 transition-colors cursor-pointer"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
-          <ContactForm bind:showContactForm {userId} chatId={chatId ?? undefined} bind:contactDismissed noHeader overlay />
+          <ContactForm
+            bind:showContactForm
+            {userId}
+            chatId={chatId ?? undefined}
+            bind:contactDismissed
+            noHeader
+            overlay
+          />
         </div>
       </div>
     {/if}
@@ -1032,7 +1083,10 @@
             </div>
           {:else if attemptsLeft > 0}
             <div class="px-6 max-md:px-1 max-w-[720px] mx-auto w-full">
-              <Banner color="warning" title="{attemptsLeft} off-topic attempt{attemptsLeft > 1 ? 's' : ''} remaining before chat locks" />
+              <Banner
+                color="warning"
+                title="{attemptsLeft} off-topic attempt{attemptsLeft > 1 ? 's' : ''} remaining before chat locks"
+              />
             </div>
           {/if}
           <div class="mx-auto w-full max-w-[720px] px-6 max-md:px-1">
@@ -1042,6 +1096,7 @@
               {activeToolCount}
               {completedToolCount}
               currentStatus={sseState.currentStatus}
+              locked={currentChat?.locked ?? false}
               bind:inputEl
               onsend={(text: string) => sendMessage(text)}
               onstop={handleStop}

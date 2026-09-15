@@ -8,19 +8,15 @@ const config = {
   },
   kit: {
     adapter: adapter(),
+    experimental: {
+      tracing: { server: true },
+      instrumentation: { server: true },
+    },
     paths: {
       relative: false,
     },
     alias: {
       $content: 'src/content',
-    },
-    experimental: {
-      tracing: {
-        server: true,
-      },
-      instrumentation: {
-        server: true,
-      },
     },
   },
 };

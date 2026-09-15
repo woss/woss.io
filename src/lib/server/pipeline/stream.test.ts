@@ -27,6 +27,22 @@ vi.mock('$lib/server/db', () => ({
   })),
 }));
 
+vi.mock('$lib/server/db-service', () => ({
+  getDbService: vi.fn(() => ({
+    getDb: vi.fn(() => ({
+      prepare: vi.fn(() => ({
+        run: vi.fn(),
+        all: vi.fn(() => []),
+        get: vi.fn(),
+        iterate: vi.fn(function* () {}),
+      })),
+      transaction: vi.fn((fn: (rows: unknown[]) => void) => fn),
+    })),
+    ensureModel: vi.fn(() => 42),
+    getToolCallsByMessageId: vi.fn(() => []),
+  })),
+}));
+
 vi.mock('$lib/server/llm-cache', () => ({
   checkCache: vi.fn(),
   storeCache: vi.fn(),
@@ -194,6 +210,7 @@ describe('streamWithRetry', () => {
       'chat-1',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.answerText).toBe('Hello world');
@@ -233,6 +250,7 @@ describe('streamWithRetry', () => {
       'chat-1',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.answerText).toContain('Let me search');
@@ -287,6 +305,7 @@ describe('streamWithRetry', () => {
       'chat-2',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.answerText).toContain('Here is the answer');
@@ -339,6 +358,7 @@ describe('streamWithRetry', () => {
       'chat-3',
       new AbortController(),
       new Map([['traverse', 'macula']]),
+      'test-msg-id',
     );
 
     // answerText only contains the successful retry attempt's output
@@ -358,6 +378,7 @@ describe('streamWithRetry', () => {
       'chat-4',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.irrecoverable).toBe(true);
@@ -388,6 +409,7 @@ describe('streamWithRetry', () => {
       'chat-5',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.answerText).toContain('[woss/woss-io#123](https://github.com/woss/woss-io/pull/123)');
@@ -433,6 +455,7 @@ describe('streamWithRetry', () => {
       'chat-6',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.answerText).toContain('Here are the PRs');
@@ -465,6 +488,7 @@ describe('streamWithRetry', () => {
       'chat-7',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.answerText).toContain('Let me explain');
@@ -496,9 +520,155 @@ describe('streamWithRetry', () => {
       'chat-8',
       new AbortController(),
       new Map(),
+      'test-msg-id',
     );
 
     expect(result.answerText).toContain('Type | Count');
     expect(result.lastError).toBeNull();
+  });
+
+  // =========================================================================
+  // Reasoning tests
+  // =========================================================================
+
+  it('calls publishLive with reasoning-delta events and accumulates text', async () => {
+    // Must include enough text-delta (> TINY_TEXT_THRESHOLD=171) to avoid retry
+    const body = '.'.repeat(175);
+    const events: LLMEvent[] = [
+      { type: 'reasoning-delta', text: 'Let me think about' },
+      { type: 'reasoning-delta', text: ' this carefully' },
+      { type: 'text-delta', text: body },
+      { type: 'step-finish', reason: 'stop', toolCalls: 0, textProduced: true },
+      {
+        type: 'finish',
+        reason: 'stop',
+        modelName: 'test-model',
+        actualModelName: 'test-model-42',
+        provider: 'https://api.test.com/v1',
+        maxTokens: 4096,
+      },
+    ];
+    vi.mocked(chatStreamWithTools).mockReturnValue(Stream.fromIterable(events));
+
+    const result = await streamWithRetry(
+      [{ role: 'user', content: 'Think step by step' }],
+      null,
+      'chat-reason-1',
+      new AbortController(),
+      new Map(),
+      'test-msg-id',
+    );
+
+    // FR-002: publishLive called with correct params on reasoning-delta
+    expect(publishLive).toHaveBeenCalledWith('chat-reason-1', 'reasoning', {
+      text: 'Let me think about',
+    });
+    expect(publishLive).toHaveBeenCalledWith('chat-reason-1', 'reasoning', {
+      text: 'Let me think about this carefully',
+    });
+    // Returned StreamResult has accumulated reasoningText
+    expect(result.reasoningText).toBe('Let me think about this carefully');
+    expect(result.answerText).toBe(body);
+    expect(result.lastError).toBeNull();
+  });
+
+  it('accumulates reasoningText across multiple reasoning-delta events', async () => {
+    const body = '.'.repeat(175);
+    const events: LLMEvent[] = [
+      { type: 'reasoning-delta', text: 'First, ' },
+      { type: 'reasoning-delta', text: 'I need to ' },
+      { type: 'reasoning-delta', text: 'check the data.' },
+      { type: 'text-delta', text: body },
+      { type: 'step-finish', reason: 'stop', toolCalls: 0, textProduced: true },
+      {
+        type: 'finish',
+        reason: 'stop',
+        modelName: 'test-model',
+        actualModelName: 'test-model-42',
+        provider: 'https://api.test.com/v1',
+        maxTokens: 4096,
+      },
+    ];
+    vi.mocked(chatStreamWithTools).mockReturnValue(Stream.fromIterable(events));
+
+    const result = await streamWithRetry(
+      [{ role: 'user', content: 'Analyze' }],
+      null,
+      'chat-reason-2',
+      new AbortController(),
+      new Map(),
+      'test-msg-id',
+    );
+
+    expect(result.reasoningText).toBe('First, I need to check the data.');
+  });
+
+  it('handles interleaved reasoning-delta and text-delta events', async () => {
+    const body = '.'.repeat(175);
+    const events: LLMEvent[] = [
+      { type: 'reasoning-delta', text: 'Analyzing query' },
+      { type: 'reasoning-delta', text: ' and gathering context' },
+      { type: 'text-delta', text: 'Here is the answer: ' },
+      { type: 'text-delta', text: body },
+      { type: 'step-finish', reason: 'stop', toolCalls: 0, textProduced: true },
+      {
+        type: 'finish',
+        reason: 'stop',
+        modelName: 'test-model',
+        actualModelName: 'test-model-42',
+        provider: 'https://api.test.com/v1',
+        maxTokens: 4096,
+      },
+    ];
+    vi.mocked(chatStreamWithTools).mockReturnValue(Stream.fromIterable(events));
+
+    const result = await streamWithRetry(
+      [{ role: 'user', content: 'What is 6*7?' }],
+      null,
+      'chat-reason-3',
+      new AbortController(),
+      new Map(),
+      'test-msg-id',
+    );
+
+    expect(result.reasoningText).toBe('Analyzing query and gathering context');
+    expect(result.answerText).toBe('Here is the answer: ' + body);
+    expect(result.lastError).toBeNull();
+  });
+
+  it('publishes reasoning text as the current accumulated value, not just the delta', async () => {
+    const body = '.'.repeat(175);
+    const events: LLMEvent[] = [
+      { type: 'reasoning-delta', text: 'Step 1' },
+      { type: 'reasoning-delta', text: ' then step 2' },
+      { type: 'reasoning-delta', text: ' then step 3' },
+      { type: 'text-delta', text: body },
+      { type: 'step-finish', reason: 'stop', toolCalls: 0, textProduced: true },
+      {
+        type: 'finish',
+        reason: 'stop',
+        modelName: 'test-model',
+        actualModelName: 'test-model-42',
+        provider: 'https://api.test.com/v1',
+        maxTokens: 4096,
+      },
+    ];
+    vi.mocked(chatStreamWithTools).mockReturnValue(Stream.fromIterable(events));
+
+    await streamWithRetry(
+      [{ role: 'user', content: 'Step by step' }],
+      null,
+      'chat-reason-4',
+      new AbortController(),
+      new Map(),
+      'test-msg-id',
+    );
+
+    // Each publishLive sends the FULL accumulated text, not just the delta
+    const reasoningCalls = vi.mocked(publishLive).mock.calls.filter((call) => call[1] === 'reasoning');
+    expect(reasoningCalls).toHaveLength(3);
+    expect(reasoningCalls[0][2]).toEqual({ text: 'Step 1' });
+    expect(reasoningCalls[1][2]).toEqual({ text: 'Step 1 then step 2' });
+    expect(reasoningCalls[2][2]).toEqual({ text: 'Step 1 then step 2 then step 3' });
   });
 });

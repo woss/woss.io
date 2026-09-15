@@ -1,6 +1,6 @@
 import { publishLive, publishPersistent } from '$lib/server/chat-events';
 import { callErrorWebhook } from '$lib/server/webhooks';
-import { addMessage, getDb, getPosts, searchChunks } from '$lib/server/db';
+import { getDbService } from '$lib/server/db-service';
 import { buildRagPrompt } from '$lib/server/openai-provider';
 import { getMcpToolDefs, type McpToolDef } from '$lib/server/mcp/tools';
 import { getToolSystemPrompt } from '../prompts.ts';
@@ -8,7 +8,9 @@ import { config } from '$lib/server/config';
 import { CAT, createLogger } from '$lib/server/logger';
 import { classifyQuery, type QueryClass } from '$lib/query-classifier';
 import { needsGithubTools, needsMaculaTools, parseSources, tryRenameChat } from '$lib/server/chat-helpers';
-import { generateTraceId, withTrace } from '$lib/server/trace-context';
+import { generateTraceId, setMsgId, withTrace } from '$lib/server/trace-context';
+import { createRootSpan, endSpan, withSpan } from '$lib/server/tracing';
+import { randomUUID } from '$lib/utils/random-uuid';
 
 import { handleEarlyGates } from './early-gates';
 import { streamWithRetry } from './stream';
@@ -59,7 +61,7 @@ export async function startGeneration(
   msgTraceId?: string,
 ): Promise<void> {
   // If a message traceId is provided, wrap the entire generation in that trace context
-  // so all addMessage calls and LLM operations inherit the message traceId
+  // so all addMessage calls and LLM operations inherit the message traceId.
   if (msgTraceId) {
     return withTrace(msgTraceId, generateTraceId(), () =>
       startGeneration(text, chatId, userId, maxChunks, userAgentId, userMsgId),
@@ -73,10 +75,21 @@ export async function startGeneration(
   const startTime = performance.now();
   log.info`📝 ask: "${text.slice(0, 100)}" [chatId=${chatId} userId=${userId}]`;
 
+  // The generation runs fire-and-forget after the 202 response (no active OTEL
+  // context), so open a root span here to surface the whole pipeline in Datadog.
+  const root = createRootSpan('chat.generate', { chatId, userId, text: text.slice(0, 100) });
+
   try {
     // Publish user_message event
     log.info('Sending SSE event', { event: 'user_message', chatId, dataLength: text.length });
     publishPersistent(chatId, 'user_message', { text, userId });
+
+    // Auto-rename "New Chat" to user's first message (before early gates)
+    try {
+      tryRenameChat(chatId, text);
+    } catch (err) {
+      log.error`Failed to rename chat: ${err}`;
+    }
 
     // 1a-3: Early gates — relevance, polite, embedding, cache
     const earlyResult = await handleEarlyGates(text, chatId, userId, abortController, userAgentId, startTime);
@@ -88,7 +101,7 @@ export async function startGeneration(
     log.info`🎯 queryType=${queryType} "${text.slice(0, 80)}"`;
     // Persist query_type on the user message
     if (userMsgId) {
-      getDb().prepare('UPDATE messages SET query_type = ? WHERE id = ?').run(queryType, userMsgId);
+      getDbService().getDb()!.prepare('UPDATE messages SET query_type = ? WHERE id = ?').run(queryType, userMsgId);
     }
 
     // 5. RAG search (skip for tool-only queries)
@@ -105,7 +118,11 @@ export async function startGeneration(
     if (queryType !== 'tool') {
       publishLive(chatId, 'status', { step: 'searching' });
       // Search more candidates for type-balanced selection
-      const results = searchChunks(embedding.data, maxChunks * 3);
+      const results = await withSpan(
+        'chat.rag_search',
+        () => getDbService().searchChunks(embedding.data, maxChunks * 3),
+        { chatId, maxChunks },
+      );
 
       // Future: cross-encoder re-ranker re-orders results (src/lib/server/reranker.ts).
       // bge-reranker-base produced near-zero scores for this domain, so it couldn't gate.
@@ -177,7 +194,7 @@ export async function startGeneration(
       // Post-metadata fallback: when RAG returns empty and query asks about posts,
       // inject post titles directly from SQL (vector similarity fails for metadata queries)
       if (ragChunks.length === 0 && /\b(post|blog|writing|article)\b/i.test(text)) {
-        const allPosts = getPosts();
+        const allPosts = await getDbService().getPosts();
         const published = allPosts
           .filter((p) => p.status === 'published')
           .sort((a, b) => {
@@ -213,9 +230,6 @@ export async function startGeneration(
         }
       }
     }
-
-    // Auto-rename "New Chat" to user's first message (all paths)
-    tryRenameChat(chatId, text);
 
     // For /summarize, use all unique sources from conversation history instead of RAG results.
     // RAG search on "/summarize" returns chunks unrelated to the conversation topics.
@@ -257,7 +271,11 @@ export async function startGeneration(
       log.info`📚 queryType=${queryType} overrides tool need — forcing tool-free mode`;
     } else if (githubNeeded || maculaNeeded) {
       try {
-        const toolDefs = await getMcpToolDefs();
+        const toolDefs = await withSpan('chat.mcp_load_tools', () => getMcpToolDefs(), {
+          chatId,
+          github: githubNeeded,
+          macula: maculaNeeded,
+        });
         if (toolDefs.length > 0) {
           mcpToolDefs = toolDefs;
           log.info`🔧 tools: ${toolDefs.map((t: McpToolDef) => t.name).join(', ')}`;
@@ -303,7 +321,30 @@ export async function startGeneration(
     // Start generation timeout right before the real LLM call to exclude early-gate overhead
     timeoutId = setTimeout(() => abortController.abort(), 300_000);
     timeoutId?.unref?.();
-    const streamResult = await streamWithRetry(messages, mcpToolDefs, chatId, abortController, toolServerMap);
+
+    // Generate message ID and create message record before streaming so tool_calls FK targets exist
+    const msgId = randomUUID();
+    setMsgId(msgId);
+    try {
+      await getDbService().createMessage({
+        userId,
+        role: 'assistant',
+        content: '',
+        chatId,
+        msgId,
+        userAgentId,
+        queryType,
+        fromCache: false,
+      });
+    } catch (e) {
+      log.error`Failed to create message before streaming: ${e}`;
+    }
+
+    const streamResult = await withSpan(
+      'chat.llm_stream',
+      () => streamWithRetry(messages, mcpToolDefs, chatId, abortController, toolServerMap, msgId),
+      { chatId, model: config().openai.model },
+    );
     const {
       answerText,
       reasoningText,
@@ -313,9 +354,9 @@ export async function startGeneration(
       maxTokens,
       lastError,
       partial,
-      msgId,
       irrecoverable,
       toolCalls = [],
+      userErrorMessage,
     } = streamResult;
 
     // Fire error webhook on LLM error
@@ -345,33 +386,37 @@ export async function startGeneration(
     }
 
     // 8. Save result, store cache, emit done
-    await saveAndEmitResult({
-      userId,
-      chatId,
-      userAgentId,
-      answerText,
-      reasoningText,
-      sources,
-      currentModelId,
-      tokenUsage,
-      responseMs,
-      maxTokens,
-      partial,
-      lastError,
-      msgId,
-      cacheEmbeddingData,
-      cacheText,
-      ragChunks,
-      queryType,
-      startTime,
-      irrecoverable,
-      toolCalls,
-    });
+    await withSpan('chat.save_result', () =>
+      saveAndEmitResult({
+        userId,
+        chatId,
+        userAgentId,
+        answerText,
+        reasoningText,
+        sources,
+        currentModelId,
+        tokenUsage,
+        responseMs,
+        maxTokens,
+        partial,
+        lastError,
+        msgId,
+        cacheEmbeddingData,
+        cacheText,
+        ragChunks,
+        queryType,
+        startTime,
+        irrecoverable,
+        toolCalls,
+        userErrorMessage,
+      }),
+    );
   } catch (err) {
+    endSpan(root, err);
     const message = err instanceof Error ? err.message : 'Unknown error';
     log.error`Background generation failed: ${err}`;
     try {
-      const errMsgId = addMessage({
+      const errMsgId = await getDbService().addMessage({
         userId,
         role: 'assistant',
         content: '',
@@ -389,5 +434,6 @@ export async function startGeneration(
   } finally {
     activeGenerations.delete(chatId);
     clearTimeout(timeoutId);
+    endSpan(root);
   }
 }

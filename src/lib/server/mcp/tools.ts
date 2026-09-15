@@ -14,9 +14,9 @@ const log = createLogger(CAT.mcp);
 let _reconnectPromise: Promise<void> | null = null;
 
 /** Description overrides for tools needing critical LLM usage hints */
-const TOOL_DESCRIPTION_OVERRIDES: Record<string, string> = {
+export const TOOL_DESCRIPTION_OVERRIDES: Record<string, string> = {
   traverse:
-    'Primary content discovery tool. from types: user(nickname), keyword(keyword), license(license), directory(pathCid), file(unifiedId), root. EDGE RULES: user→uploads|profile, keyword→tagged_files, license→has_license, directory→contains|info, file→info, root→random|recent|search|keywords. Use filter.what(images|videos|files|all), filter.allowAi(true|false) to exclude AI-gen, filter.allowedAiTraining(true|false) for DMI, filter.nickname(str) by creator to narrow. File fields: id, title, kind, mimeType, rawDataUrl, htmlPageUrl, buyPageUrl, thumbnailUrl, fileSize, publishedAt, license, owner (nickname, displayName, avatarUrl), keywords[], directory (pathCid, name), dataMining. Returns {items, total, after} for paginated edges or {item} for single-item edges. CRITICAL: directory pathCid MUST come from get_users directories[].pathCid. Fabricated CIDs return 0 items. CRITICAL: only root supports random|recent edges. NEVER use recent or random edge with user — those only work with root and will return an error.',
+    'Primary content discovery tool. LATEST/RECENT PHOTOS: Always use from:{type:root}, edge:recent for "latest", "recent", or "newest" photo queries — never edge:contains on a directory for these. from types: user(nickname), keyword(keyword), license(license), directory(pathCid), file(unifiedId), root. EDGE RULES: user→uploads|profile, keyword→tagged_files, license→has_license, directory→contains|info, file→info, root→random|recent|search|keywords. Use filter.what(images|videos|files|all), filter.allowAi(true|false) to exclude AI-gen, filter.allowedAiTraining(true|false) for DMI, filter.nickname(str) by creator to narrow. File fields: id, title, kind, mimeType, rawDataUrl, htmlPageUrl, buyPageUrl, thumbnailUrl, fileSize, publishedAt, license, owner (nickname, displayName, avatarUrl), keywords[], directory (pathCid, name), dataMining. Returns {items, total, after} for paginated edges or {item} for single-item edges. CRITICAL: directory pathCid MUST come from get_users directories[].pathCid. Fabricated CIDs return 0 items. CRITICAL: only root supports random|recent edges. NEVER use recent or random edge with user — those only work with root and will return an error.',
   get_users:
     'Batch lookup Macula user profiles by nickname array. Returns UserNode with avatarUrl, bio, fileCount, and directories (albums with pathCid, name, fileCount). Null for not-found nicknames. Use this to get REAL directory pathCids before calling traverse(directory→contains).',
 
@@ -52,6 +52,39 @@ function parseRecord(value: string | undefined): Record<string, unknown> {
     log.warn`Failed to parse MCP tool record: ${e}`;
     return {};
   }
+}
+
+/**
+ * Normalize tool-call arguments before dispatch to the MCP server.
+ * Coerces stringified-JSON object/array values (e.g. `from`, `filter`) into real
+ * objects/arrays, and numeric strings for known numeric keys into numbers.
+ * Returns a NEW object; never mutates the input. Schema-independent.
+ */
+function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const numericKeys = new Set(['limit', 'maxResults', 'perPage', 'page', 'offset']);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+      try {
+        const parsed: unknown = JSON.parse(value);
+        if (typeof parsed === 'object' && parsed !== null) {
+          result[key] = parsed;
+          continue;
+        }
+      } catch (e) {
+        log.debug`Failed to parse stringified JSON arg "${key}", keeping original: ${e}`;
+      }
+    }
+    if (typeof value === 'string' && numericKeys.has(key)) {
+      const num = Number(value);
+      if (Number.isFinite(num)) {
+        result[key] = num;
+        continue;
+      }
+    }
+    result[key] = value;
+  }
+  return result;
 }
 
 /** @group Cache */
@@ -112,7 +145,7 @@ export async function getMcpToolDefs(): Promise<McpToolDef[]> {
  * Parses the JSON-stringified arguments and delegates to the MCP client.
  */
 export async function executeMcpToolCall(toolCall: { name: string; arguments?: string }): Promise<McpToolCallResult> {
-  const args = parseRecord(toolCall.arguments);
+  const args = normalizeArgs(parseRecord(toolCall.arguments));
   log.debug`Tool call: ${toolCall.name}(${JSON.stringify(args)})`;
   const result = await mcp.callTool(toolCall.name, args);
   // Check if any content item indicates a tool error
