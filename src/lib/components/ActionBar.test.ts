@@ -56,8 +56,9 @@ vi.mock('@testing-library/svelte-core/svelte-version', () => ({
 vi.mock('sv5ui', () => ({
   Button: (...args: unknown[]) => {
     const props: Record<string, unknown> =
-      args.find((a: unknown) => a && typeof a === 'object' && !(a as Record<string, unknown>).nodeType) ??
-      ({} as Record<string, unknown>);
+      args.find(
+        (a: unknown): a is Record<string, unknown> => typeof a === 'object' && a !== null && !('nodeType' in a),
+      ) ?? {};
     const label: string = (props['aria-label'] as string) ?? (props.label as string) ?? (props.title as string) ?? '';
     if (typeof props.onclick === 'function') {
       clickHandlers[label] = props.onclick as (e: Event) => void;

@@ -115,6 +115,7 @@ describe('handleEarlyGates', () => {
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(false);
     mockDb.incrementOffTopicCount.mockReturnValue(1);
+    mockDb.getOffTopicCount.mockReturnValue(1); // source re-reads the persisted strike count
 
     const result = await handleEarlyGates(
       'What is the weather?',
@@ -141,6 +142,7 @@ describe('handleEarlyGates', () => {
     vi.mocked(needsMaculaTools).mockResolvedValue(false);
     vi.mocked(isRelevant).mockResolvedValue(false);
     mockDb.incrementOffTopicCount.mockReturnValue(3);
+    mockDb.getOffTopicCount.mockReturnValue(3); // third strike locks the chat
 
     const result = await handleEarlyGates(
       'Tell me about sports',

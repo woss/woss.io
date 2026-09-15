@@ -120,10 +120,11 @@
  }
  }
 
-  function formatDate(dateStr: string): string {
- const d = new Date(dateStr + '-01');
- return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
- }
+  function formatDate(dateStr: string | null): string {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + '-01');
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+  }
 
  // Date range for the chart
  let timeRange = $derived(computeTimeRange(entries));
@@ -142,16 +143,18 @@
  return { min: min.getTime(), max: max.getTime(), span: max.getTime() - min.getTime() };
  }
 
- function barLeft(startDate: string): number {
- const start = new Date(startDate + '-01').getTime();
- return Math.max(0, ((start - timeRange.min) / timeRange.span) * 100);
- }
+  function barLeft(startDate: string | null): number {
+    if (!startDate) return 0;
+    const start = new Date(startDate + '-01').getTime();
+    return Math.max(0, ((start - timeRange.min) / timeRange.span) * 100);
+  }
 
- function barWidth(endDate: string | null, startDate: string): number {
- const start = new Date(startDate + '-01').getTime();
- const end = endDate ? new Date(endDate + '-01').getTime() : Date.now();
- return Math.max(2, ((end - start) / timeRange.span) * 100);
- }
+  function barWidth(endDate: string | null, startDate: string | null): number {
+    if (!startDate) return 0;
+    const start = new Date(startDate + '-01').getTime();
+    const end = endDate ? new Date(endDate + '-01').getTime() : Date.now();
+    return Math.max(2, ((end - start) / timeRange.span) * 100);
+  }
 
 </script>
 

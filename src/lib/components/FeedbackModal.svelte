@@ -87,6 +87,7 @@
 {#if open}
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+    role="presentation"
     onpointerdown={handleBackdropClick}
     onkeydown={handleKeydown}
   >

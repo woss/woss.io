@@ -19,7 +19,9 @@ const SEARCH_INDEX_CONFIG: IndexConfig = {
 async function main() {
   try {
     await configure({ sinks: { console: getConsoleSink() }, filters: {} });
-  } catch {}
+  } catch {
+    // best-effort: fall back to raw console if LogTape is already configured
+  }
 
   // 1. Check the USearch index file
   console.log('VECTOR_INDEX_PATH:', VECTOR_INDEX_PATH);

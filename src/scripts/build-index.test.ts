@@ -47,13 +47,16 @@ vi.mock('./seed-data.js', () => ({
   saveCentroids: vi.fn(),
 }));
 
-vi.mock('node:fs', () => ({
-  readFileSync: vi.fn(),
-  readdirSync: vi.fn().mockReturnValue([]),
-  existsSync: vi.fn().mockReturnValue(true),
-  mkdirSync: vi.fn(),
-  writeFileSync: vi.fn(),
-}));
+vi.mock('node:fs', () => {
+  const fs = {
+    readFileSync: vi.fn(),
+    readdirSync: vi.fn().mockReturnValue([]),
+    existsSync: vi.fn().mockReturnValue(true),
+    mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
+  };
+  return { ...fs, default: fs };
+});
 
 // ---------------------------------------------------------------------------
 // Import under test
