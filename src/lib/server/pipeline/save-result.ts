@@ -31,6 +31,7 @@ export interface SaveResultParams {
   startTime: number;
   irrecoverable: boolean;
   toolCalls?: { name: string; serverId: string }[];
+  userErrorMessage?: string;
 }
 
 /**
@@ -81,9 +82,10 @@ export async function saveAndEmitResult(params: SaveResultParams): Promise<void>
     startTime,
     irrecoverable,
     toolCalls = [],
+    userErrorMessage,
   } = params;
 
-  if (lastError && !partial) {
+  if (lastError && (!partial || !!userErrorMessage)) {
     const fallbackText = rawAnswerText.trim()
       ? rawAnswerText
       : "I'm sorry, I wasn't able to generate a response. Please try rephrasing your question.";

@@ -98,6 +98,8 @@ interface StreamResult {
   msgId: string;
   toolLoopDetected: boolean;
   irrecoverable: boolean;
+  toolFailureDetected?: boolean;
+  userErrorMessage?: string;
   toolCalls?: { name: string; serverId: string }[];
 }
 
@@ -145,7 +147,7 @@ export async function streamWithRetry(
   let anySuccessfulToolCalls;
   let doomLoopDetectedInRound = false;
   // Use message_id passed from orchestrator for tool-call FK tracking
-  const db = getDbService().getDb();
+  const db = getDbService().getDb()!;
   const toolCallStmt = db.prepare(
     `INSERT INTO tool_calls (id, message_id, name, server_id, tool_input, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
   );
@@ -156,6 +158,8 @@ export async function streamWithRetry(
   // change from 3 to 10 attempts after adding retry-on-doom-loop logic, to give the model more chances to recover with tools disabled
   const baseSystemPrompt = messages[0].content;
   let irrecoverable = false;
+  let toolFailureDetected = false;
+  let userErrorMessage: string | undefined;
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
       answerText = '';
@@ -163,6 +167,8 @@ export async function streamWithRetry(
       anyStepHadToolCalls = false;
       anySuccessfulToolCalls = false;
       doomLoopDetectedInRound = false;
+      toolFailureDetected = false;
+      userErrorMessage = undefined;
       const xmlStripper = new ToolCallXmlStripper();
       const llmStream = mcpToolDefs
         ? chatStreamWithTools(messages, mcpToolDefs, abortController.signal)
@@ -242,6 +248,13 @@ export async function streamWithRetry(
                   // Track successful (non-error) tool results for doom loop detection
                   if (!resultStr.includes('Tool returned an error')) {
                     anySuccessfulToolCalls = true;
+                  }
+                  // Detect tool failures for user-facing error messages
+                  const toolErrorPattern = /Tool .* failed:|invalid session|Tool returned an error/;
+                  if (toolErrorPattern.test(resultStr)) {
+                    toolFailureDetected = true;
+                    userErrorMessage =
+                      'External data source (GitHub) is temporarily unavailable. Please try again in a moment.';
                   }
                 } catch (e) {
                   log.error`Failed to record tool result: ${e}`;
@@ -425,5 +438,7 @@ export async function streamWithRetry(
     toolLoopDetected: doomLoopDetectedInRound,
     irrecoverable,
     toolCalls,
+    toolFailureDetected,
+    userErrorMessage,
   };
 }

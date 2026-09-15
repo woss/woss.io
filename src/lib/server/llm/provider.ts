@@ -64,7 +64,15 @@ function fixFinishReasonTransform(): TransformStream<Uint8Array, Uint8Array> {
  * 2. Short-circuits 429 rate limit as 400 to skip AI SDK's internal retry loop
  */
 async function customFetch(input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> {
-  const response = await fetch(input, init);
+  // Inject User-Agent: opencode/* on requests to the OpenCode Zen endpoint
+  // (baseURL containing opencode.ai/zen) so the free-tier UA gate passes.
+  // Scoped to the Zen endpoint ONLY — never applied to other providers.
+  const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const isZenEndpoint = urlStr.includes('opencode.ai/zen');
+  const headers = new Headers(init?.headers ?? (input instanceof globalThis.Request ? input.headers : undefined));
+  if (isZenEndpoint && !headers.has('User-Agent')) headers.set('User-Agent', 'opencode/*');
+
+  const response = await fetch(input, { ...init, headers });
 
   // Short-circuit 429 rate limit → 400 to prevent AI SDK's 3 internal retries.
   // The SDK only retries on 429/5xx; a 400 passes through immediately.

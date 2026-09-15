@@ -15,3 +15,4 @@ coverage/
 tmp/
 .turbo/
 .serena
+.omp/

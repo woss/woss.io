@@ -154,7 +154,7 @@
 
   async function createChat(): Promise<void> {
     if (!canCreateChat) return;
-    const id = await createChatApi(userId);
+    const { id } = await createChatApi(userId);
     if (id) goto(resolve(`/chat/${id}`));
   }
 

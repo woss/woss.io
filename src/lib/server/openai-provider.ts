@@ -286,6 +286,9 @@ export function chatStreamWithTools(
           let aggregatedUsage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
           let lastFinishReason: string = 'stop';
           let actualModelName: string = config().openai.model;
+          // Set when a forced-final (no-tools) round is first scheduled; guards
+          // against infinite recursion if the model keeps emitting tool calls.
+          let forcedFinal = false;
 
           const MAX_ROUNDS = config().openai.maxRounds;
           const CROSS_ROUND_THRESHOLD = 3;
@@ -311,7 +314,10 @@ export function chatStreamWithTools(
                   abortSignal: signal,
                   temperature: 0.2,
                   ...(MAX_TOKENS !== undefined ? { maxTokens: MAX_TOKENS } : {}),
-                  ...(currentToolSet ? { tools: currentToolSet, maxSteps: FIRST_ROUND_MAX_STEPS } : {}),
+                  // Tools round: allow up to FIRST_ROUND_MAX_STEPS auto-tool-steps.
+                  // No-tools final round: maxSteps=1 forces a single response so the
+                  // SDK cannot re-execute pending tool-calls from history and loop.
+                  ...(currentToolSet ? { tools: currentToolSet, maxSteps: FIRST_ROUND_MAX_STEPS } : { maxSteps: 1 }),
                   onChunk: ({ chunk }) => {
                     if (aborted) return;
                     switch (chunk.type) {
@@ -479,6 +485,15 @@ export function chatStreamWithTools(
                         roundTextLength > 0 &&
                         (reachedMaxRounds || isDoomLoop || isInterimRound)
                       ) {
+                        // Hard stop: only one forced-final (no-tools) round is ever
+                        // scheduled. If the model STILL emits tool calls after tools
+                        // were dropped, resolve now instead of recursing forever.
+                        if (forcedFinal) {
+                          log.warn`[llm-round] Forced-final round still emitted tool calls — stopping (tool loop escaped)`;
+                          resolve();
+                          return;
+                        }
+                        forcedFinal = true;
                         // MAX_ROUNDS reached with tool calls and text — force a final
                         // Force final round without tools so the model must produce text.
                         log.info`[llm-round] MAX_ROUNDS=${MAX_ROUNDS} reached, ${roundToolCalls} tool calls, ${roundTextLength} text chars — forcing final round without tools`;

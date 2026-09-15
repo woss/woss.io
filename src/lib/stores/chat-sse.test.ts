@@ -28,9 +28,8 @@ function setupEventSourceMock(): void {
       addEventListener: MockESInstance['addEventListener'];
       constructor(url: string) {
         this.url = url;
-        const self = this;
         this.addEventListener = vi.fn((event: string, handler: (e: { data: string }) => void) => {
-          self._listeners.set(event, handler);
+          this._listeners.set(event, handler);
         }) as unknown as MockESInstance['addEventListener'];
         esInstances.push({
           url,
@@ -45,7 +44,7 @@ function setupEventSourceMock(): void {
 
 // ── Imports under test ──
 
-import { connectSSE, disconnectSSE, resetStreamingState, sseState, seenErrorMsgIds } from './chat-sse.svelte';
+import { connectSSE, disconnectSSE, resetStreamingState, seenErrorMsgIds } from './chat-sse.svelte';
 
 // ===========================================================================
 // Reasoning SSE listener
@@ -246,7 +245,7 @@ describe('onReasoning behavior (SC-002)', () => {
   });
 
   it('does not update reasoning if there is no assistant message', () => {
-    const messages: Array<{ role: string; reasoning?: string }> = [{ role: 'user', text: 'Hello' }];
+    const messages: Array<{ role: string; reasoning?: string; text?: string }> = [{ role: 'user', text: 'Hello' }];
 
     function onReasoning(text: string): void {
       const idx = messages.length - 1;

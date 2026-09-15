@@ -28,6 +28,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // Mock _both_ svelte and the svelte-version module to force modern Svelte 5 path
 vi.mock('svelte', async () => {
+  // eslint-disable-next-line svelte/no-svelte-internal -- test forces client-build APIs (mount/unmount) in node
   const client = await import('svelte/internal/client');
   // Import server for shared exports
   const server = await import('svelte');
@@ -65,9 +66,9 @@ vi.mock('$app/state', () => ({
 
 // Mock sv5ui components to avoid mode-watcher .svelte resolution issue
 vi.mock('sv5ui', () => ({
-  Button: (props: any) => props.children?.(),
+  Button: (props: { children?: () => unknown }) => props.children?.(),
   Input: () => '',
-  Tooltip: (props: any) => props.children?.(),
+  Tooltip: (props: { children?: () => unknown }) => props.children?.(),
   AvatarGroup: () => '',
 }));
 
