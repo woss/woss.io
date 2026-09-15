@@ -81,7 +81,18 @@ export interface DatabaseService {
   updateMessage(
     messageId: string,
     updates: Partial<
-      Pick<StoredMessage, 'content' | 'reasoning' | 'error' | 'sources' | 'tokensIn' | 'tokensOut' | 'durationMs'>
+      Pick<
+        StoredMessage,
+        | 'content'
+        | 'reasoning'
+        | 'error'
+        | 'sources'
+        | 'tokensIn'
+        | 'tokensOut'
+        | 'durationMs'
+        | 'modelId'
+        | 'maxTokens'
+      >
     >,
   ): Promise<void>;
   saveMessages(chatId: string, messages: StoredMessage[]): Promise<void>;

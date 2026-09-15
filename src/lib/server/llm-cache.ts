@@ -98,6 +98,7 @@ export function checkCache(
   if (distance > HIT_THRESHOLD) return null;
 
   const db = getDbService().getDb();
+  if (!db) return null; // no database handle — treat as a cache miss
   const row = db.prepare('SELECT answer, sources, tool_calls, created_at FROM llm_cache WHERE id = ?').get(cacheId) as
     | { answer: string; sources: string; tool_calls: string | null; created_at: string }
     | undefined;
@@ -131,6 +132,7 @@ export function storeCache(
   if (!answer) return; // Don't cache empty answers
 
   const db = getDbService().getDb();
+  if (!db) return; // no database handle — nothing to persist into
   const idx = getIndex();
 
   const result = db

@@ -56,8 +56,9 @@ vi.mock('@testing-library/svelte-core/svelte-version', () => ({
 vi.mock('sv5ui', () => ({
   Button: (...args: unknown[]) => {
     const props: Record<string, unknown> =
-      args.find((a: unknown) => a && typeof a === 'object' && !(a as Record<string, unknown>).nodeType) ??
-      ({} as Record<string, unknown>);
+      args.find(
+        (a: unknown): a is Record<string, unknown> => typeof a === 'object' && a !== null && !('nodeType' in a),
+      ) ?? {};
     const label: string = (props['aria-label'] as string) ?? (props.label as string) ?? (props.title as string) ?? '';
     if (label && typeof props.onclick === 'function') {
       clickHandlers[label] = props.onclick as (e: Event) => void;
@@ -123,7 +124,6 @@ describe('ChatMessage — feedback wiring', () => {
     render(ChatMessage, {
       props: {
         message: createMessage(),
-        contexts: {},
         chatId: 'chat-1',
         userId: 'user-1',
       },
@@ -135,7 +135,6 @@ describe('ChatMessage — feedback wiring', () => {
     render(ChatMessage, {
       props: {
         message: createMessage(),
-        contexts: {},
         chatId: 'chat-1',
         userId: 'user-1',
       },
@@ -162,7 +161,6 @@ describe('ChatMessage — feedback wiring', () => {
       render(ChatMessage, {
         props: {
           message: createMessage(),
-          contexts: {},
           chatId: 'chat-1',
           userId: 'user-1',
         },
@@ -180,7 +178,6 @@ describe('ChatMessage — feedback wiring', () => {
       render(ChatMessage, {
         props: {
           message: createMessage(),
-          contexts: {},
           chatId: 'chat-1',
           userId: 'user-1',
         },
@@ -197,7 +194,6 @@ describe('ChatMessage — feedback wiring', () => {
     render(ChatMessage, {
       props: {
         message: createMessage({ role: 'user' }),
-        contexts: {},
         chatId: 'chat-1',
         userId: 'user-1',
       },
@@ -212,7 +208,6 @@ describe('ChatMessage — feedback wiring', () => {
       render(ChatMessage, {
         props: {
           message: createMessage(),
-          contexts: {},
           userId: 'user-1',
         },
       });
@@ -224,7 +219,6 @@ describe('ChatMessage — feedback wiring', () => {
       render(ChatMessage, {
         props: {
           message: createMessage(),
-          contexts: {},
           chatId: 'chat-1',
         },
       });

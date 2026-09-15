@@ -45,8 +45,8 @@ export function publishLive(chatId: string, type: string, data: unknown): void {
  * Publish an event and persist to DB.
  * Returns the event ID from DB.
  */
-export function publishPersistent(chatId: string, type: string, data: unknown): number {
-  const id = getDbService().insertChatEvent(chatId, type, data);
+export async function publishPersistent(chatId: string, type: string, data: unknown): Promise<number> {
+  const id = await getDbService().insertChatEvent(chatId, type, data);
   const event: ChatEventPayload = { id, chatId, type, data };
   subscribers.get(chatId)?.forEach((cb) => {
     try {

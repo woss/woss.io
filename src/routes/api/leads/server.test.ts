@@ -61,6 +61,11 @@ function buildEvent(overrides: {
     headers: { 'Content-Type': 'application/json', ...Object.fromEntries(headers) },
     body,
   });
+  // happy-dom's Request constructor strips fetch-forbidden headers (Origin,
+  // Referer). Re-attach them so the route sees what a real server receives.
+  Object.defineProperty(request, 'headers', {
+    value: new Headers({ 'Content-Type': 'application/json', ...Object.fromEntries(headers) }),
+  });
 
   return {
     params: {},
@@ -130,6 +135,9 @@ describe('POST /api/leads', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', origin: 'https://woss.io' },
         body: 'not json',
+      });
+      Object.defineProperty(request, 'headers', {
+        value: new Headers({ 'Content-Type': 'application/json', origin: 'https://woss.io' }),
       });
       const event = {
         params: {},

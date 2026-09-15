@@ -24,6 +24,9 @@ ENV DD_VERSION=$DD_VERSION
 WORKDIR /app
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/vite.config.ts ./vite.config.ts
+# svelte.config.js is required at runtime by vite-node (build-index) to
+# resolve $lib aliases; without it SvelteKit falls back to a broken default.
+COPY --from=builder /app/svelte.config.js ./svelte.config.js
 # build-index.ts needs source + node_modules at runtime
 COPY --from=builder /app/node_modules /app/node_modules
 COPY --from=builder /app/src ./src

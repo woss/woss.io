@@ -24,10 +24,11 @@
  return () => cancelAnimationFrame(raf);
  });
 
- function formatDate(dateStr: string): string {
- const d = new Date(dateStr + '-01');
- return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
- }
+  function formatDate(dateStr: string | null): string {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + '-01');
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+  }
 </script>
 
 <Seo

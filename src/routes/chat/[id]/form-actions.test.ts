@@ -28,7 +28,10 @@ vi.mock('$lib/server/logger', () => ({
     fatal: vi.fn(),
   }),
 }));
-
+// +page.server imports $lib/config, which reads $env/dynamic/public. The
+// virtual env module fails to initialize under happy-dom unless mocked;
+// config's getters fall back to defaults on missing values.
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
 // Import mocked modules for assertions
 import { setReaction, deleteReaction, softDeleteMessage, getChat } from '$lib/server/db';
 import { callWebhook } from '$lib/server/webhooks';

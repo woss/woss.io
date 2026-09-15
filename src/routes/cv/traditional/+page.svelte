@@ -79,25 +79,27 @@
 </div>
 
 <style>
-  @reference "../../../app.css";
 
   @page {
     size: A4;
     margin: 0;
   }
 
-  /* ─── Accent ─── */
-  .accent {
-    color: oklch(0.72 0.19 162.5);
-  }
 
   /* ─── Layout ─── */
   .print-wrapper {
-    @apply bg-surface flex justify-center py-12 px-4;
+    background: var(--color-surface);
+    display: flex;
+    justify-content: center;
+    padding: 3rem 1rem;
   }
 
   .cv-page {
-    @apply bg-surface-container-low border border-outline-variant rounded-xl max-w-[900px] w-full;
+    background: var(--color-surface-container-low);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: 0.75rem;
+    max-width: 900px;
+    width: 100%;
     padding: 48px 56px;
   }
 
@@ -111,36 +113,43 @@
   }
 
   .avatar {
-    @apply size-14 rounded-lg object-cover shrink-0;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 0.5rem;
+    object-fit: cover;
+    flex-shrink: 0;
   }
 
   .header-text {
-    @apply flex flex-col;
+    display: flex;
+    flex-direction: column;
   }
 
   .name {
-    @apply font-heading font-bold text-on-surface;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    color: var(--color-on-surface);
     font-size: 28px;
     letter-spacing: -0.03em;
     line-height: 1.15;
   }
 
   .subtitle {
-    @apply font-body text-sm text-on-surface-variant;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--color-on-surface-variant);
     margin-top: 2px;
   }
 
   .links {
-    @apply font-body text-xs;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    line-height: 1.35;
     color: var(--color-on-surface-variant);
     margin-top: 6px;
   }
 
-  .link-label {
-    color: var(--color-on-surface-variant);
-    font-style: italic;
-    font-weight: 700;
-  }
 
   .link-traditional {
     color: var(--color-on-surface-variant);
@@ -152,7 +161,8 @@
   }
 
   .link-modern {
-    @apply font-heading font-bold;
+    font-family: var(--font-heading);
+    font-weight: 700;
     color: oklch(0.72 0.19 162.5);
     text-decoration: none;
   }
@@ -161,7 +171,9 @@
   }
 
   .contact-row {
-    @apply font-body text-xs;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    line-height: 1.35;
     color: var(--color-on-surface-variant);
     margin-top: 4px;
     display: flex;
@@ -174,7 +186,10 @@
 
   /* ─── Summary ─── */
   .summary {
-    @apply font-body text-sm text-on-surface-variant leading-relaxed;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    line-height: 1.625;
+    color: var(--color-on-surface-variant);
     margin-bottom: 16px;
   }
   .summary.secondary {
@@ -183,58 +198,29 @@
     border-bottom: 1px solid var(--color-outline-variant);
   }
 
-  /* ─── Skills ─── */
-  .skills {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 28px;
-    padding-bottom: 28px;
-    border-bottom: 1px solid var(--color-outline-variant);
-  }
-
-  .skill {
-    @apply font-body text-sm font-semibold;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: 100px;
-    background: oklch(0.72 0.19 162.5 / 0.15);
-    color: oklch(0.72 0.19 162.5);
-  }
-
-  .skill-count {
-    @apply font-body text-[11px] font-bold;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    border-radius: 9px;
-    background: oklch(0.72 0.19 162.5 / 0.35);
-    padding: 0 6px;
-    color: oklch(0.65 0.19 162.5);
-  }
-
-
-
   /* ─── Section ─── */
   .section-heading {
-    @apply font-heading font-bold text-xs uppercase tracking-[0.08em];
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     color: oklch(0.72 0.19 162.5);
     margin-bottom: 16px;
   }
 
   /* ─── Experience ─── */
   .entry {
-    @apply mb-5 pb-5;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
     border-bottom: 1px solid var(--color-outline-variant);
     page-break-inside: avoid;
   }
   .entry:last-child {
-    @apply mb-0 pb-0 border-b-0;
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
   }
 
   .entry-header {
@@ -245,28 +231,45 @@
   }
 
   .entry-company {
-    @apply font-heading font-bold text-xs uppercase tracking-[0.05em];
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: oklch(0.72 0.19 162.5);
   }
 
   .entry-duration {
-    @apply font-body text-xs;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    line-height: 1.35;
     color: var(--color-outline-strong);
   }
 
   .entry-title {
-    @apply font-heading font-bold text-base text-on-surface;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--color-on-surface);
     margin-bottom: 2px;
     line-height: 1.3;
   }
 
   .entry-role-desc {
-    @apply font-body text-sm text-on-surface-variant italic leading-relaxed;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    font-style: italic;
+    line-height: 1.625;
+    color: var(--color-on-surface-variant);
     margin-bottom: 6px;
   }
 
   .entry-desc {
-    @apply font-body text-sm text-on-surface-variant leading-relaxed;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    line-height: 1.625;
+    color: var(--color-on-surface-variant);
     white-space: pre-wrap;
   }
 
@@ -287,7 +290,7 @@
       display: none !important;
     }
     .print-wrapper {
-      @apply py-0 px-0;
+      padding: 0;
       background: white !important;
     }
     .cv-page {
@@ -311,9 +314,6 @@
     .links {
       color: #999 !important;
     }
-    .link-label {
-      color: #999 !important;
-    }
     .link-traditional {
       color: #999 !important;
     }
@@ -333,24 +333,8 @@
     .summary.secondary {
       border-bottom-color: #eee !important;
     }
-    .skills {
-      border-bottom-color: #eee !important;
-    }
     .section-heading {
       margin-bottom: 8px;
-    }
-    .skill {
-      background: #e8e8e8 !important;
-      color: #1a1a1a !important;
-      padding: 3px 10px !important;
-      font-size: 9pt !important;
-    }
-    .skill-count {
-      background: #d0d0d0 !important;
-      color: #555 !important;
-      min-width: 16px !important;
-      height: 16px !important;
-      font-size: 8pt !important;
     }
     .section-heading {
       color: #00a36c !important;
