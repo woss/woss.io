@@ -87,6 +87,7 @@ vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } })
 
 import { render, cleanup } from '@testing-library/svelte';
 import ChatMessage from './ChatMessage.svelte';
+import FeedbackModal from './FeedbackModal.svelte';
 import type { ChatMessage as ChatMessageType } from '$lib/chat/types';
 
 function createMessage(overrides: Partial<ChatMessageType> = {}): ChatMessageType {
@@ -223,5 +224,14 @@ describe('ChatMessage — feedback wiring', () => {
         },
       });
     }).not.toThrow();
+  });
+
+  it('portals the open modal to document.body so fixed positioning escapes transformed ancestors', () => {
+    render(FeedbackModal, {
+      props: { open: true, type: 'up', messageId: 'msg-1', userId: 'user-1', chatId: 'chat-1' },
+    });
+    const backdrop = document.querySelector('div[role="presentation"]');
+    expect(backdrop).not.toBeNull();
+    expect(backdrop!.parentElement).toBe(document.body);
   });
 });
