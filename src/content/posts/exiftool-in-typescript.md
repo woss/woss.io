@@ -3,7 +3,7 @@ published: true
 title: 'ExifTool, in TypeScript: no Perl sidecars, no untyped JSON'
 slug: 'exiftool-in-typescript'
 featured: true
-description: 'We rewrote ExifTool in TypeScript: typed reads and writes, zero runtime dependencies, a drop-in CLI, and a parity suite that diffs against the real exiftool binary on every build. Early development: what works, what does not, and why.'
+description: 'I ported ExifTool to TypeScript: typed reads and writes, zero runtime dependencies, a drop-in CLI, and a parity suite that diffs against the real exiftool binary on every build. Early development: what works, what does not, and why.'
 date: 2026-09-06
 tags:
   - ExifTool

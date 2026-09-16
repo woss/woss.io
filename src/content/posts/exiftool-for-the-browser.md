@@ -3,6 +3,7 @@ published: true
 title: 'ExifTool, for the browser: metadata parsing without the server'
 slug: 'exiftool-for-the-browser'
 featured: true
+part_of_series: 'exiftool-in-typescript'
 description: 'ExifTool is the gold standard for image metadata, but it lives on servers. exiftool-ts 0.3.0 runs the same idea in your browser: lazy-loaded format plugins, merge writes, and a parity suite against the Perl original.'
 date: 2026-09-15
 tags:
@@ -76,7 +77,7 @@ const { written } = await tool.writeBytes(imageBuffer, {
 
 Run exiftool's own diff on the result and you see exactly those four tags. Nothing else moved.
 
-Getting there took longer than I expected, and two bugs are worth confessing. First: while testing the writer I found our own XMP parser had been silently wrong for months. It captured everything up to the first closing `</rdf:Description>` tag. Fine for flat XMP, wrong the moment a file nests descriptions, which real files do. Real exiftool read those files correctly the whole time; our reader truncated them without an error. The parity suite only caught it once the writer started producing files that exercised the path. Second: the first version of the TIFF builder could infinite-loop on a GPS coordinate string it couldn't parse, and synthesized a nonsense hemisphere reference value while it was at it. Both fixed, both now have regression tests, and both were found by writing files rather than reading them, which is why I keep telling people the writer side needs more testing than it gets.
+Getting there took longer than I expected, and two bugs are worth confessing. First: while testing the writer I found my own XMP parser had been silently wrong for months. It captured everything up to the first closing `</rdf:Description>` tag. Fine for flat XMP, wrong the moment a file nests descriptions, which real files do. Real exiftool read those files correctly the whole time; my reader truncated them without an error. The parity suite only caught it once the writer started producing files that exercised the path. Second: the first version of the TIFF builder could infinite-loop on a GPS coordinate string it couldn't parse, and synthesized a nonsense hemisphere reference value while it was at it. Both fixed, both now have regression tests, and both were found by writing files rather than reading them.
 
 One honest limitation on this story: merge writes are proven on JPEG. PNG, WebP and AVIF write support exists but doesn't have the same byte-preservation guarantee worked out yet. If your use case is "stamp a JPEG in the browser", that's the solid path today.
 
