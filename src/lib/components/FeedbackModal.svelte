@@ -16,13 +16,28 @@
     messageId: string;
     userId: string;
     chatId: string;
-    onreport: () => void;
-    onskip: () => void;
+    onreport?: () => void;
+    onskip?: () => void;
   } = $props();
 
   let reason = $state('');
   let isSubmitting = $state(false);
   let reasonError = $state('');
+  /**
+   * Move the modal to document.body. Rendered inside ChatMessage, the
+   * message's entry animation (animate-message-in, fill-mode both) keeps a
+   * transform applied on the ancestor, which turns it into the containing
+   * block for `position: fixed`, so the backdrop covers only that message
+   * instead of the viewport. Portalling out restores viewport semantics.
+   */
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
 
   function reset(): void {
     reason = '';
@@ -86,6 +101,7 @@
 
 {#if open}
   <div
+    use:portal
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
     role="presentation"
     onpointerdown={handleBackdropClick}
