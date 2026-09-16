@@ -40,6 +40,7 @@ const mockPost = {
   featured: false,
   position: null as number | null,
   partOfSeries: null as number | null,
+  updatedAt: '2025-01-01 00:00:00',
   workflowFiles: null as
     | { label: string; file: string; placeholders: { key: string; label: string; hint?: string }[] }[]
     | null,

@@ -29,6 +29,7 @@ export interface PostResult {
   featured: boolean;
   position: number | null;
   partOfSeries: number | null;
+  updatedAt: string;
   workflowFiles:
     | { label: string; file: string; placeholders: { key: string; label: string; hint?: string }[] }[]
     | null;
