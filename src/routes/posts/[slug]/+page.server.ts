@@ -81,6 +81,7 @@ export async function load({ params, fetch }: { params: Record<string, string>; 
     body: currentRaw.content,
     headerImage,
     toc: currentRaw.toc,
+    updatedAt: currentRaw.updatedAt,
   };
 
   const publishedPosts = allPosts
@@ -155,6 +156,7 @@ export async function load({ params, fetch }: { params: Record<string, string>; 
       date: current.date,
       tags: current.tags,
       excerpt: current.excerpt,
+      updatedAt: current.updatedAt,
       headerImage: current.headerImage,
       toc: current.toc,
       body: current.body,

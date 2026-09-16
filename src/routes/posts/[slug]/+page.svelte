@@ -21,6 +21,7 @@
     toc: { id: string; text: string; level: number }[];
     body: string;
     partOfSeries?: number;
+    updatedAt: string;
   };
   type NavLink = { slug: string; title: string } | null;
   type ImageMeta = {
@@ -245,7 +246,7 @@
 <Seo
   title="{data.post.title} · woss.io"
   description={data.post.excerpt}
-  image={data.post.headerImage && data.post.headerImage !== 'null' ? data.post.headerImage : `https://woss.io/api/og/${page.params.slug}.png`}
+  image={data.post.headerImage && data.post.headerImage !== 'null' ? data.post.headerImage : `https://woss.io/api/og/${page.params.slug}.png?v=${encodeURIComponent(data.post.updatedAt)}`}
   type="article"
   publishedTime={data.post.date}
   tags={data.post.tags}
@@ -325,7 +326,7 @@
               class="relative m-0 mb-10 mx-[-17px] md:mx-[-25px] lg:mx-[-33px] mt-[-17px] md:mt-[-25px] lg:mt-[-33px]"
             >
               <img
-                src={`/api/og/${data.post.slug}.png`}
+                src={`/api/og/${data.post.slug}.png?v=${encodeURIComponent(data.post.updatedAt)}`}
                 alt={data.post.title}
                 width="1200" height="600"
                 class="w-full object-cover aspect-2/1"
