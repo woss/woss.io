@@ -2,8 +2,8 @@
  * Tests for Phase 2 task 2.1: OpenTelemetry SDK import-time startup.
  *
  * Covers:
- *  - logger.ts: all 4 env reads (ZINALOG_URL, ZINALOG_API_KEY, DD_SITE,
- *    DD_API_KEY) happen inside initLogger() at call time, never at module
+ *  - logger.ts: Datadog env reads happen inside initLogger() at call time,
+ *    never at module scope; value-level fallback `env.X ?? process.env.X`;
  *    scope; value-level fallback `env.X ?? process.env.X`; DD_SITE default
  *    `datadoghq.eu`; the Datadog sink is not created (and no POST is ever
  *    attempted) when DD_API_KEY is unset (FR-004); oversized messages are
@@ -25,16 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_LOG_MESSAGE_BYTES } from './log-truncate';
 
 /** Keys touched by the modules under test, for process.env hygiene. */
-const PROCESS_ENV_KEYS = [
-  'ZINALOG_URL',
-  'ZINALOG_API_KEY',
-  'DD_SITE',
-  'DD_API_KEY',
-  'OTEL_SDK_DISABLED',
-  'DD_SERVICE',
-  'DD_ENV',
-  'DD_VERSION',
-] as const;
+const PROCESS_ENV_KEYS = ['DD_SITE', 'DD_API_KEY', 'OTEL_SDK_DISABLED', 'DD_SERVICE', 'DD_ENV', 'DD_VERSION'] as const;
 
 /** Mutable mock for `$env/dynamic/private`; records every property access. */
 const envState = vi.hoisted(() => {
@@ -242,7 +233,7 @@ afterEach(() => {
 });
 
 describe('initLogger env access (logger.ts)', () => {
-  it('imports without reading env or logging; reads ZINALOG/DD vars at call time', async () => {
+  it('imports without reading env or logging; reads Datadog vars at call time', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const mod = await importLogger();
 
@@ -250,64 +241,26 @@ describe('initLogger env access (logger.ts)', () => {
     expect(envState.accesses).toEqual([]);
 
     // Set env AFTER import: a module-scope read would have seen the empty env.
-    setMockEnv({ ZINALOG_URL: 'https://zina.example', ZINALOG_API_KEY: 'sekret' });
+    setMockEnv({ DD_API_KEY: 'dd-key' });
     await mod.initLogger();
 
     expect(logSpy).not.toHaveBeenCalled();
-    expect(envState.accesses).toEqual(
-      expect.arrayContaining(['ZINALOG_URL', 'ZINALOG_API_KEY', 'DD_SITE', 'DD_API_KEY']),
-    );
-    expect(Object.keys(capturedSinks())).toContain('zinalog');
+    expect(envState.accesses).toEqual(expect.arrayContaining(['DD_SITE', 'DD_API_KEY', 'DD_ENV']));
+    expect(Object.keys(capturedSinks())).not.toContain('zinalog');
   });
 
-  it('adds no zinalog sink and POSTs nothing when ZINALOG_* are unset', async () => {
+  it('ignores legacy ZINALOG settings and creates no Zinalog sink', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', fetchMock);
+    setMockEnv({ ZINALOG_URL: 'https://zina.example', ZINALOG_API_KEY: 'legacy-key' });
     const mod = await importLogger();
 
     await mod.initLogger();
 
     expect(Object.keys(capturedSinks())).not.toContain('zinalog');
+    expect(envState.accesses).not.toContain('ZINALOG_URL');
+    expect(envState.accesses).not.toContain('ZINALOG_API_KEY');
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('falls back to process.env for ZINALOG_URL/ZINALOG_API_KEY when $env is unset', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal('fetch', fetchMock);
-    setProcessEnv({ ZINALOG_URL: 'https://proc-zina.example/', ZINALOG_API_KEY: 'proc-key' });
-    const mod = await importLogger();
-
-    await mod.initLogger();
-    expect(Object.keys(capturedSinks())).toContain('zinalog');
-
-    invokeSink('zinalog', fakeRecord());
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [
-      string,
-      { method: string; headers: Record<string, string>; body: string },
-    ];
-    // Trailing slash is stripped before /api/logs is appended.
-    expect(url).toBe('https://proc-zina.example/api/logs');
-    expect(init.method).toBe('POST');
-    const procAuth = 'Bearer ' + 'proc-key';
-    expect(init.headers).toEqual({ 'Content-Type': 'application/json', Authorization: procAuth });
-    expect(JSON.parse(init.body)).toEqual({ level: 'info', message: 'hello world', service: 'woss.app' });
-  });
-
-  it('prefers $env over process.env for ZINALOG_URL/ZINALOG_API_KEY', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal('fetch', fetchMock);
-    setMockEnv({ ZINALOG_URL: 'https://env-zina.example', ZINALOG_API_KEY: 'env-key' });
-    setProcessEnv({ ZINALOG_URL: 'https://proc-zina.example', ZINALOG_API_KEY: 'proc-key' });
-    const mod = await importLogger();
-
-    await mod.initLogger();
-    invokeSink('zinalog', fakeRecord());
-
-    const [url, init] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }];
-    expect(url).toBe('https://env-zina.example/api/logs');
-    const envAuth = 'Bearer ' + 'env-key';
-    expect(init.headers['Authorization']).toBe(envAuth);
   });
 
   it('FR-004: skips the Datadog sink entirely (no POST, never throws) when DD_API_KEY is unset', async () => {
@@ -439,7 +392,7 @@ describe('initLogger env access (logger.ts)', () => {
   });
 
   it('routes the woss logger to console/file plus configured sinks', async () => {
-    setMockEnv({ ZINALOG_URL: 'https://zina.example', ZINALOG_API_KEY: 'key', DD_API_KEY: 'dd-key' });
+    setMockEnv({ DD_API_KEY: 'dd-key' });
     const mod = await importLogger();
 
     await mod.initLogger();
@@ -449,12 +402,13 @@ describe('initLogger env access (logger.ts)', () => {
       lowestLevel: string;
       sinks: string[];
     }>;
-    expect(Object.keys(capturedSinks())).toEqual(['console', 'file', 'zinalog', 'datadog']);
+    expect(Object.keys(capturedSinks())).toEqual(['console', 'file', 'datadog']);
     expect(loggers[0].category).toEqual(['woss']);
     expect(loggers[0].lowestLevel).toBe('info');
-    expect(loggers[0].sinks).toEqual(['console', 'file', 'zinalog', 'datadog']);
+    expect(loggers[0].sinks).toEqual(['console', 'file', 'datadog']);
     expect(loggers[1].category).toEqual(['logtape', 'meta']);
     expect(loggers[1].lowestLevel).toBe('warning');
+    expect(loggers[1].sinks).toEqual(['console', 'file', 'datadog']);
   });
 });
 

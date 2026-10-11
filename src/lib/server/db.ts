@@ -642,7 +642,7 @@ function parseStoredMessage(row: Record<string, unknown>): StoredMessage {
 function ensureModel(provider: string, modelName: string, actualModelName: string, maxTokens: number): number {
   const safeMaxTokens = maxTokens ?? 0;
   const db = getDb();
-  console.log('Ensuring model record:', { provider, modelName, actualModelName, safeMaxTokens });
+  log.info`Ensuring model record: ${JSON.stringify({ provider, modelName, actualModelName, maxTokens: safeMaxTokens })}`;
   db.prepare(
     'INSERT OR IGNORE INTO models (provider, model_name, actual_model_name, max_tokens) VALUES (?, ?, ?, ?)',
   ).run(provider, modelName, actualModelName, safeMaxTokens);
