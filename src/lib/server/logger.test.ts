@@ -249,6 +249,26 @@ describe('initLogger env access (logger.ts)', () => {
     expect(Object.keys(capturedSinks())).not.toContain('zinalog');
   });
 
+  it('requires Datadog credentials in production and retries after failed initialization', async () => {
+    vi.doMock('$app/environment', () => ({ dev: false }));
+    try {
+      const mod = await importLogger();
+
+      await expect(mod.initLogger()).rejects.toThrow('DD_API_KEY is required to initialize production logging');
+      expect(logtapeState.captured.sinks).toBeNull();
+
+      setMockEnv({ DD_API_KEY: 'dd-key' });
+      await expect(mod.initLogger()).resolves.toBeUndefined();
+      expect(Object.keys(capturedSinks())).toEqual(['file', 'datadog']);
+
+      const loggers = logtapeState.captured.loggers as Array<{ sinks: string[] }>;
+      expect(loggers[0].sinks).toEqual(['file', 'datadog']);
+      expect(loggers[1].sinks).toEqual(['file', 'datadog']);
+    } finally {
+      vi.doUnmock('$app/environment');
+    }
+  });
+
   it('ignores legacy ZINALOG settings and creates no Zinalog sink', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', fetchMock);

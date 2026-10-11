@@ -182,19 +182,9 @@ Implemented via custom rehype plugin (`src/lib/server/rehype-admonitions.ts`) wi
 ## Docker
 
 ```bash
-# Build and run
-docker compose up --build -d
-
-# Or build manually
 docker build -t woss/woss-io .
 docker run -p 3000:3000 --env-file .env -v ./data:/app/data woss/woss-io
 ```
-
-Docker Compose stacks:
-
-- **woss**: Main SvelteKit app (port 5173 → 3000)
-- **init**: One-shot search index builder
-- **zinalog**: Legacy log dashboard still defined in Compose; remove after deployment configuration approval
 
 ## Stack
 
@@ -212,7 +202,7 @@ The tech side in one shot:
 - **MCP Server**: Streamable HTTP transport at POST /mcp, Accept header normalization
 - **OG Images**: Satori + resvg-js
 - **Logging**: LogTape, rotating JSONL files, Datadog server and browser logs
-- **Container**: Docker + Docker Compose
+- **Container**: Docker
 
 ## License
 
