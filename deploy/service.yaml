@@ -1,0 +1,16 @@
+# Ported verbatim from kelp-infra services-stack wave2.tf
+# (kubernetes_service.woss).
+apiVersion: v1
+kind: Service
+metadata:
+  name: woss
+  namespace: tools-img
+  labels:
+    app: woss
+spec:
+  selector:
+    app: woss
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
