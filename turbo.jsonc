@@ -5,6 +5,11 @@
   },
   "tasks": {
     "build": {
+      // Turbo v2 strict env mode strips undeclared vars from tasks; the
+      // prerender hardens the logger and requires DD_API_KEY at build time.
+      "env": [
+        "DD_API_KEY"
+      ],
       "dependsOn": [
         "^build"
       ],
