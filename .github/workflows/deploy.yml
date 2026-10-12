@@ -89,7 +89,7 @@ jobs:
       - name: Pin digest and apply manifests
         run: |
           sed -i "s/__DIGEST__/${{ needs.build.outputs.digest }}/g" deploy/deployment.yaml
-          kubectl apply -f deploy/pvc.yaml deploy/service.yaml deploy/deployment.yaml deploy/ingress.yaml
+          kubectl apply -f deploy/pvc.yaml -f deploy/service.yaml -f deploy/deployment.yaml -f deploy/ingress.yaml
 
       - name: Wait for rollout
         run: kubectl -n tools-img rollout status deployment/woss --timeout=600s
