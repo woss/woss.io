@@ -5,8 +5,7 @@
  * Covers SC-001..SC-005 against src/lib/client/datadog-rum.ts:
  *  - SC-001: single init — init() called exactly once, repeated init no-ops,
  *    no 'already initialized' error path.
- *  - SC-002: skip when env unset — no SDK call, no console error/warn; the
- *    module emits one informational console.log (implementation contract).
+ *  - SC-002: skip both SDKs silently when env unset.
  *  - SC-003: exact init config shape — sessionSampleRate 100,
  *    sessionReplaySampleRate 20, trackResources/trackLongTasks/
  *    trackUserInteractions true, traceContextInjection 'all',
@@ -20,7 +19,7 @@
  *    module-scope window access would throw ReferenceError on import).
  *  - SC-005: identity — init options carry service 'woss-io' and env 'dev'.
  *
- * @datadog/browser-rum and $env/dynamic/public are mocked (vi.mock) so no
+ * @datadog/browser-rum, @datadog/browser-logs, and $env/dynamic/public are mocked (vi.mock) so no
  * SDK/DOM is touched and env reads are fully controlled. The mock mirrors the
  * real SDK surface (init/getInitConfiguration/onReady) so initDatadogRum()
  * completes without throwing. The allowedTracingUrls predicate reads the
@@ -62,6 +61,20 @@ const rumState = vi.hoisted(() => {
   return { init, getInitConfiguration, onReady, reset };
 });
 
+const logsState = vi.hoisted(() => {
+  let config: Record<string, unknown> | null = null;
+  const init = vi.fn((options: Record<string, unknown>) => {
+    config = options;
+  });
+  const getInitConfiguration = vi.fn(() => config);
+  const reset = () => {
+    config = null;
+    init.mockClear();
+    getInitConfiguration.mockClear();
+  };
+  return { init, getInitConfiguration, reset };
+});
+
 vi.mock('$env/dynamic/public', () => ({ env: envState.env }));
 
 vi.mock('@datadog/browser-rum', () => ({
@@ -72,11 +85,19 @@ vi.mock('@datadog/browser-rum', () => ({
   },
 }));
 
+vi.mock('@datadog/browser-logs', () => ({
+  datadogLogs: {
+    init: logsState.init,
+    getInitConfiguration: logsState.getInitConfiguration,
+  },
+}));
+
 const APP_ID = 'test-app-id';
 const CLIENT_TOKEN = 'test-client-token';
 
 beforeEach(() => {
   rumState.reset();
+  logsState.reset();
   delete envState.env.PUBLIC_DD_RUM_APP_ID;
   delete envState.env.PUBLIC_DD_RUM_CLIENT_TOKEN;
 });
@@ -97,6 +118,7 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
     initDatadogRum();
 
     expect(rumState.init).toHaveBeenCalledTimes(1);
+    expect(logsState.init).toHaveBeenCalledTimes(1);
     expect(rumState.getInitConfiguration).toHaveBeenCalledTimes(3);
     expect(errorSpy).not.toHaveBeenCalled();
   });
@@ -113,7 +135,7 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
     expect(rumState.getInitConfiguration).toHaveBeenCalledTimes(2);
   });
 
-  it('SC-002 skips when both env vars are unset: no SDK call, no error/warn, one info log', () => {
+  it('SC-002 skips when both env vars are unset without SDK calls or console output', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -124,10 +146,8 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
     expect(rumState.init).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
     expect(warnSpy).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    expect(logSpy).toHaveBeenCalledWith(
-      'Datadog RUM not initialized: PUBLIC_DD_RUM_APP_ID or PUBLIC_DD_RUM_CLIENT_TOKEN is unset',
-    );
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(logsState.init).not.toHaveBeenCalled();
   });
 
   it('SC-002 silently returns when only one env var is set', () => {
@@ -163,6 +183,24 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
       version: RUM_VERSION,
     });
     expect(options).not.toHaveProperty('trackFrustrations');
+  });
+
+  it('forwards browser errors and error/warn console entries to Datadog Logs', () => {
+    envState.env.PUBLIC_DD_RUM_APP_ID = APP_ID;
+    envState.env.PUBLIC_DD_RUM_CLIENT_TOKEN = CLIENT_TOKEN;
+
+    initDatadogRum();
+
+    expect(logsState.init).toHaveBeenCalledWith({
+      clientToken: CLIENT_TOKEN,
+      site: 'datadoghq.eu',
+      forwardErrorsToLogs: true,
+      forwardConsoleLogs: ['error', 'warn'],
+      sessionSampleRate: 100,
+      service: 'woss-io',
+      env: 'dev',
+      version: '1.1.0-dev',
+    });
   });
 
   it('SC-004 module import is SSR-safe: no window/document access at module scope', async () => {

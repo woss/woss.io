@@ -55,8 +55,11 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Configure kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
         run: |
-          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          mkdir -p ~/.kube
+          printf '%s' "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: Sync woss-secrets
@@ -69,8 +72,6 @@ jobs:
           WOSS_USER_WEBHOOK_ERROR_URL: ${{ secrets.WOSS_USER_WEBHOOK_ERROR_URL }}
           WOSS_USER_WEBHOOK_TOKEN: ${{ secrets.WOSS_USER_WEBHOOK_TOKEN }}
           WOSS_DD_API_KEY: ${{ secrets.WOSS_DD_API_KEY }}
-          WOSS_ZINALOG_API_KEY: ${{ secrets.WOSS_ZINALOG_API_KEY }}
-          WOSS_ZINALOG_ENCRYPTION_KEY: ${{ secrets.WOSS_ZINALOG_ENCRYPTION_KEY }}
         run: |
           kubectl -n tools-img create secret generic woss-secrets \
             --from-literal=WOSS_PROVIDER_API_KEY="$WOSS_PROVIDER_API_KEY" \
@@ -81,8 +82,6 @@ jobs:
             --from-literal=WOSS_USER_WEBHOOK_ERROR_URL="$WOSS_USER_WEBHOOK_ERROR_URL" \
             --from-literal=WOSS_USER_WEBHOOK_TOKEN="$WOSS_USER_WEBHOOK_TOKEN" \
             --from-literal=WOSS_DD_API_KEY="$WOSS_DD_API_KEY" \
-            --from-literal=WOSS_ZINALOG_API_KEY="$WOSS_ZINALOG_API_KEY" \
-            --from-literal=WOSS_ZINALOG_ENCRYPTION_KEY="$WOSS_ZINALOG_ENCRYPTION_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Pin digest and apply manifests

@@ -38,12 +38,12 @@ export const handle: Handle = async ({ event, resolve }) => {
   return withTrace(ids.traceId, ids.spanId, async () => {
     // Init logger on first request
     if (!logInitialized) {
-      logInitialized = true;
       const VALID_LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error'] as const;
       type LogLevel = (typeof VALID_LOG_LEVELS)[number];
       const rawLevel = env.LOG_LEVEL;
       const logLevel: LogLevel = VALID_LOG_LEVELS.includes(rawLevel as LogLevel) ? (rawLevel as LogLevel) : 'info';
       await initLogger(logLevel);
+      logInitialized = true;
       const log = createLogger(CAT.hooks);
       log.info(`Logger initialized. App origin: ${APP_ORIGIN}`);
     }

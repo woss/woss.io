@@ -17,7 +17,7 @@ Beyond the chat, there's:
 - **Dark and light mode**: follows your system preference, handled by sv5ui theming
 - **Rate limiting**: SQLite-backed, 10 requests per minute per IP
 - **GeoIP**: country detection via geoip-country so I know roughly where visitors are
-- **Structured logging**: LogTape with file rotation plus a ZinaLog dashboard for browsing, and optional Datadog log export when `DD_API_KEY` is set
+- **Structured logging**: LogTape writes rotating JSONL files and exports server logs to Datadog; `DD_API_KEY` is required in production
 - **Client monitoring**: Datadog RUM bootstrapped in the client hooks — session replay and page-view telemetry to the EU org, silently off unless you set `PUBLIC_DD_RUM_APP_ID` and `PUBLIC_DD_RUM_CLIENT_TOKEN`
 - **Webhooks**: events pushed to external URLs when interesting things happen
 - **Message reactions**: upvote, downvote, or heart AI responses
@@ -96,19 +96,18 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 | `WOSS_USER_WEBHOOK_URL`       | -                          | Webhook URL for events                          |
 | `WOSS_USER_WEBHOOK_ERROR_URL` | -                          | Webhook URL for errors                          |
 | `WOSS_USER_WEBHOOK_TOKEN`     | -                          | Webhook auth token                              |
-| `ZINALOG_ENCRYPTION_KEY`      | -                          | Encryption key for ZinaLog container            |
-| `ZINALOG_URL`                 | -                          | ZinaLog ingest URL (enables ZinaLog sink)       |
-| `ZINALOG_API_KEY`             | -                          | ZinaLog ingest API key                          |
 | `DD_SITE`                     | `datadoghq.eu`             | Datadog site for the logs intake host           |
-| `DD_API_KEY`                  | -                          | Datadog API key (enables Datadog logs sink)     |
+| `DD_API_KEY`                  | -                          | Datadog API key (required for production logs)  |
 | `PUBLIC_DD_RUM_APP_ID`        | -                          | Datadog RUM application ID (enables client RUM) |
 | `PUBLIC_DD_RUM_CLIENT_TOKEN`  | -                          | Datadog RUM client token (enables client RUM)   |
 
 ### Datadog RUM
 
-Client-side Real User Monitoring boots at startup via `src/hooks.client.ts`. Sessions sample at 100% with session replay at 20% (resources, long tasks, and user interactions tracked; input masked by default). Data goes to the EU org (`datadoghq.eu`) tagged `service: woss-io` and `env: dev`, mirroring the server-side log export values.
+Client-side Real User Monitoring and Browser Logs boot at startup via `src/hooks.client.ts`. Sessions sample at 100% with session replay at 20% (resources, long tasks, and user interactions tracked; input masked by default). Browser errors and `console.error`/`console.warn` are forwarded to Datadog. Data goes to the EU org (`datadoghq.eu`) tagged `service: woss-io` and the current environment.
 
-Set `PUBLIC_DD_RUM_APP_ID` and `PUBLIC_DD_RUM_CLIENT_TOKEN` in `.env` to enable. Without them the app runs with no RUM — silent skip, no errors, no SDK calls.
+Set `PUBLIC_DD_RUM_APP_ID` and `PUBLIC_DD_RUM_CLIENT_TOKEN` in `.env` to enable browser monitoring and logs. Without them both SDKs remain disabled.
+
+Server logs are JSON Lines in `data/logs/woss.io.log`, rotated at 10 MiB with up to 70 files retained. Datadog export uses `DD_API_KEY` and `DD_SITE`; missing `DD_API_KEY` stops production logger initialization. Datadog HTTP export is best-effort; local files remain available if export fails.
 
 ### MCP Endpoint
 
@@ -183,19 +182,9 @@ Implemented via custom rehype plugin (`src/lib/server/rehype-admonitions.ts`) wi
 ## Docker
 
 ```bash
-# Build and run
-docker compose up --build -d
-
-# Or build manually
 docker build -t woss/woss-io .
 docker run -p 3000:3000 --env-file .env -v ./data:/app/data woss/woss-io
 ```
-
-Docker Compose stacks:
-
-- **woss**: Main SvelteKit app (port 5173 → 3000)
-- **init**: One-shot search index builder
-- **zinalog**: Log aggregation dashboard (port 4000)
 
 ## Stack
 
@@ -212,8 +201,8 @@ The tech side in one shot:
 - **MCP Client**: @modelcontextprotocol/sdk
 - **MCP Server**: Streamable HTTP transport at POST /mcp, Accept header normalization
 - **OG Images**: Satori + resvg-js
-- **Logging**: LogTape + ZinaLog, optional Datadog export
-- **Container**: Docker + Docker Compose
+- **Logging**: LogTape, rotating JSONL files, Datadog server and browser logs
+- **Container**: Docker
 
 ## License
 

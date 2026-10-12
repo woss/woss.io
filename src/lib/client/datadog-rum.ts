@@ -1,4 +1,5 @@
 import { datadogRum } from '@datadog/browser-rum';
+import { datadogLogs } from '@datadog/browser-logs';
 import { env } from '$env/dynamic/public';
 import { dev } from '$app/environment';
 import { SERVICE_NAME_FALLBACK } from '../../dd-config';
@@ -14,24 +15,34 @@ export const RUM_VERSION = `1.1.0-${dev ? 'dev' : 'prod'}`;
  * is the only env module usable here — `$env/dynamic/private` throws when
  * accessed in the browser.
  *
- * Idempotent: guards on `getInitConfiguration()` before any env reads or SDK
- * calls so a second `init()` — which would emit
- * `console.error("DD_RUM is already initialized")` in
- * `@datadog/browser-rum@7.7.0` — can never happen.
+ * Idempotent: guards on each SDK's init configuration before initialization.
  */
 export function initDatadogRum(): void {
-  // Idempotency guard FIRST — prevents the v7.7.0 double-init console.error.
-  if (datadogRum.getInitConfiguration()) return;
+  const rumInitialized = datadogRum.getInitConfiguration();
+  const logsInitialized = datadogLogs.getInitConfiguration();
+  if (rumInitialized && logsInitialized) return;
 
   // Env reads at call time only, so SSR/client hydration both see current values.
   const appId = env.PUBLIC_DD_RUM_APP_ID;
   const clientToken = env.PUBLIC_DD_RUM_CLIENT_TOKEN;
 
-  // Silent skip: no SDK call, no error, no console output when unset.
-  if (!appId || !clientToken) {
-    console.log(`Datadog RUM not initialized: PUBLIC_DD_RUM_APP_ID or PUBLIC_DD_RUM_CLIENT_TOKEN is unset`);
-    return;
+  if (!appId || !clientToken) return;
+
+  const version = `1.1.0-${dev ? 'dev' : 'prod'}`;
+  if (!logsInitialized) {
+    datadogLogs.init({
+      clientToken,
+      site: 'datadoghq.eu',
+      forwardErrorsToLogs: true,
+      forwardConsoleLogs: ['error', 'warn'],
+      sessionSampleRate: 100,
+      service: SERVICE_NAME_FALLBACK,
+      env: dev ? 'dev' : 'production',
+      version,
+    });
   }
+
+  if (rumInitialized) return;
 
   // service/env mirror the .env values DD_SERVICE=woss-io and DD_ENV=dev.
   // Those vars are NOT PUBLIC_-prefixed and thus not readable via

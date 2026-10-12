@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "kelp-market": {
+      "type": "http",
+      "url": "http://localhost:3100/mcp",
+      "headers": {
+        "x-api-key": "!cat $HOME/.omp/secrets/kelp-mcp-api-key"
+      }
+    }
+  }
+}

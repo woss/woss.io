@@ -25,14 +25,14 @@ import {
 import { getRotatingFileSink } from '@logtape/file';
 import { getPrettyFormatter } from '@logtape/pretty';
 import { env } from '$env/dynamic/private';
+import { dev } from '$app/environment';
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { traceStorage } from './trace-context';
 import { truncateLogMessage } from './log-truncate';
 import { hexIdToLow64Decimal, isZeroLow64Decimal } from './datadog-ids';
 
-// Level mapping: LogTape → ZinaLog
-const ZINA_LEVEL_MAP: Record<string, string> = {
+const DATADOG_LEVEL_MAP: Record<string, string> = {
   trace: 'debug',
   debug: 'debug',
   info: 'info',
@@ -50,40 +50,9 @@ function formatLogtapeMessage(parts: readonly (string | unknown)[]): string {
   return msg;
 }
 
-function getZinaLogSink(url: string, apiKey: string): Sink {
-  const ingestUrl = `${url.replace(/\/$/, '')}/api/logs`;
-  return (record: LogRecord) => {
-    const level = ZINA_LEVEL_MAP[record.level] ?? 'info';
-    const message = formatLogtapeMessage(record.message);
-    const service = record.category.join('.');
-    const body: Record<string, unknown> = { level, message, service };
-    // Attach trace context to metadata
-    const { traceId, spanId } = record.properties as Record<string, string | undefined>;
-    if (traceId || spanId) {
-      const metadata: Record<string, string> = {};
-      if (traceId) metadata.traceId = traceId;
-      if (spanId) metadata.spanId = spanId;
-      body.metadata = metadata;
-    }
-    const bodyStr = JSON.stringify(body);
-    // Fire-and-forget POST — non-blocking
-    fetch(ingestUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: bodyStr,
-    }).catch((err: unknown) => {
-      // fallback: can't use logger here (circular), use console as last resort
-      console.error('[zinalog] push failed:', (err as Error)?.message ?? err);
-    });
-  };
-}
-
 function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefined): Sink {
   return (record: LogRecord) => {
-    const level = ZINA_LEVEL_MAP[record.level] ?? 'info';
+    const level = DATADOG_LEVEL_MAP[record.level] ?? 'info';
     // Truncate on the live export path before serialization (FR-003, 1 MiB cap)
     const message = truncateLogMessage(formatLogtapeMessage(record.message));
     const service = record.category.join('.');
@@ -161,70 +130,81 @@ const INIT_KEY = '__woss_log_initialized';
  */
 export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning' | 'error' = 'info'): Promise<void> {
   const g = globalThis as Record<string, unknown>;
-  if (g[INIT_KEY]) return;
+  const currentInitialization = g[INIT_KEY];
+  if (currentInitialization === true) return;
+  if (currentInitialization instanceof Promise) {
+    await currentInitialization;
+    return;
+  }
+
+  const initialization = (async () => {
+    // process.env fallbacks keep vite-node consumers (build-index.ts, download-model.ts) working.
+    const ddSite = env.DD_SITE ?? process.env.DD_SITE ?? 'datadoghq.eu';
+    const ddApiKey = env.DD_API_KEY ?? process.env.DD_API_KEY;
+    const ddEnv = env.DD_ENV ?? process.env.DD_ENV;
+    if (!ddApiKey && !dev) {
+      throw new Error('DD_API_KEY is required to initialize production logging');
+    }
+
+    // Ensure log directory exists
+    const logDir = join(process.cwd(), 'data', 'logs');
+    if (!existsSync(logDir)) {
+      mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFile = join(logDir, 'woss.io.log');
+
+    const datadogUrl = `https://http-intake.logs.${ddSite}/api/v2/logs`;
+
+    const sinks: Record<string, Sink> = {
+      ...(dev && {
+        console: getConsoleSink({
+          formatter: getPrettyFormatter({ timestamp: 'time', inspectOptions: { colors: true }, wordWrap: 400 }),
+        }),
+      }),
+      file: getRotatingFileSink(logFile, {
+        formatter: getJsonLinesFormatter({ properties: 'flatten' }),
+        bufferSize: 0,
+        flushInterval: 0,
+        nonBlocking: true,
+        maxFiles: 70,
+        maxSize: 10 * 1024 * 1024, // 10 MB per file
+      }),
+    };
+
+    const extraSinks: string[] = [];
+
+    if (ddApiKey) {
+      sinks.datadog = getDatadogLogSink(datadogUrl, ddApiKey, ddEnv);
+      extraSinks.push('datadog');
+    }
+
+    await configure({
+      sinks,
+      contextLocalStorage: traceStorage,
+      loggers: [
+        {
+          category: ['woss'],
+          lowestLevel: logLevel,
+          sinks: [...(dev ? ['console'] : []), 'file', ...extraSinks],
+        },
+        {
+          category: ['logtape', 'meta'],
+          lowestLevel: 'warning',
+          sinks: [...(dev ? ['console'] : []), 'file', ...extraSinks],
+        },
+      ],
+    });
+  })();
+
+  g[INIT_KEY] = initialization;
+  try {
+    await initialization;
+  } catch (error) {
+    if (g[INIT_KEY] === initialization) delete g[INIT_KEY];
+    throw error;
+  }
   g[INIT_KEY] = true;
-
-  // Ensure log directory exists
-  const logDir = join(process.cwd(), 'data', 'logs');
-  if (!existsSync(logDir)) {
-    mkdirSync(logDir, { recursive: true });
-  }
-
-  const logFile = join(logDir, 'woss.io.log');
-
-  // ZinaLog sink (if configured)
-  // process.env fallbacks keep vite-node consumers (build-index.ts, download-model.ts) working.
-  const zinalogUrl = env.ZINALOG_URL ?? process.env.ZINALOG_URL;
-  const zinalogApiKey = env.ZINALOG_API_KEY ?? process.env.ZINALOG_API_KEY;
-
-  // Datadog logs sink (if configured)
-  const ddSite = env.DD_SITE ?? process.env.DD_SITE ?? 'datadoghq.eu';
-  const ddApiKey = env.DD_API_KEY ?? process.env.DD_API_KEY;
-  const ddEnv = env.DD_ENV ?? process.env.DD_ENV;
-  const datadogUrl = `https://http-intake.logs.${ddSite}/api/v2/logs`;
-
-  const sinks: Record<string, Sink> = {
-    console: getConsoleSink({
-      formatter: getPrettyFormatter({ timestamp: 'time', inspectOptions: { colors: true }, wordWrap: 400 }),
-    }),
-    file: getRotatingFileSink(logFile, {
-      formatter: getJsonLinesFormatter({ properties: 'flatten' }),
-      bufferSize: 0,
-      flushInterval: 0,
-      nonBlocking: true,
-      maxFiles: 70,
-      maxSize: 10 * 1024 * 1024, // 10 MB per file
-    }),
-  };
-
-  const extraSinks: string[] = [];
-
-  if (zinalogUrl && zinalogApiKey) {
-    sinks.zinalog = getZinaLogSink(zinalogUrl, zinalogApiKey);
-    extraSinks.push('zinalog');
-  }
-
-  if (ddApiKey) {
-    sinks.datadog = getDatadogLogSink(datadogUrl, ddApiKey, ddEnv);
-    extraSinks.push('datadog');
-  }
-
-  await configure({
-    sinks,
-    contextLocalStorage: traceStorage,
-    loggers: [
-      {
-        category: ['woss'],
-        lowestLevel: logLevel,
-        sinks: ['console', 'file', ...extraSinks],
-      },
-      {
-        category: ['logtape', 'meta'],
-        lowestLevel: 'warning',
-        sinks: ['console', 'file', ...extraSinks],
-      },
-    ],
-  });
 }
 
 /**

@@ -49,9 +49,7 @@ export function parseMcpServers(raw: string | undefined): McpServerConfig[] {
     return value;
   });
   if (unresolved.length > 0) {
-    console.warn(
-      `[mcp/config] ${unresolved.length} unresolvable env var(s) in MCP_SERVERS: ${unresolved.join(', ')} — using literal strings`,
-    );
+    throw new Error(`MCP_SERVERS contains unresolved environment variables: ${[...new Set(unresolved)].join(', ')}`);
   }
 
   let parsed: McpServerConfig[];

@@ -1,0 +1,56 @@
+# omp project config — mirrors .opencode/opencode.jsonc + opencode-swarm.json
+# Models: opencode/* in OpenCode == built-in `opencode-zen` provider in omp.
+
+modelRoles:
+  # architect/coder: z.ai direct — no OpenRouter (no balance there)
+  default: zai/glm-5.3-flash
+  # cheap tier: swarm fallback model, also drives tiny/smol background work (titles, memory LLM)
+  smol: opencode-zen/deepseek-v4-flash
+  # reviewer/test_engineer/explorer/sme/researcher/critic/docs/designer/curators: GLM flagship, 1M ctx
+  slow: opencode-zen/glm-5.3-flash
+
+# Swarm agent fallback_models -> retry fallback chains
+retry:
+  enabled: true
+  modelFallback: true
+  fallbackRevertPolicy: cooldown-expiry
+  fallbackChains:
+    # coder/architect fell back to big-pickle
+    default:
+      - zai/glm-5.3-flash
+    # big-pickle roles fell back to big-pickle / nemotron-3-ultra-free
+    slow:
+      - zai/glm-5.3-flash
+      - opencode-zen/deepseek-v4-flash
+
+# reasoningEffort: high everywhere in the swarm config
+defaultThinkingLevel: high
+
+# Mirror enabled_providers [opencode, lmstudio] for this repo's model picker.
+# NOTE: replaces (not appends to) global enabledModels for sessions started here.
+# enabledModels:
+#   - zai/*
+#   - opencode-zen/*
+#   - lm-studio/*
+
+# --- Memory (swarm sqlite memory -> mnemopi local SQLite backend) ---
+memory:
+  backend: mnemopi
+mnemopi:
+  # per-repo isolation, like storageDir .swarm/memory
+  scoping: per-project-tagged
+  recallLimit: 8 # memory.recall.defaultMaxItems: 8
+  injectionTokenLimit: 1200 # memory.recall.defaultTokenBudget: 1200
+  noEmbeddings: false # memory.embeddings.enabled: false
+  polyphonicRecall: true # multi-signal RRF recall ~= retrieval.weights lexical/dense/metadata
+  proactiveLinking: true # memory.link.enabled: true
+  autoRecall: true
+  autoRetain: true # writes.mode "propose" has no direct equivalent; exit path retains anyway
+
+# --- Knowledge capture ---
+autolearn:
+  enabled: true # learn tool + managed skill playbooks under ~/.omp/agent/managed-skills
+
+# swarm redaction.rejectDurableSecrets: true
+secrets:
+  enabled: true
