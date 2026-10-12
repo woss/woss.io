@@ -17,6 +17,10 @@ jobs:
       TURBO_API: ${{ secrets.TURBO_API }}
       TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
       TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+      # Prerender runs server hooks in production mode; the hardened logger
+      # throws without DD_API_KEY. Local/docker builds get it from .env
+      # (gitignored) baked in via COPY — CI must be told explicitly.
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
