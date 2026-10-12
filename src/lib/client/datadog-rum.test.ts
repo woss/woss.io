@@ -180,7 +180,7 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
       defaultPrivacyLevel: 'mask-user-input',
       service: 'woss-io',
       env: 'dev',
-      version: '1.0.1-dev',
+      version: '1.1.0-dev',
     });
     expect(options).not.toHaveProperty('trackFrustrations');
   });
