@@ -89,8 +89,7 @@ spec:
               value: "3"
             - name: LOG_LEVEL
               value: debug
-            - name: ZINALOG_URL
-              value: http://zinalog:4000
+
             - name: PUBLIC_DD_RUM_APP_ID
               value: 21afc4c0-6e1e-40f4-9d3c-c4a2457de2be
             - name: PUBLIC_DD_RUM_CLIENT_TOKEN
@@ -151,16 +150,7 @@ spec:
                 secretKeyRef:
                   name: woss-secrets
                   key: WOSS_DD_API_KEY
-            - name: ZINALOG_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: woss-secrets
-                  key: WOSS_ZINALOG_API_KEY
-            - name: ZINALOG_ENCRYPTION_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: woss-secrets
-                  key: WOSS_ZINALOG_ENCRYPTION_KEY
+
           volumeMounts:
             - name: woss-data
               mountPath: /app/data
@@ -206,8 +196,7 @@ spec:
               value: "3"
             - name: LOG_LEVEL
               value: debug
-            - name: ZINALOG_URL
-              value: http://zinalog:4000
+
             - name: PUBLIC_DD_RUM_APP_ID
               value: 21afc4c0-6e1e-40f4-9d3c-c4a2457de2be
             - name: PUBLIC_DD_RUM_CLIENT_TOKEN
@@ -268,16 +257,7 @@ spec:
                 secretKeyRef:
                   name: woss-secrets
                   key: WOSS_DD_API_KEY
-            - name: ZINALOG_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: woss-secrets
-                  key: WOSS_ZINALOG_API_KEY
-            - name: ZINALOG_ENCRYPTION_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: woss-secrets
-                  key: WOSS_ZINALOG_ENCRYPTION_KEY
+
             - name: OTEL_SERVICE_NAME
               value: woss
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

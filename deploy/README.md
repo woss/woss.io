@@ -49,7 +49,7 @@ are what keep the pod reachable. Do not create a namespace manifest.
    ```bash
    for K in WOSS_PROVIDER_API_KEY WOSS_GITHUB_TOKEN WOSS_MCL_MCP_API_KEY WOSS_MCP_SERVERS \
             WOSS_USER_WEBHOOK_URL WOSS_USER_WEBHOOK_ERROR_URL WOSS_USER_WEBHOOK_TOKEN \
-            WOSS_DD_API_KEY WOSS_ZINALOG_API_KEY WOSS_ZINALOG_ENCRYPTION_KEY; do
+            WOSS_DD_API_KEY; do
      kubectl -n tools-img get secret tool-secrets -o jsonpath="{.data.$K}" | base64 -d \
        | gh secret set "$K" -R woss/woss.io
    done
