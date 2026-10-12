@@ -51,7 +51,7 @@ spec:
           command:
             - /bin/sh
             - -c
-            - pnpm run build-index || { echo 'WARN: build-index failed; keeping existing index'; exit 0; }
+            - "pnpm run build-index || { echo 'WARN: build-index failed; keeping existing index'; exit 0; }"
           env:
             - name: NODE_ENV
               value: production
