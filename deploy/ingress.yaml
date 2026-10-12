@@ -1,0 +1,22 @@
+# Ported verbatim from kelp-infra services-stack wave2.tf
+# (kubernetes_ingress_v1.woss). Deliberately NO tls: block — a bare tls
+# block makes caddy skip ACME for the host; ingressClassName: caddy +
+# no tls keeps auto-HTTPS (LE HTTP-01) working.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: woss
+  namespace: tools-img
+spec:
+  ingressClassName: caddy
+  rules:
+    - host: woss.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: woss
+                port:
+                  number: 3000

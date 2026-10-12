@@ -1,0 +1,306 @@
+# Ported verbatim from kelp-infra services-stack wave2.tf
+# (kubernetes_deployment.woss, incl. the build-index init container).
+# __DIGEST__ is substituted by CI (.github/workflows/deploy.yml) with the
+# digest of the image pushed in the same run; sha256: prefix comes from the
+# digest string itself.
+#
+# Kept identical to the terraform-managed object during cutover:
+# - labels (incl. app.kubernetes.io/managed-by: services-stack)
+# - namespace tools-img (kelp-infra-owned: NetworkPolicies live there)
+# - node pin buri-image + dedicated=tools:NoSchedule toleration
+# Only intended difference vs terraform: secret envs read from the
+# woss-secrets Secret (created by CI) instead of tool-secrets.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: woss
+  namespace: tools-img
+  labels:
+    app: woss
+    app.kubernetes.io/managed-by: services-stack
+    tags.datadoghq.com/env: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: woss
+  template:
+    metadata:
+      labels:
+        app: woss
+        app.kubernetes.io/managed-by: services-stack
+        tags.datadoghq.com/env: prod
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: buri-image
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: tools
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: build-index
+          image: docker.io/woss/woss-io@__DIGEST__
+          # Non-fatal: the restored index (cache.usearch/centroid.json) is
+          # authoritative; the box-side build-index runs before decommission.
+          command:
+            - /bin/sh
+            - -c
+            - pnpm run build-index || { echo 'WARN: build-index failed; keeping existing index'; exit 0; }
+          env:
+            - name: NODE_ENV
+              value: production
+            # build-index exports OTLP with SDK defaults (service.name = npm
+            # package `woss-io`, env from NODE_ENV → "production"). Pin it to
+            # the same service/env as the main container so the catalog stays
+            # uniform.
+            - name: OTEL_SERVICE_NAME
+              value: woss
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=prod
+            - name: ORIGIN
+              value: https://woss.io
+            - name: LLM_PROVIDER_BASE_URL
+              value: https://opencode.ai/zen/v1
+            - name: MAIN_MODEL
+              value: deepseek-v4-flash
+            - name: TOOL_CLASSIFY_MODEL
+              value: deepseek-v4-flash
+            - name: RELEVANCE_CHECK_MODEL
+              value: deepseek-v4-flash
+            - name: MAX_TOKENS
+              value: "50000"
+            - name: FIRST_ROUND_MAX_STEPS
+              value: "10"
+            - name: MAX_RESULTS_LENGTH
+              value: "64000"
+            - name: TOOL_CLASSIFY_TIMEOUT_MS
+              value: "15000"
+            - name: LLM_CACHE_ENABLED
+              value: "false"
+            - name: PUBLIC_MAX_MESSAGES
+              value: "20"
+            - name: PUBLIC_MAX_CHATS
+              value: "3"
+            - name: LOG_LEVEL
+              value: debug
+            - name: ZINALOG_URL
+              value: http://zinalog:4000
+            - name: PUBLIC_DD_RUM_APP_ID
+              value: 21afc4c0-6e1e-40f4-9d3c-c4a2457de2be
+            - name: PUBLIC_DD_RUM_CLIENT_TOKEN
+              value: pubf42d9f68be1d30fb5e3fc57b04d8fd7f
+            - name: PUBLIC_APP_VERSION
+              value: 1.0.0
+            - name: DD_SITE
+              value: datadoghq.eu
+            - name: DD_SERVICE
+              value: woss
+            - name: DD_ENV
+              value: prod
+            - name: DD_TRACE_SAMPLE_RATE
+              value: "1"
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PROVIDER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_PROVIDER_API_KEY
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_GITHUB_TOKEN
+            - name: MCL_MCP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_MCL_MCP_API_KEY
+            - name: MCP_SERVERS
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_MCP_SERVERS
+            - name: WOSS_USER_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_USER_WEBHOOK_URL
+            - name: WOSS_USER_WEBHOOK_ERROR_URL
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_USER_WEBHOOK_ERROR_URL
+            - name: WOSS_USER_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_USER_WEBHOOK_TOKEN
+            - name: DD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_DD_API_KEY
+            - name: ZINALOG_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_ZINALOG_API_KEY
+            - name: ZINALOG_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_ZINALOG_ENCRYPTION_KEY
+          volumeMounts:
+            - name: woss-data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      containers:
+        - name: woss
+          image: docker.io/woss/woss-io@__DIGEST__
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - build/index.js
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: ORIGIN
+              value: https://woss.io
+            - name: GID
+              value: "1000"
+            - name: LLM_PROVIDER_BASE_URL
+              value: https://opencode.ai/zen/v1
+            - name: MAIN_MODEL
+              value: deepseek-v4-flash
+            - name: TOOL_CLASSIFY_MODEL
+              value: deepseek-v4-flash
+            - name: RELEVANCE_CHECK_MODEL
+              value: deepseek-v4-flash
+            - name: MAX_TOKENS
+              value: "50000"
+            - name: FIRST_ROUND_MAX_STEPS
+              value: "10"
+            - name: MAX_RESULTS_LENGTH
+              value: "64000"
+            - name: TOOL_CLASSIFY_TIMEOUT_MS
+              value: "15000"
+            - name: LLM_CACHE_ENABLED
+              value: "false"
+            - name: PUBLIC_MAX_MESSAGES
+              value: "20"
+            - name: PUBLIC_MAX_CHATS
+              value: "3"
+            - name: LOG_LEVEL
+              value: debug
+            - name: ZINALOG_URL
+              value: http://zinalog:4000
+            - name: PUBLIC_DD_RUM_APP_ID
+              value: 21afc4c0-6e1e-40f4-9d3c-c4a2457de2be
+            - name: PUBLIC_DD_RUM_CLIENT_TOKEN
+              value: pubf42d9f68be1d30fb5e3fc57b04d8fd7f
+            - name: PUBLIC_APP_VERSION
+              value: 1.0.0
+            - name: DD_SITE
+              value: datadoghq.eu
+            - name: DD_SERVICE
+              value: woss
+            - name: DD_ENV
+              value: prod
+            - name: DD_TRACE_SAMPLE_RATE
+              value: "1"
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PROVIDER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_PROVIDER_API_KEY
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_GITHUB_TOKEN
+            - name: MCL_MCP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_MCL_MCP_API_KEY
+            - name: MCP_SERVERS
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_MCP_SERVERS
+            - name: WOSS_USER_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_USER_WEBHOOK_URL
+            - name: WOSS_USER_WEBHOOK_ERROR_URL
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_USER_WEBHOOK_ERROR_URL
+            - name: WOSS_USER_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_USER_WEBHOOK_TOKEN
+            - name: DD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_DD_API_KEY
+            - name: ZINALOG_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_ZINALOG_API_KEY
+            - name: ZINALOG_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: woss-secrets
+                  key: WOSS_ZINALOG_ENCRYPTION_KEY
+            - name: OTEL_SERVICE_NAME
+              value: woss
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://datadog-agent.datadog.svc.cluster.local:4318
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 12
+          volumeMounts:
+            - name: woss-data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              memory: 20Gi
+      volumes:
+        - name: woss-data
+          persistentVolumeClaim:
+            claimName: woss-data

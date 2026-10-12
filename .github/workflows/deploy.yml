@@ -1,0 +1,94 @@
+name: Build & Deploy
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Push Docker Image
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Generate Docker tags
+        id: tags
+        run: |
+          BRANCH="${GITHUB_BASE_REF:-${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}}"
+          SAFE_BRANCH="$(echo "$BRANCH" | tr '/' '-')"
+          VERSION_TAG="$(date +'%d-%m-%Y')-${SAFE_BRANCH}"
+          TAGS="docker.io/woss/woss-io:${VERSION_TAG}"
+          if [ "$BRANCH" = "main" ]; then
+            TAGS="${TAGS}"$'\n'"docker.io/woss/woss-io:latest"
+          fi
+          echo "tags<<EOF
+          ${TAGS}
+          EOF" >> $GITHUB_OUTPUT
+          echo "version=${VERSION_TAG}" >> $GITHUB_OUTPUT
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/build-push-action@v7
+        id: push
+        with:
+          push: true
+          # platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            DD_VERSION=${{ steps.tags.outputs.version }}
+
+  deploy:
+    name: Deploy to prod cluster
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-woss-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure kubeconfig
+        run: |
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Sync woss-secrets
+        env:
+          WOSS_PROVIDER_API_KEY: ${{ secrets.WOSS_PROVIDER_API_KEY }}
+          WOSS_GITHUB_TOKEN: ${{ secrets.WOSS_GITHUB_TOKEN }}
+          WOSS_MCL_MCP_API_KEY: ${{ secrets.WOSS_MCL_MCP_API_KEY }}
+          WOSS_MCP_SERVERS: ${{ secrets.WOSS_MCP_SERVERS }}
+          WOSS_USER_WEBHOOK_URL: ${{ secrets.WOSS_USER_WEBHOOK_URL }}
+          WOSS_USER_WEBHOOK_ERROR_URL: ${{ secrets.WOSS_USER_WEBHOOK_ERROR_URL }}
+          WOSS_USER_WEBHOOK_TOKEN: ${{ secrets.WOSS_USER_WEBHOOK_TOKEN }}
+          WOSS_DD_API_KEY: ${{ secrets.WOSS_DD_API_KEY }}
+          WOSS_ZINALOG_API_KEY: ${{ secrets.WOSS_ZINALOG_API_KEY }}
+          WOSS_ZINALOG_ENCRYPTION_KEY: ${{ secrets.WOSS_ZINALOG_ENCRYPTION_KEY }}
+        run: |
+          kubectl -n tools-img create secret generic woss-secrets \
+            --from-literal=WOSS_PROVIDER_API_KEY="$WOSS_PROVIDER_API_KEY" \
+            --from-literal=WOSS_GITHUB_TOKEN="$WOSS_GITHUB_TOKEN" \
+            --from-literal=WOSS_MCL_MCP_API_KEY="$WOSS_MCL_MCP_API_KEY" \
+            --from-literal=WOSS_MCP_SERVERS="$WOSS_MCP_SERVERS" \
+            --from-literal=WOSS_USER_WEBHOOK_URL="$WOSS_USER_WEBHOOK_URL" \
+            --from-literal=WOSS_USER_WEBHOOK_ERROR_URL="$WOSS_USER_WEBHOOK_ERROR_URL" \
+            --from-literal=WOSS_USER_WEBHOOK_TOKEN="$WOSS_USER_WEBHOOK_TOKEN" \
+            --from-literal=WOSS_DD_API_KEY="$WOSS_DD_API_KEY" \
+            --from-literal=WOSS_ZINALOG_API_KEY="$WOSS_ZINALOG_API_KEY" \
+            --from-literal=WOSS_ZINALOG_ENCRYPTION_KEY="$WOSS_ZINALOG_ENCRYPTION_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Pin digest and apply manifests
+        run: |
+          sed -i "s/__DIGEST__/${{ needs.build.outputs.digest }}/g" deploy/deployment.yaml
+          kubectl apply -f deploy/pvc.yaml deploy/service.yaml deploy/deployment.yaml deploy/ingress.yaml
+
+      - name: Wait for rollout
+        run: kubectl -n tools-img rollout status deployment/woss --timeout=600s

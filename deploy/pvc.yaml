@@ -1,0 +1,15 @@
+# Ported verbatim from kelp-infra services-stack wave2.tf
+# (kubernetes_persistent_volume_claim.woss_data). First apply must be a
+# no-op against the live terraform-created object.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: woss-data
+  namespace: tools-img
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
