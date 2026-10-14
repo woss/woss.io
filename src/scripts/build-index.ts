@@ -688,9 +688,11 @@ async function buildIndex(): Promise<void> {
 const isMainScript = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isMainScript) {
+  const telemetry = await import('../instrumentation.server.js');
   buildIndex()
     .then(async () => {
       await dispose();
+      await telemetry.shutdown();
       process.exit(0);
     })
     .catch(async (err) => {
@@ -701,6 +703,7 @@ if (isMainScript) {
         /* ignore close errors during crash */
       }
       await dispose();
+      await telemetry.shutdown();
       process.exit(1);
     });
 }

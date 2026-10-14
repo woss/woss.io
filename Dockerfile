@@ -12,10 +12,8 @@ FROM deps AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
-# Prerender runs the hardened logger in production mode and requires
-# DD_API_KEY (the zina-branch change); .env is dockerignored, so CI passes
-# the key as a buildx secret — never persisted in the image.
-RUN --mount=type=secret,id=dd_api_key DD_API_KEY="$(cat /run/secrets/dd_api_key)" pnpm run build
+# Prerender must not export telemetry; runtime pods export through the Agent.
+RUN OTEL_SDK_DISABLED=1 pnpm run build
 
 FROM ghcr.io/pnpm/pnpm:11 AS runner
 RUN pnpm runtime set node --global 26

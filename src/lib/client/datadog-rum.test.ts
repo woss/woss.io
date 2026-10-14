@@ -30,7 +30,7 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { initDatadogRum, RUM_VERSION } from './datadog-rum';
+import { initDatadogRum } from './datadog-rum';
 
 /** Mutable mock backing for `$env/dynamic/public` env reads. */
 const envState = vi.hoisted(() => {
@@ -100,6 +100,8 @@ beforeEach(() => {
   logsState.reset();
   delete envState.env.PUBLIC_DD_RUM_APP_ID;
   delete envState.env.PUBLIC_DD_RUM_CLIENT_TOKEN;
+  delete envState.env.PUBLIC_APP_VERSION;
+  delete envState.env.PUBLIC_DD_ENV;
 });
 
 afterEach(() => {
@@ -178,9 +180,9 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
       traceContextInjection: 'all',
       allowedTracingUrls: [expect.any(Function)],
       defaultPrivacyLevel: 'mask-user-input',
-      service: 'woss-io',
+      service: 'woss',
       env: 'dev',
-      version: RUM_VERSION,
+      version: '1.1.0-dev',
     });
     expect(options).not.toHaveProperty('trackFrustrations');
   });
@@ -197,10 +199,28 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
       forwardErrorsToLogs: true,
       forwardConsoleLogs: ['error', 'warn'],
       sessionSampleRate: 100,
-      service: 'woss-io',
+      service: 'woss',
       env: 'dev',
       version: '1.1.0-dev',
     });
+  });
+
+  it('uses the deployed public version and environment for both browser SDKs', () => {
+    envState.env.PUBLIC_DD_RUM_APP_ID = APP_ID;
+    envState.env.PUBLIC_DD_RUM_CLIENT_TOKEN = CLIENT_TOKEN;
+    envState.env.PUBLIC_APP_VERSION = '12-10-2026-main';
+    envState.env.PUBLIC_DD_ENV = 'prod';
+
+    initDatadogRum();
+
+    const rumOptions = rumState.init.mock.calls[0][0] as Record<string, unknown>;
+    const logOptions = logsState.init.mock.calls[0][0] as Record<string, unknown>;
+    expect(rumOptions.service).toBe('woss');
+    expect(rumOptions.env).toBe('prod');
+    expect(rumOptions.version).toBe('12-10-2026-main');
+    expect(logOptions.service).toBe('woss');
+    expect(logOptions.env).toBe('prod');
+    expect(logOptions.version).toBe('12-10-2026-main');
   });
 
   it('SC-004 module import is SSR-safe: no window/document access at module scope', async () => {
@@ -220,7 +240,7 @@ describe('initDatadogRum (SC-001..SC-005)', () => {
     initDatadogRum();
 
     const options = rumState.init.mock.calls[0][0] as Record<string, unknown> | undefined;
-    expect(options?.service).toBe('woss-io');
+    expect(options?.service).toBe('woss');
     expect(options?.env).toBe('dev');
   });
 });

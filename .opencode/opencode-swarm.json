@@ -133,11 +133,15 @@
         }
       },
       "max_iterations": 5
+    },
+    "council": {
+      "general": {
+        "enabled": true
+      }
     }
   },
   "default_swarm": "default",
   "max_iterations": 5,
-  "default_swarm": "default",
   "memory": {
     "enabled": true,
     "provider": "sqlite",
@@ -187,5 +191,8 @@
       "propagationFanout": 20,
       "propagationLookbackDays": 30
     }
+  },
+  "phase_complete": {
+    "require_docs": false
   }
 }

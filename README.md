@@ -17,7 +17,7 @@ Beyond the chat, there's:
 - **Dark and light mode**: follows your system preference, handled by sv5ui theming
 - **Rate limiting**: SQLite-backed, 10 requests per minute per IP
 - **GeoIP**: country detection via geoip-country so I know roughly where visitors are
-- **Structured logging**: LogTape writes rotating JSONL files and exports server logs to Datadog; `DD_API_KEY` is required in production
+- **Structured logging**: LogTape writes rotating JSONL files and sends server logs through the node-local Datadog Agent
 - **Client monitoring**: Datadog RUM bootstrapped in the client hooks — session replay and page-view telemetry to the EU org, silently off unless you set `PUBLIC_DD_RUM_APP_ID` and `PUBLIC_DD_RUM_CLIENT_TOKEN`
 - **Webhooks**: events pushed to external URLs when interesting things happen
 - **Message reactions**: upvote, downvote, or heart AI responses
@@ -96,18 +96,19 @@ Remote caching is enabled — turbo can share cache across CI runs and local bui
 | `WOSS_USER_WEBHOOK_URL`       | -                          | Webhook URL for events                          |
 | `WOSS_USER_WEBHOOK_ERROR_URL` | -                          | Webhook URL for errors                          |
 | `WOSS_USER_WEBHOOK_TOKEN`     | -                          | Webhook auth token                              |
-| `DD_SITE`                     | `datadoghq.eu`             | Datadog site for the logs intake host           |
-| `DD_API_KEY`                  | -                          | Datadog API key (required for production logs)  |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | -                          | Base OTLP HTTP endpoint for server telemetry    |
 | `PUBLIC_DD_RUM_APP_ID`        | -                          | Datadog RUM application ID (enables client RUM) |
 | `PUBLIC_DD_RUM_CLIENT_TOKEN`  | -                          | Datadog RUM client token (enables client RUM)   |
+| `PUBLIC_APP_VERSION`          | deploy tag                 | Browser telemetry version                       |
+| `PUBLIC_DD_ENV`               | `dev` or `prod`            | Browser telemetry environment                   |
 
 ### Datadog RUM
 
-Client-side Real User Monitoring and Browser Logs boot at startup via `src/hooks.client.ts`. Sessions sample at 100% with session replay at 20% (resources, long tasks, and user interactions tracked; input masked by default). Browser errors and `console.error`/`console.warn` are forwarded to Datadog. Data goes to the EU org (`datadoghq.eu`) tagged `service: woss-io` and the current environment.
+Client-side Real User Monitoring and Browser Logs boot at startup via `src/hooks.client.ts`. Sessions sample at 100% with session replay at 20% (resources, long tasks, and user interactions tracked; input masked by default). Browser errors and `console.error`/`console.warn` are forwarded to Datadog. Data goes to the EU org (`datadoghq.eu`) tagged `service: woss` and the current environment/version.
 
 Set `PUBLIC_DD_RUM_APP_ID` and `PUBLIC_DD_RUM_CLIENT_TOKEN` in `.env` to enable browser monitoring and logs. Without them both SDKs remain disabled.
 
-Server logs are JSON Lines in `data/logs/woss.io.log`, rotated at 10 MiB with up to 70 files retained. Datadog export uses `DD_API_KEY` and `DD_SITE`; missing `DD_API_KEY` stops production logger initialization. Datadog HTTP export is best-effort; local files remain available if export fails.
+Server traces, metrics, and LogTape records are exported over OTLP HTTP to the node-local Datadog Agent at `OTEL_EXPORTER_OTLP_ENDPOINT` (Kubernetes configures this automatically). The deploy workflow enables the Agent's OTLP log intake. Server logs are also JSON Lines in `data/logs/woss.io.log`, rotated at 10 MiB with up to 70 files retained; local files remain available if Agent export fails.
 
 ### MCP Endpoint
 

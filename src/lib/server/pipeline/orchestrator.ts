@@ -6,10 +6,11 @@ import { getMcpToolDefs, type McpToolDef } from '$lib/server/mcp/tools';
 import { getToolSystemPrompt } from '../prompts.ts';
 import { config } from '$lib/server/config';
 import { CAT, createLogger } from '$lib/server/logger';
+import { ROOT_CONTEXT, trace, type Span } from '@opentelemetry/api';
 import { classifyQuery, type QueryClass } from '$lib/query-classifier';
 import { needsGithubTools, needsMaculaTools, parseSources, tryRenameChat } from '$lib/server/chat-helpers';
 import { generateTraceId, setMsgId, withTrace } from '$lib/server/trace-context';
-import { createRootSpan, endSpan, withSpan } from '$lib/server/tracing';
+import { createRootSpan, endSpan, withContext, withSpan } from '$lib/server/tracing';
 import { randomUUID } from '$lib/utils/random-uuid';
 
 import { handleEarlyGates } from './early-gates';
@@ -60,14 +61,25 @@ export async function startGeneration(
   userMsgId?: string,
   msgTraceId?: string,
 ): Promise<void> {
-  // If a message traceId is provided, wrap the entire generation in that trace context
-  // so all addMessage calls and LLM operations inherit the message traceId.
-  if (msgTraceId) {
-    return withTrace(msgTraceId, generateTraceId(), () =>
-      startGeneration(text, chatId, userId, maxChunks, userAgentId, userMsgId),
-    );
-  }
+  const root = createRootSpan('chat.generate', { chatId, userId, text: text.slice(0, 100) });
+  const rootSpanContext = root.spanContext();
+  const traceId = msgTraceId ?? rootSpanContext.traceId;
+  const spanId = msgTraceId ? generateTraceId() : rootSpanContext.spanId;
 
+  return withContext(trace.setSpan(ROOT_CONTEXT, root), () =>
+    withTrace(traceId, spanId, () => runGeneration(text, chatId, userId, maxChunks, userAgentId, userMsgId, root)),
+  );
+}
+
+async function runGeneration(
+  text: string,
+  chatId: string,
+  userId: string,
+  maxChunks: number,
+  userAgentId: number | undefined,
+  userMsgId: string | undefined,
+  root: Span,
+): Promise<void> {
   const abortController = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   activeGenerations.set(chatId, abortController);
@@ -75,10 +87,8 @@ export async function startGeneration(
   const startTime = performance.now();
   log.info`📝 ask: "${text.slice(0, 100)}" [chatId=${chatId} userId=${userId}]`;
 
-  // The generation runs fire-and-forget after the 202 response (no active OTEL
-  // context), so open a root span here to surface the whole pipeline in Datadog.
-  const root = createRootSpan('chat.generate', { chatId, userId, text: text.slice(0, 100) });
-
+  let failed = false;
+  let failure: unknown;
   try {
     // Publish user_message event
     log.info('Sending SSE event', { event: 'user_message', chatId, dataLength: text.length });
@@ -399,6 +409,7 @@ export async function startGeneration(
         responseMs,
         maxTokens,
         partial,
+        userErrorMessage,
         lastError,
         msgId,
         cacheEmbeddingData,
@@ -408,11 +419,11 @@ export async function startGeneration(
         startTime,
         irrecoverable,
         toolCalls,
-        userErrorMessage,
       }),
     );
   } catch (err) {
-    endSpan(root, err);
+    failed = true;
+    failure = err;
     const message = err instanceof Error ? err.message : 'Unknown error';
     log.error`Background generation failed: ${err}`;
     try {
@@ -434,6 +445,6 @@ export async function startGeneration(
   } finally {
     activeGenerations.delete(chatId);
     clearTimeout(timeoutId);
-    endSpan(root);
+    endSpan(root, failed ? failure : undefined);
   }
 }

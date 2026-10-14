@@ -39,7 +39,6 @@
       <p class="text-sm/relaxed text-on-surface-variant m-0">
         Images displayed on this site are hosted on <code>u.macula.link</code>, a media asset server (Macula DAM).
       </p>
-
     </div>
 
     <div>

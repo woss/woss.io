@@ -1,6 +1,7 @@
 # CI deploy identity for the woss.io deploy pipeline.
 #
-# Applied ONCE by the operator with the admin kubeconfig (context `kelp`).
+# Applied by the operator with the admin kubeconfig (context `kelp`); reapply
+# whenever these permissions change.
 # CI never applies this file — the CI ServiceAccount token cannot grant
 # RBAC rights. See README.md for the full one-time setup.
 apiVersion: v1
@@ -15,15 +16,15 @@ metadata:
   name: woss-deployer
   namespace: tools-img
 rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: [""]
-    resources: ["services", "persistentvolumeclaims", "secrets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["ingresses"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ['apps']
+    resources: ['deployments']
+    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
+  - apiGroups: ['']
+    resources: ['services', 'persistentvolumeclaims', 'secrets']
+    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
+  - apiGroups: ['networking.k8s.io']
+    resources: ['ingresses']
+    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -34,6 +35,35 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: woss-deployer
+subjects:
+  - kind: ServiceAccount
+    name: woss-deployer
+    namespace: tools-img
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: woss-agent-otlp
+  namespace: datadog
+rules:
+  - apiGroups: ['datadoghq.com']
+    resources: ['datadogagents']
+    resourceNames: ['datadog']
+    verbs: ['get', 'patch']
+  - apiGroups: ['apps']
+    resources: ['daemonsets']
+    resourceNames: ['datadog-agent']
+    verbs: ['get', 'list', 'watch']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: woss-agent-otlp
+  namespace: datadog
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: woss-agent-otlp
 subjects:
   - kind: ServiceAccount
     name: woss-deployer

@@ -12,20 +12,25 @@ are what keep the pod reachable. Do not create a namespace manifest.
 
 ## Layout
 
-| File | Object |
-|---|---|
-| `pvc.yaml` | PVC `woss-data` (RWO 10Gi, `local-path`, state at `/app/data`) |
-| `service.yaml` | Service `woss` (3000→3000) |
-| `deployment.yaml` | Deployment `woss` + `build-index` init container |
-| `ingress.yaml` | Ingress `woss` (caddy class, host `woss.io`) — no `tls:` block, caddy auto-ACME |
-| `rbac.yaml` | CI ServiceAccount `woss-deployer` + Role/RoleBinding + token secret (operator-applied once) |
+| File              | Object                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| `pvc.yaml`        | PVC `woss-data` (RWO 10Gi, `local-path`, state at `/app/data`)                              |
+| `service.yaml`    | Service `woss` (3000→3000)                                                                  |
+| `deployment.yaml` | Deployment `woss` + `build-index` init container                                            |
+| `ingress.yaml`    | Ingress `woss` (caddy class, host `woss.io`) — no `tls:` block, caddy auto-ACME             |
+| `rbac.yaml`       | CI ServiceAccount `woss-deployer` + Role/RoleBinding + token secret (operator-applied once) |
 
-## One-time operator setup (already done for prod — repeat only for a new cluster)
+## Operator setup (already applied for prod; reapply RBAC after permission changes)
 
 1. Apply RBAC with the **admin** kubeconfig (CI cannot grant rights):
    ```bash
    kubectl apply -f deploy/rbac.yaml
    ```
+   Reapply this after Agent permissions change. It grants the deployer
+   read/patch access to only the `datadog` Operator resource named `datadog`,
+   so CI can enable OTLP log ingestion. The deploy workflow sets
+   `DD_OTLP_CONFIG_LOGS_ENABLED=true` on the Agent container; this is separate
+   from `features.logCollection.enabled`.
 2. Assemble the CI kubeconfig (server + CA + SA token):
    ```bash
    SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
@@ -48,8 +53,7 @@ are what keep the pod reachable. Do not create a namespace manifest.
    referenced by the deployment — skip it):
    ```bash
    for K in WOSS_PROVIDER_API_KEY WOSS_GITHUB_TOKEN WOSS_MCL_MCP_API_KEY WOSS_MCP_SERVERS \
-            WOSS_USER_WEBHOOK_URL WOSS_USER_WEBHOOK_ERROR_URL WOSS_USER_WEBHOOK_TOKEN \
-            WOSS_DD_API_KEY; do
+            WOSS_USER_WEBHOOK_URL WOSS_USER_WEBHOOK_ERROR_URL WOSS_USER_WEBHOOK_TOKEN; do
      kubectl -n tools-img get secret tool-secrets -o jsonpath="{.data.$K}" | base64 -d \
        | gh secret set "$K" -R woss/woss.io
    done
