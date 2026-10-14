@@ -1,5 +1,5 @@
 ---
-published: false
+published: true
 title: "The 'Let Me' Trap: When Your AI Assistant Keeps Promising to Answer Instead of Doing It"
 slug: 'the-let-me-trap'
 description: 'How a single transitional phrase caused 10,000 wasted tokens in an LLM tool-calling pipeline — and the two-bug debugging journey from DSML blocks to false-positive interim round detection.'
