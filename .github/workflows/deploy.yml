@@ -65,15 +65,15 @@ jobs:
       - name: Enable Agent OTLP log ingestion
         run: |
           agent_json="$(kubectl -n datadog get datadogagent datadog -o json)"
-          if ! printf '%s' "$agent_json" | jq -e '.spec.override.nodeAgent.containers.agent.env | type == "array"' >/dev/null; then
-            echo "DatadogAgent nodeAgent agent env override is missing" >&2
+          if ! printf '%s' "$agent_json" | jq -e '.spec.override.nodeAgent.env | type == "array"' >/dev/null; then
+            echo "DatadogAgent nodeAgent env override is missing" >&2
             exit 1
           fi
-          env_index="$(printf '%s' "$agent_json" | jq -r '[.spec.override.nodeAgent.containers.agent.env[]? | .name] | index("DD_OTLP_CONFIG_LOGS_ENABLED") // empty')"
+          env_index="$(printf '%s' "$agent_json" | jq -r '[.spec.override.nodeAgent.env[]? | .name] | index("DD_OTLP_CONFIG_LOGS_ENABLED") // empty')"
           if [ -n "$env_index" ]; then
-            patch="$(jq -cn --arg path "/spec/override/nodeAgent/containers/agent/env/$env_index/value" '[{op:"replace",path:$path,value:"true"}]')"
+            patch="$(jq -cn --arg path "/spec/override/nodeAgent/env/$env_index/value" '[{op:"replace",path:$path,value:"true"}]')"
           else
-            patch='[{"op":"add","path":"/spec/override/nodeAgent/containers/agent/env/-","value":{"name":"DD_OTLP_CONFIG_LOGS_ENABLED","value":"true"}}]'
+            patch='[{"op":"add","path":"/spec/override/nodeAgent/env/-","value":{"name":"DD_OTLP_CONFIG_LOGS_ENABLED","value":"true"}}]'
           fi
           kubectl -n datadog patch datadogagent datadog --type=json --patch "$patch"
           kubectl -n datadog rollout status daemonset/datadog-agent --timeout=300s
