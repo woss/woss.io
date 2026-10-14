@@ -46,12 +46,18 @@ spec:
       initContainers:
         - name: build-index
           image: docker.io/woss/woss-io@__DIGEST__
-          # Non-fatal: the restored index (cache.usearch/centroid.json) is
-          # authoritative; the box-side build-index runs before decommission.
+          # Rebuilds the search index (woss.usearch/centroid.json) from the DB
+          # and repo content on every deploy. Non-fatal: a previously built
+          # index in the PVC stays authoritative if the rebuild fails.
+          #
+          # Called via vite-node directly, NOT `pnpm run build-index`: pnpm
+          # 11's project-version check writes a cache DB under $HOME (which is
+          # `/`, root-owned in this image) and dies with ERR_SQLITE_ERROR
+          # before ever starting the script.
           command:
             - /bin/sh
             - -c
-            - "pnpm run build-index || { echo 'WARN: build-index failed; keeping existing index'; exit 0; }"
+            - "./node_modules/.bin/vite-node --script src/scripts/build-index.ts || { echo 'WARN: build-index failed; keeping existing index'; exit 0; }"
           env:
             - name: NODE_ENV
               value: production
