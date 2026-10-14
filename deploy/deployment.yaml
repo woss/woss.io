@@ -53,11 +53,13 @@ spec:
           # Called via vite-node directly, NOT `pnpm run build-index`: pnpm
           # 11's project-version check writes a cache DB under $HOME (which is
           # `/`, root-owned in this image) and dies with ERR_SQLITE_ERROR
-          # before ever starting the script.
+          # before ever starting the script. TEST=true matches the package.json
+          # script env — without it SvelteKit's server-only import checker
+          # crashes the load with "An impossible situation occurred".
           command:
             - /bin/sh
             - -c
-            - "./node_modules/.bin/vite-node --script src/scripts/build-index.ts || { echo 'WARN: build-index failed; keeping existing index'; exit 0; }"
+            - "TEST=true ./node_modules/.bin/vite-node --script src/scripts/build-index.ts || { echo 'WARN: build-index failed; keeping existing index'; exit 0; }"
           env:
             - name: NODE_ENV
               value: production
