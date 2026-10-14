@@ -5,7 +5,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: woss-data
-  namespace: tools-img
+  namespace: woss-prod
 spec:
   accessModes:
     - ReadWriteOnce

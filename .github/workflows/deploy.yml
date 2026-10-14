@@ -88,7 +88,7 @@ jobs:
           WOSS_USER_WEBHOOK_ERROR_URL: ${{ secrets.WOSS_USER_WEBHOOK_ERROR_URL }}
           WOSS_USER_WEBHOOK_TOKEN: ${{ secrets.WOSS_USER_WEBHOOK_TOKEN }}
         run: |
-          kubectl -n tools-img create secret generic woss-secrets \
+          kubectl -n woss-prod create secret generic woss-secrets \
             --from-literal=WOSS_PROVIDER_API_KEY="$WOSS_PROVIDER_API_KEY" \
             --from-literal=WOSS_GITHUB_TOKEN="$WOSS_GITHUB_TOKEN" \
             --from-literal=WOSS_MCL_MCP_API_KEY="$WOSS_MCL_MCP_API_KEY" \
@@ -105,4 +105,4 @@ jobs:
           kubectl apply -f deploy/pvc.yaml -f deploy/service.yaml -f deploy/deployment.yaml -f deploy/ingress.yaml
 
       - name: Wait for rollout
-        run: kubectl -n tools-img rollout status deployment/woss --timeout=600s
+        run: kubectl -n woss-prod rollout status deployment/woss --timeout=600s

@@ -6,7 +6,7 @@
 #
 # Kept identical to the terraform-managed object during cutover:
 # - labels (incl. app.kubernetes.io/managed-by: services-stack)
-# - namespace tools-img (kelp-infra-owned: NetworkPolicies live there)
+# - namespace woss-prod (hand-created; no NetworkPolicies live there)
 # - node pin buri-image + dedicated=tools:NoSchedule toleration
 # Only intended difference vs terraform: secret envs read from the
 # woss-secrets Secret (created by CI) instead of tool-secrets.
@@ -14,7 +14,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: woss
-  namespace: tools-img
+  namespace: woss-prod
   labels:
     app: woss
     app.kubernetes.io/managed-by: services-stack
