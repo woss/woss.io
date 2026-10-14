@@ -43,8 +43,6 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             DD_VERSION=${{ steps.tags.outputs.version }}
-          secrets: |
-            dd_api_key=${{ secrets.DD_API_KEY }}
 
   deploy:
     name: Deploy to prod cluster
@@ -64,6 +62,22 @@ jobs:
           printf '%s' "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
+      - name: Enable Agent OTLP log ingestion
+        run: |
+          agent_json="$(kubectl -n datadog get datadogagent datadog -o json)"
+          if ! printf '%s' "$agent_json" | jq -e '.spec.override.nodeAgent.containers.agent.env | type == "array"' >/dev/null; then
+            echo "DatadogAgent nodeAgent agent env override is missing" >&2
+            exit 1
+          fi
+          env_index="$(printf '%s' "$agent_json" | jq -r '[.spec.override.nodeAgent.containers.agent.env[]? | .name] | index("DD_OTLP_CONFIG_LOGS_ENABLED") // empty')"
+          if [ -n "$env_index" ]; then
+            patch="$(jq -cn --arg path "/spec/override/nodeAgent/containers/agent/env/$env_index/value" '[{op:"replace",path:$path,value:"true"}]')"
+          else
+            patch='[{"op":"add","path":"/spec/override/nodeAgent/containers/agent/env/-","value":{"name":"DD_OTLP_CONFIG_LOGS_ENABLED","value":"true"}}]'
+          fi
+          kubectl -n datadog patch datadogagent datadog --type=json --patch "$patch"
+          kubectl -n datadog rollout status daemonset/datadog-agent --timeout=300s
+
       - name: Sync woss-secrets
         env:
           WOSS_PROVIDER_API_KEY: ${{ secrets.WOSS_PROVIDER_API_KEY }}
@@ -73,7 +87,6 @@ jobs:
           WOSS_USER_WEBHOOK_URL: ${{ secrets.WOSS_USER_WEBHOOK_URL }}
           WOSS_USER_WEBHOOK_ERROR_URL: ${{ secrets.WOSS_USER_WEBHOOK_ERROR_URL }}
           WOSS_USER_WEBHOOK_TOKEN: ${{ secrets.WOSS_USER_WEBHOOK_TOKEN }}
-          WOSS_DD_API_KEY: ${{ secrets.WOSS_DD_API_KEY }}
         run: |
           kubectl -n tools-img create secret generic woss-secrets \
             --from-literal=WOSS_PROVIDER_API_KEY="$WOSS_PROVIDER_API_KEY" \
@@ -83,12 +96,12 @@ jobs:
             --from-literal=WOSS_USER_WEBHOOK_URL="$WOSS_USER_WEBHOOK_URL" \
             --from-literal=WOSS_USER_WEBHOOK_ERROR_URL="$WOSS_USER_WEBHOOK_ERROR_URL" \
             --from-literal=WOSS_USER_WEBHOOK_TOKEN="$WOSS_USER_WEBHOOK_TOKEN" \
-            --from-literal=WOSS_DD_API_KEY="$WOSS_DD_API_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Pin digest and apply manifests
         run: |
-          sed -i "s/__DIGEST__/${{ needs.build.outputs.digest }}/g" deploy/deployment.yaml
+          sed -i -e "s/__DIGEST__/${{ needs.build.outputs.digest }}/g" \
+            -e "s/__VERSION__/${{ steps.tags.outputs.version }}/g" deploy/deployment.yaml
           kubectl apply -f deploy/pvc.yaml -f deploy/service.yaml -f deploy/deployment.yaml -f deploy/ingress.yaml
 
       - name: Wait for rollout

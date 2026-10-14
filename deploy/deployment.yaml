@@ -61,8 +61,14 @@ spec:
             # uniform.
             - name: OTEL_SERVICE_NAME
               value: woss
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://datadog-agent.datadog.svc.cluster.local:4318
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: deployment.environment=prod
+            - name: DD_SERVICE
+              value: woss
+            - name: DD_ENV
+              value: prod
             - name: ORIGIN
               value: https://woss.io
             - name: LLM_PROVIDER_BASE_URL
@@ -74,42 +80,21 @@ spec:
             - name: RELEVANCE_CHECK_MODEL
               value: deepseek-v4-flash
             - name: MAX_TOKENS
-              value: "50000"
+              value: '50000'
             - name: FIRST_ROUND_MAX_STEPS
-              value: "10"
+              value: '10'
             - name: MAX_RESULTS_LENGTH
-              value: "64000"
+              value: '64000'
             - name: TOOL_CLASSIFY_TIMEOUT_MS
-              value: "15000"
+              value: '15000'
             - name: LLM_CACHE_ENABLED
-              value: "false"
+              value: 'false'
             - name: PUBLIC_MAX_MESSAGES
-              value: "20"
+              value: '20'
             - name: PUBLIC_MAX_CHATS
-              value: "3"
+              value: '3'
             - name: LOG_LEVEL
               value: debug
-
-            - name: PUBLIC_DD_RUM_APP_ID
-              value: 21afc4c0-6e1e-40f4-9d3c-c4a2457de2be
-            - name: PUBLIC_DD_RUM_CLIENT_TOKEN
-              value: pubf42d9f68be1d30fb5e3fc57b04d8fd7f
-            - name: PUBLIC_APP_VERSION
-              value: 1.0.0
-            - name: DD_SITE
-              value: datadoghq.eu
-            - name: DD_SERVICE
-              value: woss
-            - name: DD_ENV
-              value: prod
-            - name: DD_TRACE_SAMPLE_RATE
-              value: "1"
-            - name: DD_LOGS_INJECTION
-              value: "true"
-            - name: DD_AGENT_HOST
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
             - name: PROVIDER_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -145,12 +130,6 @@ spec:
                 secretKeyRef:
                   name: woss-secrets
                   key: WOSS_USER_WEBHOOK_TOKEN
-            - name: DD_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: woss-secrets
-                  key: WOSS_DD_API_KEY
-
           volumeMounts:
             - name: woss-data
               mountPath: /app/data
@@ -171,7 +150,7 @@ spec:
             - name: ORIGIN
               value: https://woss.io
             - name: GID
-              value: "1000"
+              value: '1000'
             - name: LLM_PROVIDER_BASE_URL
               value: https://opencode.ai/zen/v1
             - name: MAIN_MODEL
@@ -181,19 +160,19 @@ spec:
             - name: RELEVANCE_CHECK_MODEL
               value: deepseek-v4-flash
             - name: MAX_TOKENS
-              value: "50000"
+              value: '50000'
             - name: FIRST_ROUND_MAX_STEPS
-              value: "10"
+              value: '10'
             - name: MAX_RESULTS_LENGTH
-              value: "64000"
+              value: '64000'
             - name: TOOL_CLASSIFY_TIMEOUT_MS
-              value: "15000"
+              value: '15000'
             - name: LLM_CACHE_ENABLED
-              value: "false"
+              value: 'false'
             - name: PUBLIC_MAX_MESSAGES
-              value: "20"
+              value: '20'
             - name: PUBLIC_MAX_CHATS
-              value: "3"
+              value: '3'
             - name: LOG_LEVEL
               value: debug
 
@@ -202,21 +181,13 @@ spec:
             - name: PUBLIC_DD_RUM_CLIENT_TOKEN
               value: pubf42d9f68be1d30fb5e3fc57b04d8fd7f
             - name: PUBLIC_APP_VERSION
-              value: 1.0.0
-            - name: DD_SITE
-              value: datadoghq.eu
+              value: __VERSION__
+            - name: PUBLIC_DD_ENV
+              value: prod
             - name: DD_SERVICE
               value: woss
             - name: DD_ENV
               value: prod
-            - name: DD_TRACE_SAMPLE_RATE
-              value: "1"
-            - name: DD_LOGS_INJECTION
-              value: "true"
-            - name: DD_AGENT_HOST
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
             - name: PROVIDER_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -252,12 +223,6 @@ spec:
                 secretKeyRef:
                   name: woss-secrets
                   key: WOSS_USER_WEBHOOK_TOKEN
-            - name: DD_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: woss-secrets
-                  key: WOSS_DD_API_KEY
-
             - name: OTEL_SERVICE_NAME
               value: woss
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

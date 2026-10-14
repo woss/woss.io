@@ -11,11 +11,9 @@
  *    silent no-op: no SDK, no exporters, no instrumentations.
  *  - try/catch safety: when SDK construction or start() throws, module import
  *    still succeeds and init()/shutdown() never throw to the caller.
- *  - Service identity (DD_SERVICE/DD_ENV/DD_VERSION) is read via
- *    $env/static/private, baked into the bundle from .env at build time —
- *    runtime process.env overrides do NOT affect the resource attributes.
- *  - Everything else (DD_API_KEY, OTEL_SDK_DISABLED, OTEL_DIAG_DEBUG) is read
- *    via readEnv(): $env/dynamic/private first, then process.env. The test
+ *  - Service identity and OTLP endpoints are read at runtime via readEnv():
+ *    $env/dynamic/private first, then process.env.
+ *  - OTEL_SDK_DISABLED and OTEL_DIAG_DEBUG use the same runtime lookup. The test
  *    mocks $env/dynamic/private to forward to process.env so those assertions
  *    drive the real process.env value (the built adapter-node equivalent).
  *  - shutdown() flushes the SDK started at import time and swallows errors.
@@ -25,7 +23,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** Env keys the module reads; cleared between tests for hygiene. */
-const ENV_KEYS = ['OTEL_SDK_DISABLED', 'OTEL_DIAG_DEBUG', 'DD_SERVICE', 'DD_ENV', 'DD_VERSION', 'DD_API_KEY'] as const;
+const ENV_KEYS = [
+  'OTEL_SDK_DISABLED',
+  'OTEL_DIAG_DEBUG',
+  'OTEL_EXPORTER_OTLP_ENDPOINT',
+  'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
+  'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT',
+  'OTEL_EXPORTER_OTLP_METRICS_ENDPOINT',
+  'OTEL_SERVICE_NAME',
+  'DD_SERVICE',
+  'DD_ENV',
+  'DD_VERSION',
+] as const;
 
 /** Constructor/instance spies for the mocked OpenTelemetry classes. */
 const otelState = vi.hoisted(() => {
@@ -212,6 +221,7 @@ function traceExporterConfig(): { url: string; compression: string; headers: Rec
 
 beforeEach(() => {
   clearProcessEnv();
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://datadog-agent.datadog.svc.cluster.local:4318';
   otelState.nodeSDKInstances.length = 0;
   otelState.flags.throwOnStart = false;
   vi.clearAllMocks();
@@ -241,11 +251,9 @@ describe('module-level SDK startup (task 2.1)', () => {
     expect(otelState.diagSetLoggerSpy).not.toHaveBeenCalled(); // OTEL_DIAG_DEBUG unset
 
     const traceCfg = traceExporterConfig();
-    expect(traceCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/traces');
+    expect(traceCfg.url).toBe('http://datadog-agent.datadog.svc.cluster.local:4318/v1/traces');
     expect(traceCfg.compression).toBe('gzip');
-    expect(traceCfg.headers['dd-otel-span-mapping']).toBe('{"span_name_as_resource_name": true}');
-    // dd-otlp-source must stay absent — it triggers a 403 from the intake.
-    expect(traceCfg.headers['dd-otlp-source']).toBeUndefined();
+    expect(traceCfg.headers).toBeUndefined();
 
     // TruncatingLogRecordExporter wrapper must satisfy the full exporter
     // contract (export/shutdown/forceFlush) for BatchLogRecordProcessor.
@@ -259,16 +267,16 @@ describe('module-level SDK startup (task 2.1)', () => {
     // Sampling: ParentBasedSampler over TraceIdRatioBasedSampler(1.0).
     expect(otelState.traceIdRatioSamplerSpy).toHaveBeenCalledWith(1.0);
 
-    // Metrics: OTLPMetricExporter → /v1/metrics, gzip, dd-api-key; wired via
+    // Metrics: OTLPMetricExporter → Agent /v1/metrics, gzip; wired via
     // PeriodicExportingMetricReader into the SDK's metricReaders.
     const metricExporterCfg = otelState.metricExporterSpy.mock.calls[0][0] as {
       url: string;
       compression: string;
       headers: Record<string, string>;
     };
-    expect(metricExporterCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/metrics');
+    expect(metricExporterCfg.url).toBe('http://datadog-agent.datadog.svc.cluster.local:4318/v1/metrics');
     expect(metricExporterCfg.compression).toBe('gzip');
-    expect(metricExporterCfg.headers).toEqual({ 'dd-api-key': '' });
+    expect(metricExporterCfg.headers).toBeUndefined();
     const metricReaderCfg = otelState.metricReaderSpy.mock.calls[0][0] as {
       exporter: unknown;
       exportIntervalMillis: number;
@@ -287,49 +295,67 @@ describe('module-level SDK startup (task 2.1)', () => {
     expect(processorOpts.exportTimeoutMillis).toBe(30000);
     expect(processorOpts.maxQueueSize).toBe(2048);
 
-    // undici instrumentation ignores Datadog intake hosts (self-telemetry).
+    // undici instrumentation ignores the Agent endpoint (self-telemetry).
     const undiciCfg = otelState.undiciInstrumentationSpy.mock.calls[0][0] as {
       ignoreRequestHook: (request: { origin?: string }) => boolean;
     };
-    expect(undiciCfg.ignoreRequestHook({ origin: 'https://http-intake.logs.datadoghq.eu' })).toBe(true);
+    expect(undiciCfg.ignoreRequestHook({ origin: 'http://datadog-agent.datadog.svc.cluster.local:4318' })).toBe(true);
     expect(undiciCfg.ignoreRequestHook({ origin: 'https://api.example.com' })).toBe(false);
 
     expect(mod.init()).toBeUndefined(); // no-op after import-time start
   });
 
-  it('bakes DD_SERVICE/DD_ENV/DD_VERSION from $env/static/private, reads DD_API_KEY from process.env', async () => {
-    // Resource identity is baked from .env at build time — process.env
-    // overrides must NOT leak into the resource attributes.
-    setProcessEnv({ DD_SERVICE: 'woss-svc', DD_ENV: 'prod', DD_VERSION: '9.9.9', DD_API_KEY: 'ddkey' });
+  it('uses runtime production identity and sends signals to the Agent without an app API key', async () => {
+    setProcessEnv({ DD_SERVICE: 'woss', DD_ENV: 'prod', DD_VERSION: '12-10-2026-main' });
     await importInstrumentation();
 
     expect(sdkResourceAttributes()).toEqual({
-      'service.name': 'woss-io',
-      'deployment.environment': 'dev',
-      'service.version': 'dev',
+      'service.name': 'woss',
+      'deployment.environment': 'prod',
+      'service.version': '12-10-2026-main',
     });
 
-    // DD_API_KEY stays dynamic (readEnv): process.env drives it.
-    const traceCfg = traceExporterConfig();
-    expect(traceCfg.headers).toEqual({
-      'dd-api-key': 'ddkey',
-      'dd-otel-span-mapping': '{"span_name_as_resource_name": true}',
-    });
+    expect(traceExporterConfig().url).toBe('http://datadog-agent.datadog.svc.cluster.local:4318/v1/traces');
+    expect(traceExporterConfig().headers).toBeUndefined();
 
     const logCfg = otelState.logExporterSpy.mock.calls[0][0] as { url: string; headers: Record<string, string> };
-    expect(logCfg.url).toBe('https://http-intake.logs.datadoghq.eu/v1/logs');
-    expect(logCfg.headers).toEqual({ 'dd-api-key': 'ddkey' });
+    expect(logCfg.url).toBe('http://datadog-agent.datadog.svc.cluster.local:4318/v1/logs');
+    expect(logCfg.headers).toBeUndefined();
   });
 
-  it('defaults: service.name=woss-io with baked dev env/version, empty dd-api-key', async () => {
-    await importInstrumentation(); // env cleared
+  it('defaults service.name and omits environment/version when runtime values are unset', async () => {
+    await importInstrumentation();
 
-    expect(sdkResourceAttributes()).toEqual({
-      'service.name': 'woss-io',
-      'deployment.environment': 'dev',
-      'service.version': 'dev',
+    expect(sdkResourceAttributes()).toEqual({ 'service.name': 'woss' });
+    expect(traceExporterConfig().headers).toBeUndefined();
+  });
+
+  it('prefers per-signal endpoint overrides to the generic Agent endpoint', async () => {
+    setProcessEnv({
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://trace-agent:4318/custom-traces',
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: 'http://log-agent:4318/custom-logs',
     });
-    expect(traceExporterConfig().headers['dd-api-key']).toBe('');
+    await importInstrumentation();
+
+    expect(traceExporterConfig().url).toBe('http://trace-agent:4318/custom-traces');
+    const logCfg = otelState.logExporterSpy.mock.calls[0][0] as { url: string };
+    expect(logCfg.url).toBe('http://log-agent:4318/custom-logs');
+    const metricCfg = otelState.metricExporterSpy.mock.calls[0][0] as { url: string };
+    expect(metricCfg.url).toBe('http://datadog-agent.datadog.svc.cluster.local:4318/v1/metrics');
+  });
+
+  it('does not construct production exporters when endpoint is missing', async () => {
+    vi.doMock('$app/environment', () => ({ dev: false }));
+    setProcessEnv({ OTEL_EXPORTER_OTLP_ENDPOINT: undefined });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mod = await importInstrumentation();
+
+    expect(otelState.nodeSDKSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[instrumentation] OTEL_EXPORTER_OTLP_ENDPOINT is required to export telemetry',
+    );
+    expect(mod.init()).toBeUndefined();
+    vi.doUnmock('$app/environment');
   });
 
   it('enables diag logger only when OTEL_DIAG_DEBUG=1', async () => {

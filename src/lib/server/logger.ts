@@ -5,6 +5,7 @@
  * Sinks:
  *   - console: getPrettyFormatter (dev readability)
  *   - file: getJsonLinesFormatter({ properties: "flatten" }) → ./data/logs/woss.io.log (rotating)
+ *   - otel: OpenTelemetry LoggerProvider registered by instrumentation.server.ts
  *
  * Use:
  *   import { CAT, createLogger } from '$lib/server/logger';
@@ -24,7 +25,8 @@ import {
 } from '@logtape/logtape';
 import { getRotatingFileSink } from '@logtape/file';
 import { getPrettyFormatter } from '@logtape/pretty';
-import { env } from '$env/dynamic/private';
+import { context, trace } from '@opentelemetry/api';
+import { logs, SeverityNumber, type LogAttributes, type AnyValue } from '@opentelemetry/api-logs';
 import { dev } from '$app/environment';
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -32,13 +34,13 @@ import { traceStorage } from './trace-context';
 import { truncateLogMessage } from './log-truncate';
 import { hexIdToLow64Decimal, isZeroLow64Decimal } from './datadog-ids';
 
-const DATADOG_LEVEL_MAP: Record<string, string> = {
-  trace: 'debug',
-  debug: 'debug',
-  info: 'info',
-  warning: 'warning',
-  error: 'error',
-  fatal: 'error',
+const OTEL_SEVERITY_MAP: Record<string, SeverityNumber> = {
+  trace: SeverityNumber.TRACE,
+  debug: SeverityNumber.DEBUG,
+  info: SeverityNumber.INFO,
+  warning: SeverityNumber.WARN,
+  error: SeverityNumber.ERROR,
+  fatal: SeverityNumber.FATAL,
 };
 
 function formatLogtapeMessage(parts: readonly (string | unknown)[]): string {
@@ -50,57 +52,56 @@ function formatLogtapeMessage(parts: readonly (string | unknown)[]): string {
   return msg;
 }
 
-function getDatadogLogSink(url: string, apiKey: string, ddEnv: string | undefined): Sink {
+function toOtelAttribute(value: unknown): AnyValue | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof Error) {
+    return { type: value.name, message: value.message, ...(value.stack ? { stack: value.stack } : {}) };
+  }
+  if (value instanceof Uint8Array) return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function getOpenTelemetryLogSink(): Sink {
   return (record: LogRecord) => {
-    const level = DATADOG_LEVEL_MAP[record.level] ?? 'info';
-    // Truncate on the live export path before serialization (FR-003, 1 MiB cap)
     const message = truncateLogMessage(formatLogtapeMessage(record.message));
-    const service = record.category.join('.');
-    const body: Record<string, unknown> = { level, message, service };
-    // Datadog reserved tag: env:dev / env:production goes in `ddtags`.
-    if (ddEnv) body.ddtags = `env:${ddEnv}`;
-    // Attach trace context to metadata
-    const { traceId, spanId } = record.properties as Record<string, string | undefined>;
-    if (traceId || spanId) {
-      const metadata: Record<string, string> = {};
-      if (traceId) metadata.traceId = traceId;
-      if (spanId) metadata.spanId = spanId;
-      body.metadata = metadata;
+    const activeContext = context.active();
+    const activeSpanContext = trace.getSpan(activeContext)?.spanContext();
+    const hasValidActiveSpan =
+      activeSpanContext !== undefined &&
+      activeSpanContext.traceId !== '00000000000000000000000000000000' &&
+      activeSpanContext.spanId !== '0000000000000000';
+    const attributes: LogAttributes = { 'logtape.category': record.category.join('.') };
+    const properties = record.properties as Record<string, unknown>;
+    for (const [key, value] of Object.entries(properties)) {
+      const attribute = toOtelAttribute(value);
+      if (attribute !== undefined) attributes[key] = attribute;
     }
-    // Emit Datadog correlation ids as low-64 decimal strings (FR-005).
-    // Both-or-neither (INV-3): emit only when both ids are present and non-zero.
-    if (traceId && spanId) {
+
+    const { traceId, spanId } = properties as Record<string, string | undefined>;
+    if (!hasValidActiveSpan && traceId && spanId) {
       const ddTraceId = hexIdToLow64Decimal(traceId);
       const ddSpanId = hexIdToLow64Decimal(spanId);
       if (!isZeroLow64Decimal(ddTraceId) && !isZeroLow64Decimal(ddSpanId)) {
-        body['dd.trace_id'] = ddTraceId;
-        body['dd.span_id'] = ddSpanId;
+        attributes['dd.trace_id'] = ddTraceId;
+        attributes['dd.span_id'] = ddSpanId;
       }
     }
-    const bodyStr = JSON.stringify(body);
-    // Fire-and-forget POST — non-blocking
-    fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'DD-API-KEY': apiKey,
-      },
-      body: bodyStr,
-    })
-      .then((res) => {
-        if (!res.ok) {
-          // fallback: can't use logger here (circular), use console as last resort
-          console.error(`[datadog] push failed: HTTP ${res.status} ${res.statusText}`);
-        }
-      })
-      .catch((err: unknown) => {
-        // fallback: can't use logger here (circular), use console as last resort
-        console.error(
-          '[datadog] push failed:',
-          (err as Error)?.message ?? err,
-          (err as { cause?: Error })?.cause ?? '',
-        );
-      });
+
+    logs.getLogger(record.category.join('.')).emit({
+      body: message,
+      severityNumber: OTEL_SEVERITY_MAP[record.level] ?? SeverityNumber.UNSPECIFIED,
+      severityText: record.level.toUpperCase(),
+      attributes,
+      context: activeContext,
+    });
   };
 }
 
@@ -138,14 +139,6 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
   }
 
   const initialization = (async () => {
-    // process.env fallbacks keep vite-node consumers (build-index.ts, download-model.ts) working.
-    const ddSite = env.DD_SITE ?? process.env.DD_SITE ?? 'datadoghq.eu';
-    const ddApiKey = env.DD_API_KEY ?? process.env.DD_API_KEY;
-    const ddEnv = env.DD_ENV ?? process.env.DD_ENV;
-    if (!ddApiKey && !dev) {
-      throw new Error('DD_API_KEY is required to initialize production logging');
-    }
-
     // Ensure log directory exists
     const logDir = join(process.cwd(), 'data', 'logs');
     if (!existsSync(logDir)) {
@@ -153,8 +146,6 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
     }
 
     const logFile = join(logDir, 'woss.io.log');
-
-    const datadogUrl = `https://http-intake.logs.${ddSite}/api/v2/logs`;
 
     const sinks: Record<string, Sink> = {
       ...(dev && {
@@ -170,14 +161,8 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
         maxFiles: 70,
         maxSize: 10 * 1024 * 1024, // 10 MB per file
       }),
+      otel: getOpenTelemetryLogSink(),
     };
-
-    const extraSinks: string[] = [];
-
-    if (ddApiKey) {
-      sinks.datadog = getDatadogLogSink(datadogUrl, ddApiKey, ddEnv);
-      extraSinks.push('datadog');
-    }
 
     await configure({
       sinks,
@@ -186,12 +171,12 @@ export async function initLogger(logLevel: 'trace' | 'debug' | 'info' | 'warning
         {
           category: ['woss'],
           lowestLevel: logLevel,
-          sinks: [...(dev ? ['console'] : []), 'file', ...extraSinks],
+          sinks: [...(dev ? ['console'] : []), 'file', 'otel'],
         },
         {
           category: ['logtape', 'meta'],
           lowestLevel: 'warning',
-          sinks: [...(dev ? ['console'] : []), 'file', ...extraSinks],
+          sinks: [...(dev ? ['console'] : []), 'file', 'otel'],
         },
       ],
     });

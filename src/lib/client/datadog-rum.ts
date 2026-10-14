@@ -25,7 +25,8 @@ export function initDatadogRum(): void {
 
   if (!appId || !clientToken) return;
 
-  const version = `1.1.0-${dev ? 'dev' : 'prod'}`;
+  const version = env.PUBLIC_APP_VERSION || `1.1.0-${dev ? 'dev' : 'prod'}`;
+  const rumEnvironment = env.PUBLIC_DD_ENV || (dev ? 'dev' : 'prod');
   if (!logsInitialized) {
     datadogLogs.init({
       clientToken,
@@ -34,16 +35,13 @@ export function initDatadogRum(): void {
       forwardConsoleLogs: ['error', 'warn'],
       sessionSampleRate: 100,
       service: SERVICE_NAME_FALLBACK,
-      env: dev ? 'dev' : 'production',
+      env: rumEnvironment,
       version,
     });
   }
 
   if (rumInitialized) return;
 
-  // service/env mirror the .env values DD_SERVICE=woss-io and DD_ENV=dev.
-  // Those vars are NOT PUBLIC_-prefixed and thus not readable via
-  // $env/dynamic/public, so they are inlined as constants matching the .env file.
   datadogRum.init({
     applicationId: appId,
     clientToken: clientToken,
@@ -66,8 +64,8 @@ export function initDatadogRum(): void {
     ],
     defaultPrivacyLevel: 'mask-user-input',
     service: SERVICE_NAME_FALLBACK,
-    env: dev ? 'dev' : 'production',
-    version: `1.1.0-${dev ? 'dev' : 'prod'}`,
+    env: rumEnvironment,
+    version,
   });
   datadogRum.onReady(() => {
     console.log('Datadog RUM initialized');

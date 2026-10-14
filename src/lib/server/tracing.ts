@@ -1,4 +1,4 @@
-import { context, trace, SpanStatusCode } from '@opentelemetry/api';
+import { context, ROOT_CONTEXT, trace, SpanStatusCode } from '@opentelemetry/api';
 import type { Context, Span } from '@opentelemetry/api';
 
 /**
@@ -60,7 +60,7 @@ export function withContext<T>(ctx: Context, fn: () => Promise<T>): Promise<T> {
  * request context — e.g. the fire-and-forget generation pipeline.
  */
 export function createRootSpan(name: string, attributes?: Record<string, string | number | boolean | undefined>): Span {
-  return tracer().startSpan(name, { attributes });
+  return tracer().startSpan(name, { attributes }, ROOT_CONTEXT);
 }
 
 /** End a span, marking ERROR + recording the exception on failure. */
