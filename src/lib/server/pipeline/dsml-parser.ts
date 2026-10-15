@@ -101,9 +101,28 @@ export function parseDsmlToolCalls(text: string): DsmlToolCall[] {
 }
 
 /**
- * Remove all DSML tool call blocks from text.
- * Text before and after blocks is preserved.
+ * Any DSML machinery tag. The `｜DSML｜` prefix is the invariant — the suffix
+ * can arrive mangled when the provider fails to translate the model's tool
+ * calls: the `tool_` prefix may be dropped (`<｜DSML｜ calls>`,
+ * `</｜DSML｜ invoke>`) and the element name may be missing entirely
+ * (`<｜DSML｜ name="traverse">`).
+ */
+const dsmlTagRegex = /<\/?｜DSML｜[^>]*>/gi;
+
+/**
+ * Remove DSML tool call blocks from text.
+ *
+ * Family-aware: matches the canonical `<｜DSML｜tool_calls>` form plus the
+ * mangled dialect variants observed in production. Everything from the first
+ * DSML tag onward is removed — mangled blocks cannot be reliably delimited,
+ * and a block cut off mid-token by a truncated stream has no closing tag.
+ * Text before the block is preserved.
  */
 export function stripDsmlBlocks(text: string): string {
-  return text.replace(toolCallRegex, '').trim();
+  const first = text.search(dsmlTagRegex);
+  let result = first === -1 ? text : text.slice(0, first);
+  // A tag cut off mid-token (no closing `>`) never matches the tag regex.
+  const residual = result.indexOf('<｜DSML｜');
+  if (residual !== -1) result = result.slice(0, residual);
+  return result.trim();
 }

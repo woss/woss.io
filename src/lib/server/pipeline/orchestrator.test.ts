@@ -53,6 +53,7 @@ vi.mock('$lib/server/mcp/tools', () => ({
 
 vi.mock('../prompts', () => ({
   getToolSystemPrompt: vi.fn(() => 'Tool instructions.'),
+  getNoToolsNote: vi.fn(() => 'NOTE: No tools are currently loaded (test).'),
 }));
 
 vi.mock('$lib/server/config', () => ({

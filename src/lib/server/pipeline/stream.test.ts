@@ -30,10 +30,14 @@ vi.mock('$lib/server/db', () => ({
 vi.mock('$lib/server/db-service', () => ({
   getDbService: vi.fn(() => ({
     getDb: vi.fn(() => ({
-      prepare: vi.fn(() => ({
+      prepare: vi.fn((sql: string) => ({
         run: vi.fn(),
         all: vi.fn(() => []),
-        get: vi.fn(),
+        get: vi.fn(() =>
+          sql.includes('FROM models')
+            ? { model_name: 'deepseek-v4-flash', actual_model_name: 'deepseek-v4-flash' }
+            : undefined,
+        ),
         iterate: vi.fn(function* () {}),
       })),
       transaction: vi.fn((fn: (rows: unknown[]) => void) => fn),
@@ -81,6 +85,7 @@ vi.mock('$lib/server/logger', () => ({
 
 vi.mock('../prompts', () => ({
   getDoomLoopRecoveryPrompt: vi.fn(() => 'MANDATORY INSTRUCTION: DO NOT call tools. Write text.'),
+  getDsmlLeakRecoveryPrompt: vi.fn(() => 'CRITICAL — RAW TOOL MARKUP DETECTED (test).'),
   getToolClassifierUserPrompt: vi.fn(),
 }));
 
@@ -175,6 +180,22 @@ describe('ToolCallXmlStripper', () => {
     s.next('<tool_calls>');
     expect(s.isInside).toBe(true);
     s.next('</tool_calls>');
+    expect(s.isInside).toBe(false);
+  });
+
+  it('strips mangled DSML tags missing the tool_ prefix', () => {
+    const s = new ToolCallXmlStripper();
+    const input = 'text<｜DSML｜ calls>stuff</｜DSML｜ calls>more';
+    expect(s.next(input)).toBe('textmore');
+    expect(s.isInside).toBe(false);
+  });
+
+  it('filters mangled DSML blocks spanning chunks', () => {
+    const s = new ToolCallXmlStripper();
+    expect(s.next('start<｜DSML｜ calls>')).toBe('start');
+    expect(s.isInside).toBe(true);
+    expect(s.next('<｜DSML｜ invoke name="traverse">')).toBe('');
+    expect(s.next('</｜DSML｜ invoke>end')).toBe('end');
     expect(s.isInside).toBe(false);
   });
 });
@@ -312,6 +333,51 @@ describe('streamWithRetry', () => {
     // First 2 attempts with tools → doom loop → eventually tools disabled
     expect(chatStreamWithTools).toHaveBeenCalled();
     expect(chatStreamWithTools).toHaveBeenCalled();
+  });
+
+  it('retries and strips when mangled DSML tool-call markup leaks into the answer', async () => {
+    const leakText =
+      'Let me check the gallery.\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name="traverse">\n</｜DSML｜ invoke>\n</｜DSML｜ calls>';
+    const finish = {
+      type: 'finish' as const,
+      reason: 'stop' as const,
+      modelName: 'test-model',
+      actualModelName: 'test-model',
+      provider: 'https://api.test.com/v1',
+      maxTokens: 4096,
+    };
+    const leakEvents: LLMEvent[] = [
+      { type: 'text-delta', text: leakText },
+      { type: 'step-finish', reason: 'stop', toolCalls: 0, textProduced: true },
+      finish,
+    ];
+    const longAnswer = 'Here is the answer. ' + 'x'.repeat(160);
+    const okEvents: LLMEvent[] = [
+      { type: 'text-delta', text: longAnswer },
+      { type: 'step-finish', reason: 'stop', toolCalls: 0, textProduced: true },
+      finish,
+    ];
+    let call = 0;
+    vi.mocked(chatStreamWithTools).mockImplementation(() =>
+      call++ === 0 ? Stream.fromIterable(leakEvents) : Stream.fromIterable(okEvents),
+    );
+
+    const result = await streamWithRetry(
+      [
+        { role: 'system', content: 'Answer' },
+        { role: 'user', content: 'Question?' },
+      ],
+      ['traverse'] as unknown as McpToolDef[],
+      'chat-3',
+      new AbortController(),
+      new Map(),
+      'test-msg-id',
+    );
+
+    expect(call).toBe(2);
+    expect(result.answerText).toContain('Here is the answer');
+    expect(result.answerText).not.toContain('DSML');
+    expect(result.lastError).toBeNull();
   });
 
   it('detects hallucinated Macula URLs when tools available but not used', async () => {
