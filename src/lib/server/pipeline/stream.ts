@@ -163,7 +163,6 @@ export async function streamWithRetry(
   let irrecoverable = false;
   let toolFailureDetected = false;
   let userErrorMessage: string | undefined;
-  let dsmlLeakDetected = false;
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
       answerText = '';
@@ -173,7 +172,7 @@ export async function streamWithRetry(
       doomLoopDetectedInRound = false;
       toolFailureDetected = false;
       userErrorMessage = undefined;
-      dsmlLeakDetected = false;
+      let dsmlLeakDetected = false;
       const xmlStripper = new ToolCallXmlStripper();
       const llmStream = mcpToolDefs
         ? chatStreamWithTools(messages, mcpToolDefs, abortController.signal)
