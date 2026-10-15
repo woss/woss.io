@@ -3,7 +3,7 @@ import { getDbService } from '$lib/server/db-service';
 import { chatStreamWithTools } from '$lib/server/openai-provider';
 import type { LLMEvent } from '$lib/server/llm/types';
 import type { McpToolDef } from '$lib/server/mcp/tools';
-import { getDoomLoopRecoveryPrompt } from '../prompts.ts';
+import { getDoomLoopRecoveryPrompt, getDsmlLeakRecoveryPrompt } from '../prompts.ts';
 import { hasDsmlBlocks, stripDsmlBlocks } from './dsml-parser.ts';
 import { config } from '$lib/server/config';
 import { CAT, createLogger } from '$lib/server/logger';
@@ -38,8 +38,11 @@ const TINY_TEXT_THRESHOLD = 171;
  */
 export class ToolCallXmlStripper {
   #inBlock = false;
-  #openRe = /<[^>]*tool_calls[^>]*>/i;
-  #closeRe = /<\/[^>]*tool_calls[^>]*>/i;
+  // Matches the canonical ASCII form and any DSML dialect tag — the `｜DSML｜`
+  // prefix is the invariant; the suffix (`tool_calls`, ` calls`, ` invoke …`)
+  // may arrive mangled from the provider.
+  #openRe = /<(?:[^>]*tool_calls[^>]*|｜DSML｜[^>]*)>/i;
+  #closeRe = /<\/(?:[^>]*tool_calls[^>]*|｜DSML｜[^>]*)>/i;
 
   /** Process a text chunk and return only text NOT inside <tool_calls> blocks. */
   next(chunk: string): string {
@@ -160,6 +163,7 @@ export async function streamWithRetry(
   let irrecoverable = false;
   let toolFailureDetected = false;
   let userErrorMessage: string | undefined;
+  let dsmlLeakDetected = false;
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
       answerText = '';
@@ -169,6 +173,7 @@ export async function streamWithRetry(
       doomLoopDetectedInRound = false;
       toolFailureDetected = false;
       userErrorMessage = undefined;
+      dsmlLeakDetected = false;
       const xmlStripper = new ToolCallXmlStripper();
       const llmStream = mcpToolDefs
         ? chatStreamWithTools(messages, mcpToolDefs, abortController.signal)
@@ -286,8 +291,9 @@ export async function streamWithRetry(
           modelRow && (/deepseek/i.test(modelRow.model_name) || /deepseek/i.test(modelRow.actual_model_name));
 
         if (isDeepSeekModel && hasDsmlBlocks(answerText)) {
+          dsmlLeakDetected = true;
           answerText = stripDsmlBlocks(answerText).trim();
-          log.debug`DSML blocks stripped from output, remaining text length: ${answerText.length}`;
+          log.warn`DSML tool-call markup leaked into answer text — stripped, ${answerText.length} chars remain`;
         }
       }
 
@@ -352,9 +358,12 @@ export async function streamWithRetry(
         isTinyText ||
         isToolLoop ||
         isHallucination ||
-        isInterimText
+        isInterimText ||
+        dsmlLeakDetected
       ) {
-        const reason = isHallucination
+        const reason = dsmlLeakDetected
+          ? 'DSML tool-call markup in text (dialect leaked instead of native tool calls)'
+          : isHallucination
           ? 'Hallucination (tools available, zero calls, Macula URLs in output)'
           : isToolLoop
             ? 'Tool loop detected (cross-round fingerprint repeat)'
@@ -368,7 +377,9 @@ export async function streamWithRetry(
           // Reset to base system prompt + current retry's recovery prompt (avoid unbounded growth)
           const recovery = isHallucination
             ? 'WARNING — Your previous response contained fabricated Macula URLs. You did not call any Macula tools to retrieve real data. MANDATORY: You MUST call Macula tools (traverse, get_users, get_file) to get actual file data. Do NOT generate URLs from memory.'
-            : getDoomLoopRecoveryPrompt();
+            : dsmlLeakDetected
+              ? getDsmlLeakRecoveryPrompt()
+              : getDoomLoopRecoveryPrompt();
           messages[0] = {
             ...messages[0],
             content: baseSystemPrompt + '\n\n' + recovery,

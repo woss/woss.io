@@ -116,6 +116,24 @@ export function getToolSystemPrompt(options?: { github?: boolean; macula?: boole
 }
 
 // -----------------------------------------------------------
+// 2b. Safety-net recovery prompts + degradation notes
+// -----------------------------------------------------------
+
+/** Retry instruction after raw DSML tool-call markup leaked into an answer. */
+export function getDsmlLeakRecoveryPrompt(): string {
+  return [
+    'CRITICAL — RAW TOOL MARKUP DETECTED: Your previous response contained raw tool-call markup (｜DSML｜ blocks) as visible text instead of an answer. That is a protocol failure.',
+    'Never output tool-call markup, XML-style tags, or JSON tool syntax as text. Either call tools through the proper tool mechanism, or write the answer in plain markdown.',
+    'If no tools are available in this session, answer from the provided context and say plainly when information is missing.',
+  ].join('\n');
+}
+
+/** Shown to the model when a query warranted tools but none could be loaded. */
+export function getNoToolsNote(): string {
+  return `NOTE: No tools are currently loaded. Do not narrate using, calling, or searching with any tools — they are not available. Answer only from the context provided above.`;
+}
+
+// -----------------------------------------------------------
 // 3. Relevance classifier prompts (chat-helpers.ts)
 // -----------------------------------------------------------
 export function getRelevanceCheckUserPrompt(question: string, context?: string): string {

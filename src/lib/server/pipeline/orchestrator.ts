@@ -1,9 +1,9 @@
 import { publishLive, publishPersistent } from '$lib/server/chat-events';
 import { callErrorWebhook } from '$lib/server/webhooks';
 import { getDbService } from '$lib/server/db-service';
-import { buildRagPrompt } from '$lib/server/openai-provider';
+import { buildRagPrompt, type ChatMessage } from '$lib/server/openai-provider';
 import { getMcpToolDefs, type McpToolDef } from '$lib/server/mcp/tools';
-import { getToolSystemPrompt } from '../prompts.ts';
+import { getNoToolsNote, getToolSystemPrompt } from '../prompts.ts';
 import { config } from '$lib/server/config';
 import { CAT, createLogger } from '$lib/server/logger';
 import { ROOT_CONTEXT, trace, type Span } from '@opentelemetry/api';
@@ -20,6 +20,18 @@ import { saveAndEmitResult } from './save-result';
 const log = createLogger(CAT.chat);
 const searchLog = createLogger(CAT.search);
 const SOURCE_SCORE_THRESHOLD = 0.5; // cosine distance threshold for source inclusion
+
+/**
+ * Append the no-tools note to the system prompt when a query warranted tools
+ * but none could be loaded. Prevents the model from narrating tool calls it
+ * cannot make — the failure mode behind DSML markup leaking into answers.
+ * Idempotent via marker check.
+ */
+function appendNoToolsNote(messages: ChatMessage[]): void {
+  const first = messages[0];
+  if (!first || first.role !== 'system' || first.content.includes('NOTE: No tools are currently loaded')) return;
+  messages[0] = { ...first, content: first.content + '\n\n' + getNoToolsNote() };
+}
 
 /** Active generation AbortControllers keyed by chatId */
 const activeGenerations = new Map<string, AbortController>();
@@ -299,25 +311,18 @@ async function runGeneration(
               content: messages[0].content + '\n\n' + additions,
             };
           }
+        } else {
+          log.warn`MCP tools needed but none loaded — continuing tool-free with no-tools prompt note`;
+          appendNoToolsNote(messages);
         }
       } catch (err) {
         log.error`Failed to load MCP tools: ${err}`;
         // Non-fatal — continue without tools
+        appendNoToolsNote(messages);
       }
     } else {
       log.info`📚 RAG-only mode (no external tools needed for this query)`;
-      if (
-        messages.length > 0 &&
-        messages[0].role === 'system' &&
-        !messages[0].content.includes('NOTE: No tools are currently loaded')
-      ) {
-        messages[0] = {
-          ...messages[0],
-          content:
-            messages[0].content +
-            `\n\nNOTE: No tools are currently loaded. Do not narrate using, calling, or searching with any tools — they are not available. Answer only from the context provided above.`,
-        };
-      }
+      appendNoToolsNote(messages);
     }
 
     // Build tool name → serverId map for tool timing instrumentation
