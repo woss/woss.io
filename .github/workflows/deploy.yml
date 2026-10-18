@@ -88,6 +88,22 @@ jobs:
           WOSS_USER_WEBHOOK_ERROR_URL: ${{ secrets.WOSS_USER_WEBHOOK_ERROR_URL }}
           WOSS_USER_WEBHOOK_TOKEN: ${{ secrets.WOSS_USER_WEBHOOK_TOKEN }}
         run: |
+          # Guard: a stale/rotated-out key here must NOT reach the cluster. This
+          # step rewrites woss-secrets on every deploy, so a bad GH secret would
+          # silently revert the live key and 401 every prod chat (2026-10-18).
+          status="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${WOSS_PROVIDER_API_KEY}" \
+            "${LLM_PROVIDER_BASE_URL:-https://opencode.ai/zen/v1}/models")"
+          if [ "$status" != "200" ]; then
+            echo "::error::WOSS_PROVIDER_API_KEY rejected by provider (HTTP ${status}). Refusing to rewrite woss-secrets; live key untouched. Rotate in .env, then run scripts/sync-secrets.sh."
+            exit 1
+          fi
+          for v in WOSS_GITHUB_TOKEN WOSS_MCL_MCP_API_KEY WOSS_MCP_SERVERS WOSS_USER_WEBHOOK_URL WOSS_USER_WEBHOOK_ERROR_URL WOSS_USER_WEBHOOK_TOKEN; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::${v} is empty in GH secrets — refusing to rewrite woss-secrets (would drop the key from the live secret)."
+              exit 1
+            fi
+          done
           kubectl -n woss-prod create secret generic woss-secrets \
             --from-literal=WOSS_PROVIDER_API_KEY="$WOSS_PROVIDER_API_KEY" \
             --from-literal=WOSS_GITHUB_TOKEN="$WOSS_GITHUB_TOKEN" \
