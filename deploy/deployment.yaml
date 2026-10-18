@@ -167,6 +167,12 @@ spec:
               value: deepseek-v4-flash
             - name: RELEVANCE_CHECK_MODEL
               value: deepseek-v4-flash
+            - name: RELEVANCE_GATE_PROVIDER
+              value: jev
+            - name: RELEVANCE_GATE_MODEL
+              value: jev-1.13
+            - name: RELEVANCE_GATE_THRESHOLD
+              value: '0.7'
             - name: MAX_TOKENS
               value: '50000'
             - name: FIRST_ROUND_MAX_STEPS

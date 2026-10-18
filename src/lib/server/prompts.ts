@@ -157,6 +157,17 @@ export function getRelevanceCheckSystemPrompt(): string {
   ].join('\n');
 }
 
+/** Instructions for the Jev System One relevance gate (relevance-gate.ts). Same rubric as the LLM classifier prompt. */
+export function getRelevanceGateInstructions(): string {
+  return [
+    `Is this message about Daniel Maricic's professional portfolio, skills, experience, projects, or career history?`,
+    ``,
+    `RELEVANT (true): Questions about his skills, experience, projects, career history, hobbies. Expressions of gratitude (thank you, thanks, appreciate it). Requests to contact, hire, or collaborate. Polite conversation closings. Follow-ups continuing an already-relevant topic. Messages with his name or project names. "Woss" is the name of his personal portfolio website and is relevant. "Haistlin" is the name of the AI assistant — questions about it are relevant.`,
+    ``,
+    `NOT RELEVANT (false): Questions about politics, sports, entertainment, weather, general knowledge, math, coding help not related to his projects, or anything completely unrelated to Daniel Maricic's professional portfolio.`,
+  ].join('\n');
+}
+
 // -----------------------------------------------------------
 // 4. Polite response prompt (chat-helpers.ts)
 // -----------------------------------------------------------

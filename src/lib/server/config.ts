@@ -26,6 +26,12 @@ type Config = DeepReadonly<{
     toolClassifyModel: string | undefined;
     relevanceCheckModel: string | undefined;
     maxRounds: number;
+    relevanceGate: {
+      provider: 'jev' | 'llm';
+      url: string;
+      model: string;
+      threshold: number;
+    };
   };
   mcp: { servers: McpServerConfig[] };
   llmCache: { enabled: boolean; ttlSec: number };
@@ -49,6 +55,10 @@ const {
   TOOL_CLASSIFY_TIMEOUT_MS,
   TOOL_CLASSIFY_MODEL,
   RELEVANCE_CHECK_MODEL,
+  RELEVANCE_GATE_PROVIDER,
+  RELEVANCE_GATE_MODEL,
+  RELEVANCE_GATE_URL,
+  RELEVANCE_GATE_THRESHOLD,
   MAX_RESULTS_LENGTH,
 } = env;
 
@@ -74,6 +84,12 @@ function loadConfig(): Config {
       toolClassifyTimeoutMs: Number(TOOL_CLASSIFY_TIMEOUT_MS) > 0 ? Number(TOOL_CLASSIFY_TIMEOUT_MS) : 15000,
       toolClassifyModel: TOOL_CLASSIFY_MODEL || undefined,
       relevanceCheckModel: RELEVANCE_CHECK_MODEL || undefined,
+      relevanceGate: {
+        provider: RELEVANCE_GATE_PROVIDER === 'jev' ? 'jev' : 'llm',
+        url: RELEVANCE_GATE_URL || 'https://opencode.ai/inference/systemone/v1/systemone',
+        model: RELEVANCE_GATE_MODEL || 'jev-1.13-free',
+        threshold: Number(RELEVANCE_GATE_THRESHOLD) > 0 ? Number(RELEVANCE_GATE_THRESHOLD) : 0.7,
+      },
     },
     mcp: {
       servers: mcpServers,

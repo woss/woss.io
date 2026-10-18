@@ -6,6 +6,7 @@ import {
   getPoliteResponseSystemPrompt,
 } from './prompts.ts';
 import { CAT, createLogger } from '$lib/server/logger';
+import { jevRelevanceCheck } from './relevance-gate';
 
 /** Shape of a chat-completion API response. */
 interface ChatCompletionResponse {
@@ -127,52 +128,66 @@ export async function isRelevant(
     .join('\n');
 
   try {
-    const content = getRelevanceCheckUserPrompt(question, context || undefined);
-    log.info`🔍 isRelevant prompt:\n${content}`;
-    const response = await fetch(`${config().openai.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config().openai.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-
-      body: JSON.stringify({
-        model: config().openai.relevanceCheckModel ?? config().openai.model,
-        // OpenRouter: hide reasoning
-        provider: { reasoning_type: 'hidden' },
-        // Fallback for other APIs
-        extra_body: { reasoning_effort: 'none' },
-        messages: [
-          {
-            role: 'system',
-            content: getRelevanceCheckSystemPrompt(),
-          },
-          {
-            role: 'user',
-            content,
-          },
-        ],
-        temperature: 0,
-        max_tokens: 5000,
-      }),
-      signal: signal ?? AbortSignal.timeout(5000),
-    });
-    log.info`🔍 isRelevant HTTP status: ${response.status}`;
-    if (!response.ok) {
-      log.warn`Relevance check HTTP ${response.status} — allowing query (fail-open)`;
-      return true;
-    }
-
-    const body = (await response.json()) as ChatCompletionResponse;
-    log.info((l) => l`🔍 isRelevant raw response body: ${JSON.stringify(body)}`);
-    const msg = body.choices?.[0]?.message;
-    const answer = (msg?.content || msg?.reasoning_content || '').trim().toLowerCase();
-    log.info`🔍 isRelevant answer="${answer}"`;
-    return answer === 'yes';
+    const { provider } = config().openai.relevanceGate;
+    return provider === 'jev'
+      ? await jevRelevanceCheck(question, context || undefined, signal)
+      : await llmRelevanceCheck(question, context || undefined, signal);
   } catch (err) {
     log.warn`Relevance check failed: ${err} — allowing query (fail-open)`;
     return true;
   }
+}
+
+/**
+ * Chat-completions fallback engine for the relevance gate (`provider=llm`).
+ * Throws on any failure/parse error — isRelevant owns the fail-open policy.
+ */
+async function llmRelevanceCheck(
+  question: string,
+  context: string | undefined,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const content = getRelevanceCheckUserPrompt(question, context);
+  log.info`🔍 isRelevant prompt:\n${content}`;
+  const response = await fetch(`${config().openai.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config().openai.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+
+    body: JSON.stringify({
+      model: config().openai.relevanceCheckModel ?? config().openai.model,
+      // OpenRouter: hide reasoning
+      provider: { reasoning_type: 'hidden' },
+      // Fallback for other APIs
+      extra_body: { reasoning_effort: 'none' },
+      messages: [
+        {
+          role: 'system',
+          content: getRelevanceCheckSystemPrompt(),
+        },
+        {
+          role: 'user',
+          content,
+        },
+      ],
+      temperature: 0,
+      max_tokens: 5000,
+    }),
+    signal: signal ?? AbortSignal.timeout(5000),
+  });
+  log.info`🔍 isRelevant HTTP status: ${response.status}`;
+  if (!response.ok) {
+    throw new Error(`relevance check HTTP ${response.status}`);
+  }
+
+  const body = (await response.json()) as ChatCompletionResponse;
+  log.info((l) => l`🔍 isRelevant raw response body: ${JSON.stringify(body)}`);
+  const msg = body.choices?.[0]?.message;
+  const answer = (msg?.content || msg?.reasoning_content || '').trim().toLowerCase();
+  log.info`🔍 isRelevant answer="${answer}"`;
+  return answer === 'yes';
 }
 
 /**
