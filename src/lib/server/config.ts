@@ -88,7 +88,7 @@ function loadConfig(): Config {
         provider: RELEVANCE_GATE_PROVIDER === 'jev' ? 'jev' : 'llm',
         url: RELEVANCE_GATE_URL || 'https://opencode.ai/inference/systemone/v1/systemone',
         model: RELEVANCE_GATE_MODEL || 'jev-1.13-free',
-        threshold: Number(RELEVANCE_GATE_THRESHOLD) > 0 ? Number(RELEVANCE_GATE_THRESHOLD) : 0.5,
+        threshold: Number(RELEVANCE_GATE_THRESHOLD) > 0 ? Number(RELEVANCE_GATE_THRESHOLD) : 0.7,
       },
     },
     mcp: {
