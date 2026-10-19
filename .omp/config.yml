@@ -3,7 +3,7 @@
 
 modelRoles:
   # architect/coder: z.ai direct — no OpenRouter (no balance there)
-  default: zai/glm-5.3-flash
+  default: opencode-zen/glm-5.3-flash
   # cheap tier: swarm fallback model, also drives tiny/smol background work (titles, memory LLM)
   smol: opencode-zen/deepseek-v4-flash
   # reviewer/test_engineer/explorer/sme/researcher/critic/docs/designer/curators: GLM flagship, 1M ctx
