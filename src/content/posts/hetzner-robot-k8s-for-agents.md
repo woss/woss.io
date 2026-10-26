@@ -292,7 +292,7 @@ Secrets via env vars into Kubernetes Secrets, never committed. A Terraform hered
 
 ## Chapter 10 — Day two
 
-**Node death (it will happen; auction boxes are used boxes).** Procedure: buy replacement → wire vSwitch/VLAN (Chapter 2) → update `extra_robot_nodes` with new host/IP → `tofu apply` re-provisions and joins → node-pinned workloads restore from the nightly export. Rehearse this once with a healthy node before you need it under pressure.
+**Node failure (rare; Hetzner replaces defective hardware free).** Auction boxes are used but Hetzner technicians (24/7, via Robot ticket) swap failed parts or the board — the server stays yours. Procedure: file a Robot ticket with specifics (or ask them to run a hardware check) → Hetzner replaces the hardware → node rejoins, node-pinned workloads restore from the nightly export. If you'd rather grow than repair, buying another auction box and updating `extra_robot_nodes` with the new host/IP re-provisions it identically (`tofu apply`). Either way, rehearse once with a healthy node before you need it under pressure. For what it's worth: I've been running these auction boxes for three years and never had a single problem.
 
 **Reboots.** kured or kube-hetzner's built-in system-upgrade-controller handles automatic reboots for unattended upgrades. Remember the PDB constraint from Chapter 6 — a single-replica PDB'd workload on a can't-be-drained node deadlocks the whole drain.
 
@@ -329,7 +329,7 @@ description: Stand up hybrid k8s on Hetzner — cloud control plane + Serverbör
 
 # Loader contract
 
-- The skill IS the full guide at: https://woss.io/posts/hetzner-robot-k8s-for-agents (fetch it first; the post's markdown is also the canonical source)
+- The skill IS the full guide at: https://woss.io/posts/hetzner-robot-k8s-for-agents.md (fetch it first; the post's markdown is also the canonical source)
 - Fetch and read the entire guide BEFORE acting. Do not work from memory of this block.
 - Execute chapters in order; every CHECKPOINT is a hard gate — on failure, use the guide's symptom→fix table before diagnosing from scratch.
 - Only the auction purchase (guide Ch. 2a) is MANUAL — halt for the operator. Everything else, including vSwitch wiring (Robot Webservice API), is agent-executable.
