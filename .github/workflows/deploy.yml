@@ -47,9 +47,9 @@ jobs:
   deploy:
     name: Deploy to prod cluster
     needs: build
-    # self-hosted (workstation): Hetzner firewall only allows kube API 6443
-    # from operator/robot IPs, so hosted runners can't reach the cluster
-    runs-on: [self-hosted, macOS]
+    # kelp ARC runners (robot nodes): Hetzner firewall only allows kube API
+    # 6443 from operator/robot IPs, so hosted runners can't reach the cluster
+    runs-on: [self-hosted, woss]
     concurrency:
       group: deploy-woss-prod
       cancel-in-progress: false
