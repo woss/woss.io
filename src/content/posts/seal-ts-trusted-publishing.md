@@ -2,7 +2,7 @@
 published: true
 title: "No tokens: publishing seal-ts to npm and JSR with OIDC, and the bot that couldn't pass the door"
 slug: 'seal-ts-trusted-publishing'
-description: 'How we shipped @woss/seal-ts to npm and JSR without a single registry token: npm trusted publishers, JSR scope authorization, release-please, and the github-actions[bot] actor problem that broke both registries and how the pipeline now avoids it for good.'
+description: 'How we shipped @woss/seal-ts to npm and JSR without a single registry token: npm trusted publishers, JSR scope authorization, release-please, and the github-actions[bot] actor problem that broke both registries and how the pipeline now avoids it for good. Also the honest inventory of the C-to-TypeScript port.'
 date: 2026-11-11
 tags:
   - SEAL
@@ -12,6 +12,7 @@ tags:
   - CI/CD
   - TypeScript
 featured: false
+part_of_series: 'seal-spec-ai-critique'
 ---
 
 This morning I wrote about [running ten AI critics over the SEAL specification](/seal-spec-ai-critique). The post ended by saying the TypeScript signer is "going up as `woss/seal-ts` on npm." That was optimistic phrasing for a package that, at the time, existed as a directory inside our private monorepo with no repository, no CI, no docs, and no npm presence at all.
@@ -25,6 +26,23 @@ The publishing part took longer than the package part, and most of the delay was
 Quick summary of what shipped, since the details matter for the publishing story. SEAL is Neal Krawetz's media-provenance format: a DKIM-style `<seal ... />` record embedded in a JPEG or PNG or text file, public key in DNS TXT. Upstream has a C signer and a browser-only validator; the TypeScript signer is ours, and it's what the Kelp product uses to sign images. Extracting it from the monorepo meant standing it up as a real standalone project: rslib build with structure-preserving emit and per-file declarations, vitest at 100% coverage thresholds (the vendored validator is byte-pinned to upstream and excluded), ESLint, and a CI matrix that now runs the test suite on Node, Deno, and Bun.
 
 The last one is worth a paragraph because it changed the code. To support browsers honestly — not "works if your bundler polyfills node:buffer," actually works — the signer can't touch `Buffer`. The old base64 helpers used it in three places. They now use the ES2026 `Uint8Array` base64 and hex methods (`toBase64`, `fromBase64`, `toHex`), which are shipped in Node 24+, Deno, Bun, Chrome, Safari, and Firefox. TypeScript 5.8 doesn't type them yet, so there's a small ambient declaration file in the repo with a comment saying to delete it at the next TypeScript bump. We also considered pulling in noble for the encodings, but noble v2 removed base64 from its utils, and hex alone doesn't justify a dependency. The platform grew the right primitive; we just had to accept that it's new.
+
+## The port: what moved from C, what didn't
+
+The signer has exactly one reference implementation: Neal's `sealtool` in C, built on OpenSSL. Our version is TypeScript built on WebCrypto. Porting between those two stacks is where all the interesting differences live, so here's the honest inventory.
+
+**The verify side is not a port at all.** SEAL-JS already exists as a browser validator, so instead of translating C verify logic into TypeScript, we vendor SEAL-JS into the package verbatim, byte-pinned to an upstream commit (a test hashes the file and fails if anyone edits it). This is the one decision I'd defend hardest: verify-side compatibility with the ecosystem is guaranteed by construction, not by test coverage. A port can be bug-for-bug identical; a vendored copy is identical, full stop.
+
+**The sign side is a real port, and the crypto stack changes everything.** sealtool signs with OpenSSL's EVP API: synchronous calls, keys as PEM files on disk, and OpenSSL quietly picking signature parameters from the key type. WebCrypto is a different animal. Every operation returns a Promise, keys are opaque `CryptoKey` objects, and the API forces you to name the exact signature scheme up front. That last one matters because the SEAL spec never names one. It says RSA signatures are "the signature encrypted" and never uses the words PKCS, PSS, or DER. WebCrypto can't not choose, so we chose RSASSA-PKCS1-v1_5 with SHA-256, then proved the choice by round-tripping: sign with our code, verify with the vendored validator, byte for byte.
+
+Two more places the stacks disagree, both fixed in a few lines and both worth knowing if you implement SEAL yourself:
+
+- **ECDSA signatures come out of WebCrypto as raw P1363** (64 bytes of r||s), but the validator expects DER encoding (a nested TLV structure). The fix is a 20-line converter. The C tool never deals with this because OpenSSL emits DER natively.
+- **WebCrypto has no SHA-224.** The spec's digest table blesses it; the browser API cannot compute it. Any `da=sha224` record is unverifiable in a browser, forever. That's a spec bug we flagged in the critique post, and the port is where it becomes concrete.
+
+**What carried over unchanged:** the record grammar, the container formats (JPEG APP8 segment with the `SEAL\0` label, PNG `seAl` chunk, plain append for text), and the preimage: the same SHA-256 over the same selected byte ranges. And crucially, keys are interchangeable. A keypair generated by `sealtool` publishes to DNS and our signer consumes it, and vice versa; the `p=` field is just base64 SPKI either way. At the wire level there is one SEAL, whatever language signs it.
+
+**What we deliberately didn't port:** sealtool's remote-signing mode (signing a file that lives at a URL) and its long list of supported hash algorithms. Our signer does SHA-256 and local buffers, which is everything the Kelp pipeline needs. Skipping them kept the public API at eight exports, and eight exports is a surface you can actually document.
 
 ## The registry plan
 
