@@ -1,5 +1,5 @@
 ---
-published: false
+published: true
 title: "We ran ten AI critics over the SEAL spec, then six debunkers. Here's what survived."
 slug: 'seal-spec-ai-critique'
 description: 'How we machine-critiqued the SEAL specification with a three-stage LLM pipeline: ten independent critics, 48 deduplicated proposals, six adversarial refuters instructed to kill them. What survived review, what the AI got wrong, and full disclosure of the models and method.'
