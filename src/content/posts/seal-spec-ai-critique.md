@@ -10,6 +10,7 @@ tags:
   - Security
   - SEAL
 featured: false
+part_of_series: 'sealing-media'
 ---
 
 A few weeks ago I needed to sign files with SEAL, Neal Krawetz's Secure Evidence Attribution Label. If you haven't seen it: it's DKIM for media. You sign a hash of some byte ranges of a file, you drop a small `<seal ... />` record into the file (or a sidecar), and you publish your public key in a DNS TXT record. Anyone can verify the file came from your domain without a central registry, a blockchain, or a plugin. For a company like ours whose whole product is provable provenance for images, it's a very good fit.
